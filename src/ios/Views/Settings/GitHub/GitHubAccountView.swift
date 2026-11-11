@@ -58,7 +58,7 @@ struct GitHubAccountView: View {
             Button("取消", role: .cancel) {}
             Button("退出", role: .destructive) { store.signOut() }
         } message: {
-            Text("只会清掉这台手机上保存的令牌。GitHub 那边的授权还在，要在网页上撤销请去 Settings → Applications。")
+            Text("只会清掉这台手机上保存的令牌。GitHub 那边的授权还在，要在网页上撤销请去「设置 → 应用授权」。")
         }
     }
 
@@ -273,7 +273,7 @@ struct GitHubAccountView: View {
                     Text("用设备码登录")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text("需要 Client ID")
+                    Text("需要客户端标识")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -376,10 +376,69 @@ struct GitHubAccountView: View {
 
     // MARK: - 二、权限
 
+    /// 云端编译必须的两项，固定排在前面；其余按令牌实际授予的 scope 全量列出。
+    private let requiredScopes = ["repo", "workflow"]
+
+    /// 要展示的 scope 顺序：必需项在前（缺了也列出来标未授权），其余按字母序。
+    private var orderedScopes: [String] {
+        let owned = Set(store.account?.scopes ?? [])
+        let head = requiredScopes
+        let rest = owned.subtracting(requiredScopes).sorted()
+        return head + rest
+    }
+
+    /// GitHub scope → 中文释义；没有收录的直接显示原始 scope 名。
+    private func scopeLabel(_ scope: String) -> String {
+        let map: [String: String] = [
+            "repo": "推代码到仓库",
+            "workflow": "触发 Actions 编译",
+            "read:user": "读取用户资料",
+            "user": "读取并写入用户资料",
+            "read:org": "读取组织信息",
+            "write:org": "写入组织信息",
+            "admin:org": "管理组织",
+            "gist": "读写 Gist 片段",
+            "notifications": "读取通知",
+            "read:repo_hook": "读取仓库钩子",
+            "write:repo_hook": "写入仓库钩子",
+            "admin:repo_hook": "管理仓库钩子",
+            "admin:org_hook": "管理组织钩子",
+            "delete_repo": "删除仓库",
+            "public_repo": "访问公开仓库",
+            "repo:status": "读取提交状态",
+            "repo_deployment": "读取部署信息",
+            "read:packages": "读取软件包",
+            "write:packages": "写入软件包",
+            "delete:packages": "删除软件包",
+            "read:project": "读取项目看板",
+            "write:project": "写入项目看板",
+            "admin:project": "管理项目看板",
+            "project": "访问项目看板",
+            "enterprise": "访问企业账户",
+            "follow": "关注用户",
+            "read:email": "读取邮箱地址",
+            "email": "读取邮箱地址",
+            "profile": "读取个人资料"
+        ]
+        return map[scope] ?? scope
+    }
+
     private var scopeSection: some View {
         Section {
-            scopeRow("推代码到仓库", scope: "repo", ok: store.account?.canPushCode ?? false)
-            scopeRow("触发 Actions 编译", scope: "workflow", ok: store.account?.canTriggerWorkflow ?? false)
+            if store.account?.scopeUnknown == true {
+                // 细粒度令牌读不到响应头 scope：画成问号，不是未授权。
+                scopeRow(scope: "repo", granted: nil)
+                scopeRow(scope: "workflow", granted: nil)
+            } else if orderedScopes.isEmpty {
+                Text("未读取到权限范围")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(orderedScopes, id: \.self) { s in
+                    let owned = store.account?.scopes.contains(s) ?? false
+                    scopeRow(scope: s, granted: owned)
+                }
+            }
 
             Button {
                 Task {
@@ -419,20 +478,18 @@ struct GitHubAccountView: View {
                 Text("缺 \(missing.joined(separator: "、"))。少了这两项，推代码或触发编译会被 GitHub 拒绝。")
                     .foregroundColor(.orange)
             } else {
-                Text("这两项是云端编译必须的。其它权限（删仓库、管理组织）故意没有申请。")
+                Text("云端编译必须 `repo`、`workflow` 两项；其余权限按这枚令牌实际授予的范围全部列出。权限的增减需要前往 GitHub 后台修改令牌。")
             }
         }
     }
 
-    private func scopeRow(_ title: String, scope: String, ok: Bool) -> some View {
-        // 权限未知 → 画成「问号」，不是「没勾」。
-        // 三态而不是两态：勾了 / 没勾 / 不知道，本来就是三件事。
-        let unknown = store.account?.scopeUnknown == true
-        return HStack {
-            Image(systemName: unknown ? "questionmark.circle.fill"
-                                      : (ok ? "checkmark.circle.fill" : "circle.dashed"))
-                .foregroundColor(unknown ? .secondary : (ok ? .green : .orange))
-            Text(title)
+    /// granted: true 已授权 / false 未授权 / nil 未知（问号）。
+    private func scopeRow(scope: String, granted: Bool?) -> some View {
+        HStack {
+            Image(systemName: granted == nil ? "questionmark.circle.fill"
+                                      : (granted == true ? "checkmark.circle.fill" : "circle.dashed"))
+                .foregroundColor(granted == nil ? .secondary : (granted == true ? .green : .orange))
+            Text(scopeLabel(scope))
             Spacer()
             Text(scope)
                 .font(.caption)

@@ -141,7 +141,7 @@ final class GitHubPush {
 
     /// 目标仓库，形如 `vipios/OpenMinis-build`
     var repo: String {
-        get { UserDefaults.standard.string(forKey: kRepoKey) ?? "" }
+        get { UserDefaults.standard.string(forKey: kRepoKey) ?? "vipios/Ai-quanneng" }
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespaces), forKey: kRepoKey) }
     }
 

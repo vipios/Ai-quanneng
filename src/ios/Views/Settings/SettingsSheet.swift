@@ -67,6 +67,18 @@ struct SettingsSheet: View {
                     }
 
                     NavigationLink {
+                        RelayAdminView()
+                    } label: {
+                        Label("中转站后台", systemImage: "bolt.horizontal.circle")
+                    }
+
+                    NavigationLink {
+                        RelayRouterView()
+                    } label: {
+                        Label("路由器后台", systemImage: "arrow.up.arrow.down.circle")
+                    }
+
+                    NavigationLink {
                         UsageStatsView()
                     } label: {
                         Label("Token Usage", systemImage: "chart.line.uptrend.xyaxis.circle.fill")
@@ -141,6 +153,19 @@ struct SettingsSheet: View {
                                 .foregroundStyle(.white)
                                 .frame(width: 21, height: 21)
                                 .background(.blue, in: Circle())
+                        }
+                    }
+                    NavigationLink {
+                        SpeakModeSettingsView()
+                    } label: {
+                        Label {
+                            Text("语气")
+                        } icon: {
+                            Image(systemName: "speaker.wave.2")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white)
+                                .frame(width: 21, height: 21)
+                                .background(.indigo, in: Circle())
                         }
                     }
                     NavigationLink {
@@ -272,6 +297,19 @@ struct SettingsSheet: View {
                                 .background(.indigo, in: Circle())
                         }
                     }
+                    NavigationLink {
+                        GitHubAccountView()
+                    } label: {
+                        Label {
+                            Text("GitHub 账号")
+                        } icon: {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white)
+                                .frame(width: 21, height: 21)
+                                .background(.green, in: Circle())
+                        }
+                    }
                 }
 
                 Section("Permissions") {
@@ -337,6 +375,7 @@ struct SettingsSheet: View {
                                 .background(.indigo, in: Circle())
                         }
                     }
+                    SelfUpdateSection()
                     Link(destination: URL(string: "https://openminis.github.io/privacy-policy.html")!) {
                         Label {
                             Text("Privacy Policy")
