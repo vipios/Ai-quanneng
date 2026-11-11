@@ -405,6 +405,11 @@ private struct RelayWebContainer: UIViewRepresentable {
         web.allowsBackForwardNavigationGestures = false
         web.scrollView.bounces = true
         web.scrollView.alwaysBounceVertical = true
+        // 横向滚动显式打开：宽表右半边要能左右拖动。默认虽开，但被外层
+        // 手势/样式压过之后容易失效，这里在原生侧再兜一次底。
+        web.scrollView.isScrollEnabled = true
+        web.scrollView.alwaysBounceHorizontal = true
+        web.scrollView.showsHorizontalScrollIndicator = false
 
         web.isOpaque = false
         web.backgroundColor = .systemGroupedBackground
@@ -572,6 +577,10 @@ private struct RelayWebContainer: UIViewRepresentable {
           window.__minisRelayHScroll = true;
 
           var css = [
+            /* ⓪ 根节点放开横向：后台响应式样式常把 html/body 或外层包成
+               overflow-x:hidden/clip，内层就算开了 auto 也被裁住，横滑像锁死。 */
+            'html,body{overflow-x:visible !important;max-width:none !important;}',
+
             /* ① 账户表格：从「按屏宽压缩」改成「按内容展开」 */
             'table.acct{table-layout:auto !important;width:max-content !important;min-width:100% !important}',
             'table.acct td,table.acct th{white-space:nowrap !important}',
@@ -614,14 +623,30 @@ private struct RelayWebContainer: UIViewRepresentable {
             /* [R56] 通杀容器：找出所有装宽表的直接父级，开横向滚动。
                DOM 动态渲染（签到中心/模型管理是 JS 刷出来的）也能被
                MutationObserver 接住。 */
+            /* 把宽表祖先链上被裁成 hidden/clip 的容器逐个放开横向滚动；
+               只开直接父级不够，中间夹一层 overflow-x:hidden 的外包 div，
+               里面照样拖不动。 */
+            function openAncestorClip(el){
+              var p = el.parentElement;
+              while (p && p !== document.documentElement) {
+                var cs = getComputedStyle(p);
+                if (cs.overflowX === 'hidden' || cs.overflowX === 'clip') {
+                  p.style.overflowX = 'auto';
+                  p.style.webkitOverflowScrolling = 'touch';
+                }
+                p = p.parentElement;
+              }
+            }
             function widenParents(){
               document.querySelectorAll('table').forEach(function(t){
                 if (t.scrollWidth <= t.clientWidth + 2) return;  // 没溢出，不用管
                 var p = t.parentElement;
-                if (!p || p === document.body) return;
-                if (getComputedStyle(p).overflowX !== 'auto') {
-                  p.style.overflowX = 'auto';
-                  p.style.webkitOverflowScrolling = 'touch';
+                if (p) {
+                  if (getComputedStyle(p).overflowX !== 'auto') {
+                    p.style.overflowX = 'auto';
+                    p.style.webkitOverflowScrolling = 'touch';
+                  }
+                  openAncestorClip(t);
                 }
               });
             }
