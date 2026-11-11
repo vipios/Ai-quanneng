@@ -619,6 +619,16 @@
 		RCL000119 /* BackupHistoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000219 /* BackupHistoryDetailView.swift */; };
 		RCL000120 /* BackupCategoryIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000220 /* BackupCategoryIcon.swift */; };
 		RCL000121 /* BackupHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000221 /* BackupHUD.swift */; };
+		A8D0FEFCBE81AACC4F8AB89D /* SettingsDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56A2DC3E96AC40BBE5731A2E /* SettingsDesignTokens.swift */; };
+		A1FE29C53C0DA5DCA50C7C5B /* SettingsRowLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9AF1773AC8D74A60950ADB2 /* SettingsRowLabel.swift */; };
+		70FDBD7D90C73BE9A4EE10F6 /* SpeakModeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 714B2FB8E943EEEFF4D4ABD8 /* SpeakModeSettings.swift */; };
+		259EDCC62FF19625FAF41ACA /* SkillsCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2BCBEC81BBAD3FF9F13DD7A /* SkillsCatalogView.swift */; };
+		B4C1E8BC1AE0CBF6EEFFA362 /* RouteEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE46F8F3D7AC8F05AB9BC79 /* RouteEngine.swift */; };
+		F5FBEFBCD5DBB44798C1A4A1 /* RouteRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1AEE4C6FD0E1EACB7269F8 /* RouteRules.swift */; };
+		A7E765C3A3CACFCCFE7394BE /* PersonaBodies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B81CEFDF10CE01D6BD2AD3 /* PersonaBodies.swift */; };
+		BC18F383DBC10BAB7DC775F2 /* RouteCatalogData.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA987D8BF1506ACD3A6D5ADC /* RouteCatalogData.swift */; };
+		A0DACE34CBAE606ED10BBDBA /* RouteInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA2BBD7F3ADD6EB2D1AD788E /* RouteInjector.swift */; };
+		C1ABBAE04F74DE11AD581FBB /* ArtifactStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B5AE72DEF5DD6AD9CFDCCCE /* ArtifactStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1436,10 +1446,20 @@
 		RCL000214 /* RcloneAddServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RcloneAddServerView.swift; sourceTree = "<group>"; };
 		RCL000215 /* BackupDestinationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupDestinationPicker.swift; sourceTree = "<group>"; };
 		RCL000216 /* BackupDestinationDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupDestinationDetailView.swift; sourceTree = "<group>"; };
+		714B2FB8E943EEEFF4D4ABD8 /* SpeakModeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakModeSettings.swift; sourceTree = "<group>"; };
+		C2BCBEC81BBAD3FF9F13DD7A /* SkillsCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsCatalogView.swift; sourceTree = "<group>"; };
+		CEE46F8F3D7AC8F05AB9BC79 /* RouteEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteEngine.swift; sourceTree = "<group>"; };
+		BB1AEE4C6FD0E1EACB7269F8 /* RouteRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteRules.swift; sourceTree = "<group>"; };
+		97B81CEFDF10CE01D6BD2AD3 /* PersonaBodies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonaBodies.swift; sourceTree = "<group>"; };
+		EA987D8BF1506ACD3A6D5ADC /* RouteCatalogData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteCatalogData.swift; sourceTree = "<group>"; };
+		EA2BBD7F3ADD6EB2D1AD788E /* RouteInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteInjector.swift; sourceTree = "<group>"; };
 		RCL000217 /* BackupHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistory.swift; sourceTree = "<group>"; };
 		RCL000218 /* BackupRunController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRunController.swift; sourceTree = "<group>"; };
 		RCL000219 /* BackupHistoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryDetailView.swift; sourceTree = "<group>"; };
+		56A2DC3E96AC40BBE5731A2E /* SettingsDesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDesignTokens.swift; sourceTree = "<group>"; };
+		C9AF1773AC8D74A60950ADB2 /* SettingsRowLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRowLabel.swift; sourceTree = "<group>"; };
 		RCL000220 /* BackupCategoryIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupCategoryIcon.swift; sourceTree = "<group>"; };
+		4B5AE72DEF5DD6AD9CFDCCCE /* ArtifactStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactStore.swift; sourceTree = "<group>"; };
 		RCL000221 /* BackupHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHUD.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -2002,6 +2022,7 @@
 		E5D000030 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+			F3FC498A0C4FA0C1FDBAE7AE /* Artifacts */,
 				E5CVSYNC00000000000000A1 /* ContentView */,
 				E5SRS0011 /* SessionRefreshScheduler.swift */,
 				F1V00014 /* Alarms */,
@@ -2015,6 +2036,14 @@
 				EAB000060 /* Sync */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		F3FC498A0C4FA0C1FDBAE7AE /* Artifacts */ = {
+			isa = PBXGroup;
+			children = (
+				4B5AE72DEF5DD6AD9CFDCCCE /* ArtifactStore.swift */,
+			);
+			path = Artifacts;
 			sourceTree = "<group>";
 		};
 		E5E000030 /* ShareExtension */ = {
@@ -2593,6 +2622,9 @@
 		F1V00011 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+			714B2FB8E943EEEFF4D4ABD8 /* SpeakModeSettings.swift */,
+			56A2DC3E96AC40BBE5731A2E /* SettingsDesignTokens.swift */,
+			C9AF1773AC8D74A60950ADB2 /* SettingsRowLabel.swift */,
 				AA0838A12F3B941A00049557 /* AboutView.swift */,
 				E5S000014 /* CloudSyncSettingsView.swift */,
 				E5G000013 /* EnhancedBackgroundSettingsView.swift */,
@@ -2692,9 +2724,23 @@
 		F1V00016 /* Skills */ = {
 			isa = PBXGroup;
 			children = (
+			C2BCBEC81BBAD3FF9F13DD7A /* SkillsCatalogView.swift */,
+			B0BF5E0FFCDE665F4EE1CE11 /* Domain */,
 				E5N0000132F3B941A00049557 /* SkillsManagementView.swift */,
 			);
 			path = Skills;
+			sourceTree = "<group>";
+		};
+		B0BF5E0FFCDE665F4EE1CE11 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				CEE46F8F3D7AC8F05AB9BC79 /* RouteEngine.swift */,
+				BB1AEE4C6FD0E1EACB7269F8 /* RouteRules.swift */,
+				97B81CEFDF10CE01D6BD2AD3 /* PersonaBodies.swift */,
+				EA987D8BF1506ACD3A6D5ADC /* RouteCatalogData.swift */,
+				EA2BBD7F3ADD6EB2D1AD788E /* RouteInjector.swift */,
+			);
+			path = Domain;
 			sourceTree = "<group>";
 		};
 		F1VMCPG0 /* MCP */ = {
@@ -3087,6 +3133,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			C1ABBAE04F74DE11AD581FBB /* ArtifactStore.swift in Sources */,
+			70FDBD7D90C73BE9A4EE10F6 /* SpeakModeSettings.swift in Sources */,
+			259EDCC62FF19625FAF41ACA /* SkillsCatalogView.swift in Sources */,
+			B4C1E8BC1AE0CBF6EEFFA362 /* RouteEngine.swift in Sources */,
+			F5FBEFBCD5DBB44798C1A4A1 /* RouteRules.swift in Sources */,
+			A7E765C3A3CACFCCFE7394BE /* PersonaBodies.swift in Sources */,
+			BC18F383DBC10BAB7DC775F2 /* RouteCatalogData.swift in Sources */,
+			A0DACE34CBAE606ED10BBDBA /* RouteInjector.swift in Sources */,
+			A8D0FEFCBE81AACC4F8AB89D /* SettingsDesignTokens.swift in Sources */,
+			A1FE29C53C0DA5DCA50C7C5B /* SettingsRowLabel.swift in Sources */,
 				AC0000202 /* ProviderCustomizationGenerated.swift in Sources */,
 				E54000AC1 /* DebugSkillGenerated.swift in Sources */,
 				E5FP00100 /* AppGroupChangeWatcher.swift in Sources */,
