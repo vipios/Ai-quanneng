@@ -143,6 +143,28 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
         self.declaresNoEffortTiers = declaresNoEffortTiers
     }
 
+    /// [R45-直连/在外模型] 返回一个只改 `id` / `displayName` 的副本，
+    /// 其余元数据（contextWindow、reasoning 等）原样保留。
+    func withId(_ newId: String) -> LLMModel {
+        var m = LLMModel(
+            id: newId,
+            displayName: newId,
+            provider: provider,
+            modalityOverride: modalityOverride,
+            contextWindow: contextWindow,
+            maxOutputTokens: maxOutputTokens,
+            supportsReasoning: supportsReasoning,
+            interleavedReasoningField: interleavedReasoningField,
+            reasoningEffortValues: reasoningEffortValues,
+            declaresNoEffortTiers: declaresNoEffortTiers
+        )
+        // 这些字段不进 init（运行期 enrich 后按手赋值），原样带过去。
+        m.voiceRole = voiceRole
+        m.limitsReportedByEndpoint = limitsReportedByEndpoint
+        m.effortDeclarationIsAuthoritative = effortDeclarationIsAuthoritative
+        return m
+    }
+
     // [T-anthropic-context-window] Explicit context/output caps per Anthropic's
     // model catalog: modern Opus/Sonnet 4.x & 5 and Fable 5 are 1M context;
     // Haiku 4.5 is 200K. Output: 128K (Opus/Fable), 64K (Sonnet/Haiku). Set

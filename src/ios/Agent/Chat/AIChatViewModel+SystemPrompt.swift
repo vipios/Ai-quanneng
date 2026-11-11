@@ -96,6 +96,10 @@ extension AIChatViewModel {
             + ((isHelper || !Self.toolEnabled(.agents)) ? "" : Self.subAgentRosterSection())
             + "- memory_write: Save a memory entry to today's daily log (YYYY-MM-DD.md). Use proactively to note user preferences, project patterns, and important context.\n"
             + "- memory_get: Recall memories with keyword search. Check memory at the start of new topics to leverage past knowledge.\n"
+            // [T-minis-gh-fallback-switch] 云编译兜底提示词，与工具注册同一开关，同生同死。
+            + (Self.toolEnabled(.githubBuild) && GitHubPush.shared.isReady
+               ? "- github_cloud_build: Send files to the user's GitHub repo and build them on a macOS runner. FALLBACK ONLY — see 'Cloud build fallback' below.\n"
+               : "")
             // [T-user-ask-prompt-consolidated] The only user_ask text in the
             // system prompt, and only when the tool is in this run (switch on,
             // not a sub agent). Everything else travels with the tool itself.
@@ -281,5 +285,24 @@ extension AIChatViewModel {
                 + "- This toggle is per-session. Other sessions may still have memory enabled.\n"
                 + "- SOUL.md (your persona / identity) is unaffected and remains active above."
         }
+    }
+
+    /// [T-minis-gh-fallback-switch] 云编译兜底段落。三段：何时该用、何时不该用、用户看得到什么。
+    var cloudBuildFallbackFragment: String {
+        guard Self.toolEnabled(.githubBuild), GitHubPush.shared.isReady else { return "" }
+        return "\n\n"
+            + "Cloud build fallback: ENABLED. The `github_cloud_build` tool sends files to the user's own GitHub "
+            + "repository (\(GitHubPush.shared.repo)) and runs a macOS GitHub Actions workflow there.\n"
+            + "- Use it ONLY as a fallback. First actually try to build in the sandbox — it has clang/gcc/make, "
+            + "and `apk add` can install more. If the build succeeds locally, you are done; do not also push it.\n"
+            + "- Escalate after local failure, or when the target plainly cannot be built here (needs Xcode, "
+            + "a macOS SDK, iOS signing, or a framework this rootfs does not have).\n"
+            + "- Do NOT escalate a genuine source error — a syntax error, missing import, undefined symbol, or "
+            + "wrong type produces the same failure in the cloud and burns the user's build minutes for nothing. "
+            + "Fix it here and retry locally.\n"
+            + "- Tell the user before pushing: which files, which repository, and why local failed. "
+            + "These are their repositories and the commits are visible to them.\n"
+            + "- Cloud runs are slow (minutes) and not free for private repos. One escalation per problem, "
+            + "not a retry loop."
     }
 }

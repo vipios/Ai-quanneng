@@ -43,6 +43,14 @@ enum LLMProviderFactory {
         guard let instance = store.instance(for: entry.providerInstanceId) else {
             throw FactoryError.noInstance
         }
+        // [R45-直连/在外模型] 中转站按线路覆盖模型：只改发给 API 的模型名，
+        // 保留 catalog 的 contextWindow / reasoning 等元数据（见 LLMModel.withId）。
+        let effectiveModel: LLMModel
+        if let overrideId = RelayProfileStore.shared.overrideModelId(for: entry.providerInstanceId) {
+            effectiveModel = entry.model.withId(overrideId)
+        } else {
+            effectiveModel = entry.model
+        }
         // [T-model-custom-params] / [T-opencode-dedicated-channel] One seam for
         // every OpenAI-family branch: the dedicated OpenCode channel, then the
         // entry's own overrides. Chained here rather than inside each `make*`
@@ -61,23 +69,23 @@ enum LLMProviderFactory {
         let openCode = finish
         switch instance.providerType {
         case .anthropic:
-            return makeAnthropicProvider(instance: instance, model: entry.model)
+            return makeAnthropicProvider(instance: instance, model: effectiveModel)
         case .gemini:
-            return await makeGeminiProvider(instance: instance, model: entry.model)
+            return await makeGeminiProvider(instance: instance, model: effectiveModel)
         case .openAI:
-            return openCode(makeOpenAIProvider(instance: instance, model: entry.model))
+            return openCode(makeOpenAIProvider(instance: instance, model: effectiveModel))
         case .antigravity:
-            return await makeAntigravityProvider(instance: instance, model: entry.model)
+            return await makeAntigravityProvider(instance: instance, model: effectiveModel)
         case .openRouter:
-            return openCode(makeOpenRouterProvider(instance: instance, model: entry.model))
+            return openCode(makeOpenRouterProvider(instance: instance, model: effectiveModel))
         case .openAIResponses:
-            return openCode(makeOpenAIResponsesProvider(instance: instance, model: entry.model))
+            return openCode(makeOpenAIResponsesProvider(instance: instance, model: effectiveModel))
         case .xAI:
-            return openCode(makeXAIProvider(instance: instance, model: entry.model))
+            return openCode(makeXAIProvider(instance: instance, model: effectiveModel))
         case .kimiCode:
-            return openCode(makeKimiProvider(instance: instance, model: entry.model))
+            return openCode(makeKimiProvider(instance: instance, model: effectiveModel))
         case .githubCopilot:
-            return openCode(makeCopilotProvider(instance: instance, model: entry.model))
+            return openCode(makeCopilotProvider(instance: instance, model: effectiveModel))
         case .unsupported:
             throw FactoryError.voiceOnlyProvider
         }
@@ -191,7 +199,8 @@ enum LLMProviderFactory {
     // MARK: - Per-Provider Builders
 
     static func makeAnthropicProvider(instance: ProviderInstance, model: LLMModel) -> AnthropicProvider {
-        let customBase = instance.effectiveCustomBaseURL
+        // [T-minis-relay-dual-base] requestBaseURL: 中继实例双地址按当前网络解析。
+        let customBase = instance.requestBaseURL
         let appendV1 = instance.appendV1Suffix
         // Only custom-base Anthropic-compat (proxy/relay) instances get a custom UA.
         // The OAuth (Claude Code) path below is deliberately excluded — its required
@@ -245,7 +254,8 @@ enum LLMProviderFactory {
     }
 
     static func makeOpenAIProvider(instance: ProviderInstance, model: LLMModel) -> OpenAIProvider {
-        let customBase = instance.effectiveCustomBaseURL
+        // [T-minis-relay-dual-base] requestBaseURL — see makeAnthropicProvider.
+        let customBase = instance.requestBaseURL
         let appendV1 = instance.appendV1Suffix
         // Mistral's chat-completions endpoint rejects `max_completion_tokens`
         // (newer OpenAI parameter name) and `stream_options` with HTTP 422,

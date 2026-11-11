@@ -253,7 +253,52 @@ extension AIChatViewModel {
             tools.append(Self.userAskToolDefinition)
         }
 
+        // [T-minis-gh-fallback-switch] 云编译兜底工具。
+        // 开关关着时根本不 append；配置不全（GitHubPush.isReady）也不给。
+        if Self.toolEnabled(.githubBuild) && GitHubPush.shared.isReady {
+            tools.append(Self.gitHubCloudBuildToolDefinition)
+        }
+
         return tools
+    }
+
+    // MARK: - 云编译兜底工具  [T-minis-gh-fallback-switch]
+
+    /// `github_cloud_build` 的定义。
+    static var gitHubCloudBuildToolDefinition: AgentToolDefinition {
+        AgentToolDefinition(
+            name: "github_cloud_build",
+            description: """
+            Send source files to the user's own GitHub repository and trigger a macOS GitHub Actions workflow to build them in the cloud. This is a FALLBACK: use it only after local compilation has actually failed in this Linux sandbox, or when the target obviously cannot be built locally (needs Xcode, needs a macOS SDK, or needs signing).
+
+            Always try local first. The sandbox already has compilers (clang/gcc/make) — check with `shell_execute` before reaching for this tool. Do NOT use it for code whose failure is a genuine source error (syntax error, missing import, wrong type): pushing broken source to the cloud costs build minutes and returns exactly the same error.
+
+            Before calling, make sure the repository and workflow are already configured by the user in Settings → GitHub. If `readiness` says it is not ready, tell the user what is missing instead of calling.
+
+            The tool pushes the given files as ONE commit, dispatches the workflow, and returns a run id plus a URL where the user can watch the log and download the artifact.
+            """,
+            parameters: [
+                "tool_title": AgentToolParam(
+                    type: .string,
+                    description: "A concise 5-10 word summary of what this cloud build does, shown to the user (e.g. 'Build iOS app in the cloud', 'Push and run cloud build'). IMPORTANT: ALWAYS write this title in Simplified Chinese, never in English."),
+                "files": AgentToolParam(
+                    type: .string,
+                    description: """
+                    JSON array of files to push, each: {"path": "<repo-relative path>", "source": "<absolute path inside the sandbox>", "binary": false}. Read from the sandbox with shell_execute/file_read first; do not paste file bodies into this argument — pass paths and let the tool read them.
+                    """),
+                "message": AgentToolParam(
+                    type: .string,
+                    description: "Commit message shown in the user's repository history."),
+                "reason": AgentToolParam(
+                    type: .string,
+                    description: "Why local compilation was not possible or failed. Shown to the user. Be specific: the failing command and the first error line."),
+                "inputs": AgentToolParam(
+                    type: .string,
+                    description: "Optional JSON object of workflow_dispatch inputs, e.g. {\"target\": \"Release\"}. Leave empty to use the workflow defaults."),
+            ],
+            required: ["tool_title", "files", "reason"],
+            propertyOrdering: ["tool_title", "files", "message", "reason", "inputs"]
+        )
     }
 
 }

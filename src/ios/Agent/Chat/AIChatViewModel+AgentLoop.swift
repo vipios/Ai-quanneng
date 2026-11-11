@@ -226,6 +226,10 @@ extension AIChatViewModel {
             userSystemPrompt += "\n\n" + behaviorFragment
         }
 
+        // [T-auto-route-inject] 一句话 → 域/人格/模式 → prompt 片段；判不出返回空串。
+        // 放在技能片段之前：能力域先定，技能 references 才挑得准。
+        userSystemPrompt += RouteInjector.promptFragment(for: agentHistory)
+
         // Inject enabled skill metadata into system prompt
         // [T-p1-delegate-task] A helper inherits the PARENT session's skill
         // and MCP enablement (the user configured those for the conversation
@@ -262,6 +266,8 @@ extension AIChatViewModel {
         // Authoritative memory-status footer (overrides any earlier
         // baseSystemPrompt mentions when memory is disabled).
         userSystemPrompt += memoryStatusFragment
+        // [T-minis-gh-fallback-switch] 开关关着或未配置时为空串，模型无从得知。
+        userSystemPrompt += cloudBuildFallbackFragment
 
         let promptBuildMs = (CFAbsoluteTimeGetCurrent() - loopSetupStart) * 1000
         logger.info("⏱️ [runAgentLoop] prompt build elapsed=\(String(format: "%.1f", promptBuildMs))ms history=\(self.agentHistory.count)")
@@ -1074,6 +1080,8 @@ extension AIChatViewModel {
                 if let behaviorFragment = newEntry.model.agentBehaviorPromptFragment {
                     userSystemPrompt += "\n\n" + behaviorFragment
                 }
+                // [T-auto-route-inject] 兜底换 provider 不丢本轮自动判定；重算而非缓存传参。
+                userSystemPrompt += RouteInjector.promptFragment(for: agentHistory)
                 // [T-ios-helper-fallback-parent-skills] Same key as the setup
                 // path: a helper uses its PARENT's skill / MCP enablement.
                 // Keying on the child id here made a sub-agent that fell back
@@ -1100,6 +1108,8 @@ extension AIChatViewModel {
                     }
                 }
                 userSystemPrompt += memoryStatusFragment
+                // [T-minis-gh-fallback-switch] 与主路径同一门禁；兜底换线不能复活被关工具。
+                userSystemPrompt += cloudBuildFallbackFragment
                 fallbackTrigger += 1
                 if !fallbackReasons.isEmpty {
                     // Resync the assistant message index by its stable id before

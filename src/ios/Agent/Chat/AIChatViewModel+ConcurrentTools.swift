@@ -1049,6 +1049,16 @@ extension AIChatViewModel {
                 toolSuccess = helperResult.success
             }
 
+        case GitHubCloudBuildTool.name:
+            // [T-minis-gh-fallback-switch] 第三道门：请求发出后用户中途关开关，
+            // 排队到这次调用时必须失败。execute() 内部会再判一次同一开关。
+            let ghResult = await GitHubCloudBuildTool.execute(args: toolArgs)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = ghResult.output
+            }
+            toolOutput = ghResult.output
+            toolSuccess = ghResult.success
+
         default:
             toolOutput = "Error: Unknown tool '\(tu.name)'"
             toolSuccess = false
