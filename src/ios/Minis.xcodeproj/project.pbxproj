@@ -638,6 +638,12 @@
 		9BF0BCCADAFECBAACB46C29F /* RelaySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 177B2BDEF0ABAEB6BDE1FD3A /* RelaySettingsView.swift */; };
 		E119A3B4B3A1FDED3DDCAEDE /* RelayProviderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0AF1F7C48BAEC98C5FCA49D /* RelayProviderSettings.swift */; };
 		D84ECEC1BCA13B50CB53A6F5 /* AddRelayProviderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214ABCF4BB16AE90AADA0496 /* AddRelayProviderView.swift */; };
+		BF000000000000000000GH01 /* BuildFallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = RF000000000000000000GH01 /* BuildFallback.swift */; };
+		GA000000000000000000GH02 /* GitHubAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = RG000000000000000000GH02 /* GitHubAccountView.swift */; };
+		AU000000000000000000GH03 /* GitHubAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = RA000000000000000000GH03 /* GitHubAuth.swift */; };
+		CB000000000000000000GH04 /* GitHubCloudBuildTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = RC000000000000000000GH04 /* GitHubCloudBuildTool.swift */; };
+		PU000000000000000000GH05 /* GitHubPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = RP000000000000000000GH05 /* GitHubPush.swift */; };
+		ST000000000000000000GH06 /* GitHubStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = RS000000000000000000GH06 /* GitHubStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1470,6 +1476,12 @@
 		177B2BDEF0ABAEB6BDE1FD3A /* RelaySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelaySettingsView.swift; sourceTree = "<group>"; };
 		D0AF1F7C48BAEC98C5FCA49D /* RelayProviderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayProviderSettings.swift; sourceTree = "<group>"; };
 		214ABCF4BB16AE90AADA0496 /* AddRelayProviderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRelayProviderView.swift; sourceTree = "<group>"; };
+		RF000000000000000000GH01 /* BuildFallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildFallback.swift; sourceTree = "<group>"; };
+		RG000000000000000000GH02 /* GitHubAccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubAccountView.swift; sourceTree = "<group>"; };
+		RA000000000000000000GH03 /* GitHubAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubAuth.swift; sourceTree = "<group>"; };
+		RC000000000000000000GH04 /* GitHubCloudBuildTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubCloudBuildTool.swift; sourceTree = "<group>"; };
+		RP000000000000000000GH05 /* GitHubPush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubPush.swift; sourceTree = "<group>"; };
+		RS000000000000000000GH06 /* GitHubStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubStore.swift; sourceTree = "<group>"; };
 		EA2BBD7F3ADD6EB2D1AD788E /* RouteInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteInjector.swift; sourceTree = "<group>"; };
 		RCL000217 /* BackupHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistory.swift; sourceTree = "<group>"; };
 		RCL000218 /* BackupRunController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRunController.swift; sourceTree = "<group>"; };
@@ -2641,6 +2653,7 @@
 			isa = PBXGroup;
 			children = (
 			6B2A26CBE1BBD2AF6BB3E13D /* Relay */,
+			GR000000000000000000GH00 /* GitHub */,
 			714B2FB8E943EEEFF4D4ABD8 /* SpeakModeSettings.swift */,
 			56A2DC3E96AC40BBE5731A2E /* SettingsDesignTokens.swift */,
 			C9AF1773AC8D74A60950ADB2 /* SettingsRowLabel.swift */,
@@ -2696,6 +2709,19 @@
 				214ABCF4BB16AE90AADA0496 /* AddRelayProviderView.swift */,
 			);
 			path = Relay;
+			sourceTree = "<group>";
+		};
+		GR000000000000000000GH00 /* GitHub */ = {
+			isa = PBXGroup;
+			children = (
+				RF000000000000000000GH01 /* BuildFallback.swift */,
+				RG000000000000000000GH02 /* GitHubAccountView.swift */,
+				RA000000000000000000GH03 /* GitHubAuth.swift */,
+				RC000000000000000000GH04 /* GitHubCloudBuildTool.swift */,
+				RP000000000000000000GH05 /* GitHubPush.swift */,
+				RS000000000000000000GH06 /* GitHubStore.swift */,
+			);
+			path = GitHub;
 			sourceTree = "<group>";
 		};
 		F1V00012 /* Providers */ = {
@@ -3177,6 +3203,12 @@
 			9BF0BCCADAFECBAACB46C29F /* RelaySettingsView.swift in Sources */,
 			E119A3B4B3A1FDED3DDCAEDE /* RelayProviderSettings.swift in Sources */,
 			D84ECEC1BCA13B50CB53A6F5 /* AddRelayProviderView.swift in Sources */,
+			BF000000000000000000GH01 /* BuildFallback.swift in Sources */,
+			GA000000000000000000GH02 /* GitHubAccountView.swift in Sources */,
+			AU000000000000000000GH03 /* GitHubAuth.swift in Sources */,
+			CB000000000000000000GH04 /* GitHubCloudBuildTool.swift in Sources */,
+			PU000000000000000000GH05 /* GitHubPush.swift in Sources */,
+			ST000000000000000000GH06 /* GitHubStore.swift in Sources */,
 			C1ABBAE04F74DE11AD581FBB /* ArtifactStore.swift in Sources */,
 			70FDBD7D90C73BE9A4EE10F6 /* SpeakModeSettings.swift in Sources */,
 			259EDCC62FF19625FAF41ACA /* SkillsCatalogView.swift in Sources */,

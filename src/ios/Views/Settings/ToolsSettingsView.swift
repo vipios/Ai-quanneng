@@ -35,6 +35,13 @@ enum AgentToolSwitch: String, CaseIterable {
     /// [T-user-ask] Default ON. Exposure also needs an interactive run
     /// (AIChatViewModel.computeUserAskExposure).
     case userAsk = "agent.tools.userAsk.enabled"
+    /// [T-minis-gh-fallback-switch] 云端编译兜底。Default OFF.
+    ///
+    /// 用户主动授权才存在：默认开着等于把代码往用户的 GitHub 仓库推
+    /// 变成默认行为，那是错的。挂在这个 enum 里白拿现成三道门：
+    /// makeAgentTools() 不 append、system prompt 不出那几句、
+    /// ConcurrentTools 派发器对残留调用兜底拒绝。三处都读 isEnabled。
+    case githubBuild = "agent.tools.githubBuild.enabled"
 
     var key: String { rawValue }
 
@@ -60,6 +67,8 @@ enum AgentToolSwitch: String, CaseIterable {
         case .browser: return true
         case .agents: return true
         case .userAsk: return UserAskSettings.defaultEnabled
+        // [T-minis-gh-fallback-switch] 默认必须是 false。
+        case .githubBuild: return false
         }
     }
 
@@ -80,6 +89,7 @@ enum AgentToolSwitch: String, CaseIterable {
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
         case UserAskTool.name: return .userAsk
+        case "github_cloud_build": return .githubBuild
         default: return nil
         }
     }
@@ -123,6 +133,8 @@ enum AgentToolSwitch: String, CaseIterable {
 
 struct ToolsSettingsView: View {
     @AppStorage(AgentToolSwitch.browser.key) private var browserEnabled: Bool = AgentToolSwitch.browser.defaultValue
+    // [T-minis-gh-fallback-switch] 默认 false，见 AgentToolSwitch.githubBuild。
+    @AppStorage(AgentToolSwitch.githubBuild.key) private var githubBuildEnabled: Bool = AgentToolSwitch.githubBuild.defaultValue
     // [T-user-ask]
     @AppStorage(UserAskSettings.enabledKey) private var userAskEnabled: Bool = UserAskSettings.defaultEnabled
     @AppStorage(UserAskSettings.timeoutMinutesKey) private var userAskTimeout: Int = UserAskSettings.defaultTimeoutMinutes
@@ -136,6 +148,7 @@ struct ToolsSettingsView: View {
             } footer: {
                 Text(AppLocalized("Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all."))
             }
+            githubBuildSection
             userAskSections
             // [T-sub-agents-v1] No Agents section here, and deliberately not
             // even a read-only pointer row: the switch belongs to the Sub Agents
@@ -146,6 +159,28 @@ struct ToolsSettingsView: View {
         .task {
             let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
             notificationsDenied = status == .denied
+        }
+    }
+
+    // MARK: - [T-minis-gh-fallback-switch] 云端编译兜底
+
+    /// 与 GitHub 账号页里的那个开关是同一个存储键，两处拨都一样。
+    @ViewBuilder
+    private var githubBuildSection: some View {
+        Section {
+            toolRow(AppLocalized("Cloud Build Fallback"),
+                    tool: "github_cloud_build",
+                    icon: "cloud.bolt",
+                    isOn: $githubBuildEnabled)
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(AppLocalized("Lets the assistant push code to your own GitHub repository and build it on a macOS runner — but only as a fallback, after building locally has failed. When off, the tool is removed from every conversation: the assistant does not know it exists."))
+                if githubBuildEnabled && !GitHubPush.shared.isReady {
+                    Text(AppLocalized("Not configured yet: \(GitHubPush.shared.readinessHint). Open Settings › Storage › GitHub Account to finish setting it up."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
         }
     }
 

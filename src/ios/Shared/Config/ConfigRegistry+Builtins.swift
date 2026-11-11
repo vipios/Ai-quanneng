@@ -1337,6 +1337,16 @@ extension ConfigRegistry {
             userDefaultsKey: AgentToolSwitch.agents.key,
             defaultValue: AgentToolSwitch.agents.defaultValue
         ))
+        // [T-minis-gh-fallback-switch] 云端编译兜底。默认 false。
+        // 注册进 CLI 是为了可脚本化 + 可测成本；仓库、分支、workflow 仍要在
+        // App 里配（那些是 GitHubPush 的 UserDefaults 键，不属于 chat.* 命名空间）。
+        r.register(AppStorageBoolField(
+            path: "chat.tools.githubCloudBuild",
+            displayName: "Cloud Build Fallback tool",
+            description: "Whether the assistant is offered github_cloud_build — pushing code to the user's own GitHub repo to build on a macOS runner. Off by default. When off the tool is removed from the schema entirely and the system prompt says nothing about it, so the model never learns it exists. Enabling it does nothing until a repo, branch and workflow are configured in Settings › Storage › GitHub Account.",
+            userDefaultsKey: AgentToolSwitch.githubBuild.key,
+            defaultValue: AgentToolSwitch.githubBuild.defaultValue
+        ))
         r.register(AppStorageBoolField(
             path: "chat.toolPreview",
             displayName: "Tool preview",
