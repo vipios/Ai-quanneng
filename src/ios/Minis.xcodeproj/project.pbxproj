@@ -629,6 +629,15 @@
 		BC18F383DBC10BAB7DC775F2 /* RouteCatalogData.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA987D8BF1506ACD3A6D5ADC /* RouteCatalogData.swift */; };
 		A0DACE34CBAE606ED10BBDBA /* RouteInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA2BBD7F3ADD6EB2D1AD788E /* RouteInjector.swift */; };
 		C1ABBAE04F74DE11AD581FBB /* ArtifactStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B5AE72DEF5DD6AD9CFDCCCE /* ArtifactStore.swift */; };
+		32CAC4B019BD832A9BC99B0A /* RelayRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8DF6DB6ACDC9FF2897FCCC /* RelayRoute.swift */; };
+		458BB7CE61EE347CB9CA4FA3 /* RelayVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FBFBDC9CAADA5BEF46F65D5 /* RelayVault.swift */; };
+		1CD6BDDC1B4CAC5A0AD0E8DA /* RelayBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = F526CE1EFB15BF21E8EB4ECA /* RelayBackend.swift */; };
+		56E7DEEDD7E2F20716AC9A72 /* RelayStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C769FFAAD9328BAF52DFAE10 /* RelayStore.swift */; };
+		B5F1AEF0DB188C9BFDD8DB61 /* RelayRouterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF3BFEB74811BD5DBBE7E66B /* RelayRouterView.swift */; };
+		9BF4FB2B0A5383ECFFDCE576 /* RelayAdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25B4C6A30223D6DEEE5E297 /* RelayAdminView.swift */; };
+		9BF0BCCADAFECBAACB46C29F /* RelaySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 177B2BDEF0ABAEB6BDE1FD3A /* RelaySettingsView.swift */; };
+		E119A3B4B3A1FDED3DDCAEDE /* RelayProviderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0AF1F7C48BAEC98C5FCA49D /* RelayProviderSettings.swift */; };
+		D84ECEC1BCA13B50CB53A6F5 /* AddRelayProviderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214ABCF4BB16AE90AADA0496 /* AddRelayProviderView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1452,6 +1461,15 @@
 		BB1AEE4C6FD0E1EACB7269F8 /* RouteRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteRules.swift; sourceTree = "<group>"; };
 		97B81CEFDF10CE01D6BD2AD3 /* PersonaBodies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonaBodies.swift; sourceTree = "<group>"; };
 		EA987D8BF1506ACD3A6D5ADC /* RouteCatalogData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteCatalogData.swift; sourceTree = "<group>"; };
+		CE8DF6DB6ACDC9FF2897FCCC /* RelayRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRoute.swift; sourceTree = "<group>"; };
+		5FBFBDC9CAADA5BEF46F65D5 /* RelayVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayVault.swift; sourceTree = "<group>"; };
+		F526CE1EFB15BF21E8EB4ECA /* RelayBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayBackend.swift; sourceTree = "<group>"; };
+		C769FFAAD9328BAF52DFAE10 /* RelayStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayStore.swift; sourceTree = "<group>"; };
+		EF3BFEB74811BD5DBBE7E66B /* RelayRouterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRouterView.swift; sourceTree = "<group>"; };
+		A25B4C6A30223D6DEEE5E297 /* RelayAdminView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayAdminView.swift; sourceTree = "<group>"; };
+		177B2BDEF0ABAEB6BDE1FD3A /* RelaySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelaySettingsView.swift; sourceTree = "<group>"; };
+		D0AF1F7C48BAEC98C5FCA49D /* RelayProviderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayProviderSettings.swift; sourceTree = "<group>"; };
+		214ABCF4BB16AE90AADA0496 /* AddRelayProviderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRelayProviderView.swift; sourceTree = "<group>"; };
 		EA2BBD7F3ADD6EB2D1AD788E /* RouteInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteInjector.swift; sourceTree = "<group>"; };
 		RCL000217 /* BackupHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistory.swift; sourceTree = "<group>"; };
 		RCL000218 /* BackupRunController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRunController.swift; sourceTree = "<group>"; };
@@ -2622,6 +2640,7 @@
 		F1V00011 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+			6B2A26CBE1BBD2AF6BB3E13D /* Relay */,
 			714B2FB8E943EEEFF4D4ABD8 /* SpeakModeSettings.swift */,
 			56A2DC3E96AC40BBE5731A2E /* SettingsDesignTokens.swift */,
 			C9AF1773AC8D74A60950ADB2 /* SettingsRowLabel.swift */,
@@ -2661,6 +2680,22 @@
 				E5LOCK103 /* AppLockOverlay.swift */,
 			);
 			path = Settings;
+			sourceTree = "<group>";
+		};
+		6B2A26CBE1BBD2AF6BB3E13D /* Relay */ = {
+			isa = PBXGroup;
+			children = (
+				CE8DF6DB6ACDC9FF2897FCCC /* RelayRoute.swift */,
+				5FBFBDC9CAADA5BEF46F65D5 /* RelayVault.swift */,
+				F526CE1EFB15BF21E8EB4ECA /* RelayBackend.swift */,
+				C769FFAAD9328BAF52DFAE10 /* RelayStore.swift */,
+				EF3BFEB74811BD5DBBE7E66B /* RelayRouterView.swift */,
+				A25B4C6A30223D6DEEE5E297 /* RelayAdminView.swift */,
+				177B2BDEF0ABAEB6BDE1FD3A /* RelaySettingsView.swift */,
+				D0AF1F7C48BAEC98C5FCA49D /* RelayProviderSettings.swift */,
+				214ABCF4BB16AE90AADA0496 /* AddRelayProviderView.swift */,
+			);
+			path = Relay;
 			sourceTree = "<group>";
 		};
 		F1V00012 /* Providers */ = {
@@ -3133,6 +3168,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			32CAC4B019BD832A9BC99B0A /* RelayRoute.swift in Sources */,
+			458BB7CE61EE347CB9CA4FA3 /* RelayVault.swift in Sources */,
+			1CD6BDDC1B4CAC5A0AD0E8DA /* RelayBackend.swift in Sources */,
+			56E7DEEDD7E2F20716AC9A72 /* RelayStore.swift in Sources */,
+			B5F1AEF0DB188C9BFDD8DB61 /* RelayRouterView.swift in Sources */,
+			9BF4FB2B0A5383ECFFDCE576 /* RelayAdminView.swift in Sources */,
+			9BF0BCCADAFECBAACB46C29F /* RelaySettingsView.swift in Sources */,
+			E119A3B4B3A1FDED3DDCAEDE /* RelayProviderSettings.swift in Sources */,
+			D84ECEC1BCA13B50CB53A6F5 /* AddRelayProviderView.swift in Sources */,
 			C1ABBAE04F74DE11AD581FBB /* ArtifactStore.swift in Sources */,
 			70FDBD7D90C73BE9A4EE10F6 /* SpeakModeSettings.swift in Sources */,
 			259EDCC62FF19625FAF41ACA /* SkillsCatalogView.swift in Sources */,

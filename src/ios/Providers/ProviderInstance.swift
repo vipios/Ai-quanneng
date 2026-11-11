@@ -205,12 +205,39 @@ struct ProviderInstance: Identifiable, Codable, Hashable {
         return url.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// [T-minis-relay-dual-base] Base URL for **sending requests**, with the
+    /// dual-address relay applied.
+    ///
+    /// A "relay" instance stores TWO addresses (LAN + WAN) and picks one per
+    /// the current network. Which one is in effect lives in a side table keyed
+    /// by `id` (`RelayProfileMirror`), because `ProviderInstance` is a value
+    /// type shared across threads and decoded from JSON in several places —
+    /// adding fields here would ripple through sync, migration and import.
+    ///
+    /// Use this instead of `effectiveCustomBaseURL` **only where the base is
+    /// fed into a request**. Provenance decisions (vendor template matching,
+    /// channel detection, thinking-rule matching) must keep reading
+    /// `effectiveCustomBaseURL`: those compare against known vendor hosts, and
+    /// swapping in the LAN address would silently break the match.
+    ///
+    /// Non-relay instances get `effectiveCustomBaseURL` verbatim, so nothing
+    /// changes for them.
+    var requestBaseURL: String? {
+        if let relayURL = RelayProfileMirror.shared.url(for: id),
+           !relayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return relayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return effectiveCustomBaseURL
+    }
+
     /// Returns the base URL to use for API requests.
     /// - When no custom URL is set, returns `defaultBase`.
     /// - When `appendV1Suffix` is true (default), strips any trailing "/v1" so callers can safely append "/v1/...".
     /// - When `appendV1Suffix` is false, returns the custom URL verbatim (no strip, no append by caller).
     func resolvedBaseURL(default defaultBase: String) -> (url: String, appendV1: Bool) {
-        guard let custom = effectiveCustomBaseURL else {
+        // [T-minis-relay-dual-base] requestBaseURL, not effectiveCustomBaseURL —
+        // see requestBaseURL's doc comment.
+        guard let custom = requestBaseURL else {
             return (normalizeV1(defaultBase), true)
         }
         if appendV1Suffix {
