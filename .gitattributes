@@ -1,0 +1,118 @@
+# ============================================================
+# 换行符归一 —— 这个文件是必需的，不是可选的美化。
+#
+# 背景：Windows 上 git 默认 core.autocrlf=true，会把检出的文本
+# 全部改成 CRLF，再以 LF 存回仓库。问题出在 checkout 方向：
+# 在 Windows 上写好的 .sh，推到 GitHub 后，macOS runner 检出来
+# 如果带了 CR，shebang 就变成 `#!/bin/sh^M`，执行时报
+#   /bin/sh^M: bad interpreter: No such file or directory
+# 构建脚本一挂，整个 workflow 直接失败，而且报错完全看不出根因。
+#
+# 所以：能执行的一律锁 LF，二进制一律不碰。
+# ============================================================
+
+# ── 默认：交给 git 自己判断，文本按 LF 归一 ──
+* text=auto eol=lf
+
+# ── 可执行脚本 / 构建文件：强制 LF，且不可被 autocrlf 改写 ──
+*.sh            text eol=lf
+*.bash          text eol=lf
+*.zsh           text eol=lf
+*.py            text eol=lf
+*.rb            text eol=lf
+*.pl            text eol=lf
+*.mk            text eol=lf
+Makefile        text eol=lf
+makefile        text eol=lf
+GNUmakefile     text eol=lf
+*.cmake         text eol=lf
+CMakeLists.txt  text eol=lf
+*.service       text eol=lf
+*.plist         text eol=lf
+*.conf          text eol=lf
+*.toml          text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+Dockerfile      text eol=lf
+*.podspec       text eol=lf
+
+# ── 源码：LF。Swift/Kotlin/Java 都不介意，但统一了 diff 才干净 ──
+*.swift         text eol=lf
+*.kt            text eol=lf
+*.kts           text eol=lf
+*.java          text eol=lf
+*.c             text eol=lf
+*.h             text eol=lf
+*.cpp           text eol=lf
+*.hpp           text eol=lf
+*.m             text eol=lf
+*.mm            text eol=lf
+*.go            text eol=lf
+*.rs            text eol=lf
+*.ts            text eol=lf
+*.tsx           text eol=lf
+*.js            text eol=lf
+*.mjs           text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+*.txt           text eol=lf
+*.html          text eol=lf
+*.css           text eol=lf
+*.xml           text eol=lf
+*.pbxproj       text eol=lf
+*.xcconfig      text eol=lf
+*.entitlements  text eol=lf
+*.strings       text eol=lf
+*.xcscheme      text eol=lf
+*.xcworkspacedata text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+.gitmodules     text eol=lf
+
+# ── 二进制：一律不转换，也不参与文本 diff ──
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.webp          binary
+*.ico           binary
+*.icns          binary
+*.pdf           binary
+*.zip           binary
+*.gz            binary
+*.tgz           binary
+*.bz2           binary
+*.xz            binary
+*.tar           binary
+*.7z            binary
+*.a             binary
+*.so            binary
+*.dylib         binary
+*.framework/**  binary
+*.xcframework/** binary
+*.apk           binary
+*.aar           binary
+*.jar           binary
+*.db            binary
+*.sqlite        binary
+*.sqlite3       binary
+*.ttf           binary
+*.otf           binary
+*.woff          binary
+*.woff2         binary
+*.dict          binary
+*.utf8          binary
+*.car           binary
+*.nib           binary
+*.storyboardc   binary
+
+# ── 语言文件是大型 JSON，不做逐行 diff，避免把 review 卡死 ──
+Localizable.xcstrings linguist-generated=true -diff
+*.pbxproj             linguist-generated=true -diff
+
+# ── 第三方来源标清楚，GitHub 语言统计别把它们算成我们写的 ──
+deps/lame-3.100/**    linguist-vendored
+deps/rclone-mobile/** linguist-vendored
+deps/talloc/**        linguist-vendored
+deps/ffmpeg-patch/**  linguist-vendored
+deps/aot/**           linguist-vendored

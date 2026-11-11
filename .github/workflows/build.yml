@@ -1,0 +1,1115 @@
+# ============================================================
+# 全能AI · iOS 出包 workflow
+#
+# 这个文件解决三件在真机上验证过会失败的事，逐条写清楚，免得以后
+# 有人「顺手改回去」又踩一遍：
+#
+# 1. runner 必须是 macos-26（理由不是部署目标，别搞混）
+#    主 App target 的 IPHONEOS_DEPLOYMENT_TARGET 其实是 **16.0**
+#    （扩展 16.0 / Widget 16.2，只有 MinisTests 和 MinisUITests 是 26.2）。
+#    部署目标低不等于能用旧 SDK 编 —— 代码里有大量
+#    `@available(iOS 26.0, *)` 分支，并且直接引用了 iOS 26 才有的
+#    框架符号（AlarmKit 的 alarmkit_is_usable、BackgroundAssets 的
+#    BGContinuedProcessingTask 等）。这些**声明**来自 SDK 头文件，
+#    旧 SDK 里压根不存在，编译期就报 undeclared。
+#    所以 macos-26 是为了拿 iOS 26.x SDK，跟部署目标 16.0 不矛盾：
+#    部署目标是「最低能装到哪」，SDK 是「用什么编」。
+#    macos-14 自带 Xcode 15/16（SDK 18.x），一编就报
+#    "building for iOS 16.0, but the SDK is 18.x" 之后还会撞 undeclared。
+#
+# 2. 原生依赖必须先编，不能跳过
+#    Xcode 工程按相对路径引用 deps/libs、deps/include、deps/frameworks、
+#    deps/resources。这四样都不在仓库里（都是 .gitignore 掉的构建产物），
+#    clone 下来是空的。不先跑 deps/ 下的脚本，链接阶段必然一堆
+#    undefined symbol。顺序不能调：FFmpeg 链 LAME，所以 LAME 先。
+#
+# 3. 必须用 xcrun 取的 iPhoneOS SDK，且不能有 CRLF
+#    .gitattributes 已经把 .sh/.swift/.pbxproj 全锁成 LF。Windows 上
+#    core.autocrlf=true 检出的 CRLF 会让 shebang 变 `#!/bin/sh^M`。
+#    不写死 26.2 这个版本号 —— runner 镜像会升级，写死了反而脆。
+#
+# 内存：见 Build 步骤里的 -jobs。macos-26 上 xcodebuild 默认按核心数开
+#    swift-frontend，十几个一起会 OOM 被杀（日志零 error: 全是 warning）。
+#    不要再往 env 里加 SWIFT_ENABLE_EXPLICIT_MODULES=NO，那是反效果。
+#
+# 产物说明：
+#    workflow 用 CODE_SIGNING_ALLOWED=NO 编，但**出包前会做 ad-hoc 重签**，
+#    把 entitlements（含 App Group）写回二进制。
+#    为什么要这一步：App Group 是 entitlement，不给就 containerURL(...) 返回
+#    nil，上游代码对返回值做了 `!`，运行时直接 brk #1 闪退（EXC_BREAKPOINT）。
+#    ad-hoc 签名（codesign --sign -）不要证书、不要 profile，签名结构里
+#    有 entitlements 槽位，写进去运行时就能读到。
+#    TrollStore / TrollStore Lite 安装时保留 entitlements（官方 README 明确写的）。
+#    要出 App Store / TestFlight 那种真证书签名，才需要证书 + profile，
+#    那属于另一条签名路线，不在这里做。
+# ============================================================
+
+name: Build iOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: '编译配置'
+        required: true
+        type: choice
+        options: [Release, Debug]
+        default: Release
+      note:
+        description: '说明（会写进 artifact 名和 Summary）'
+        required: false
+        default: ''
+
+  push:
+    branches: [main]
+    # 这里曾经只写 '.github/workflows/build.yml' 一条，结果是：
+    # 改了 Swift / pbxproj 推上去，什么都不跑，还得手动 dispatch 一次。
+    # 出包是这个仓库唯一的产出，源码变了就该跑。文档和截图不触发。
+    paths:
+      - '.github/workflows/build.yml'
+      - 'src/ios/**'
+      - 'deps/**'
+      - 'scripts/**'
+
+# 同一分支只跑一个，新的顶掉旧的 —— macOS runner 按 10 倍计费，
+# 排队跑两份等于白烧额度
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  # contents: write —— 发布 Release 需要它。
+  # 原来是 read：只上传 artifact 确实够用，但那样就产不出可点击的直链，
+  # 每次都得在本地把包下回来再手工发 Release（见「Publish release」那一步的注释）。
+  contents: write
+
+jobs:
+  build-ios:
+    name: Build iOS (${{ inputs.configuration || 'Release' }})
+    runs-on: macos-26
+    timeout-minutes: 120
+
+    env:
+      # 用固定的 DerivedData 路径，后面缓存和产物收集都认这个
+      DERIVED: ${{ github.workspace }}/build
+      CONFIG: ${{ inputs.configuration || 'Release' }}
+      # ── 内存控制 ──
+      #
+      # ⚠️ 这里曾经写着 BUILD_JOBS / SWIFT_DRIVER_JOBS / SWIFT_COMPILATION_MODE
+      # 三个 env，并在注释里声称它们压住了内存。**那是错的，已删**：
+      #
+      #   xcodebuild 的 build settings 只从两个地方读 —— 命令行的 KEY=VALUE、
+      #   工程文件（pbxproj / xcconfig）。环境变量不在其列。写成 env: 的
+      #   SWIFT_COMPILATION_MODE 对 xcodebuild 完全透明，实际生效的一直是
+      #   pbxproj 里 project 级 Release 的 SWIFT_COMPILATION_MODE = wholemodule。
+      #
+      #   所以 run #15 / #16 / #24 一直是「按 WMO 编、被 OOM 杀掉」，
+      #   而日志看起来像是「加了内存控制还是挂」。真正的开关全部搬到
+      #   Build 步骤的命令行里，见那一步的注释。
+      #
+      # BUILD_JOBS 仍然有用：它被 Build 步骤当 `-jobs` 的参数读，那个是
+      # xcodebuild 自己的命令行选项，不涉及 build settings 的读取规则。
+      BUILD_JOBS: 2
+
+    steps:
+      # ── 0. 打印环境，失败时日志第一段就能定位是不是环境问题 ──
+      - name: Environment
+        run: |
+          set -x
+          sw_vers
+          uname -m
+          xcodebuild -version
+          xcode-select -p
+          echo "--- runtimes ---"
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphoneos --show-sdk-path
+          echo "--- disk ---"
+          df -h /
+
+      # ── 1. 拉代码（含子模块）──
+      # deps/ish 和 deps/proot 是 gitlink，必须 recursive，否则拿到空目录
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          # 子模块在上游公共仓库，用默认 token 就够
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify submodules
+        run: |
+          # 这两个目录空了说明 submodules 没拉到，后面 build_ish.sh 会挂
+          for d in deps/ish deps/proot; do
+            n=$(ls -A "$d" 2>/dev/null | wc -l | tr -d ' ')
+            echo "$d: $n entries"
+            if [ "$n" = "0" ]; then
+              echo "::error::$d 是空的，submodule 没拉到。检查 .gitmodules 与上游仓库是否可达。"
+              exit 1
+            fi
+          done
+
+      # ── 2. 装工具链 ──
+      # runner 预装了 Xcode 26.6 和 ninja，但 Go / meson / libarchive /
+      # pkg-config 没有，必须自己装。llvm 用来编 iSH 的 guest VDSO。
+      - name: Install toolchain
+        run: |
+          # lld 必须显式装：deps/ish/vdso/arm64/meson.build 把 -fuse-ld=lld 写死了，
+          # 但 homebrew 的 llvm（23.x 起）不再随附 lld，只有 bin/clang。
+          # 缺它 → guest VDSO 链接失败 → "invalid linker name in argument '-fuse-ld=lld'"。
+          #
+          # lld 不是 keg-only，formula 里用 link_overwrite 直接装进
+          # /opt/homebrew/bin/{ld.lld,lld}，所以不用额外改 PATH。
+          #
+          # 注意这里故意不装 go —— 版本必须钉死，见下一步。
+          brew install --quiet meson libarchive pkg-config llvm ninja lld
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          # meson 装到 brew 的 python 里，确保 PATH 能找到
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      # Go 版本必须钉死，不能用 brew 的最新版。
+      # deps/rclone-mobile/go.mod 声明 go 1.25.5，其中间接依赖
+      # go-json-experiment/json 是按 1.25 的 encoding/json 内部 API 写的；
+      # 换到 1.27 会直接编译失败：
+      #   alias.go:618:21: undefined: json.SkipFunc
+      #   alias.go:957:14: undefined: json.DiscardUnknownMembers
+      # 装 1.25 分支最新补丁版，既不碰上游 go.mod，也留了安全修复。
+      - name: Install Go 1.25.x
+        run: |
+          set -e
+          GO_VER="1.25.14"
+          GO_SHA="5b26c0b6f308240fca2614fb02f622cfcc8c0cc3b69c78bba4845489a4590259"
+          GO_TARBALL="go${GO_VER}.darwin-arm64.tar.gz"
+          GO_ROOT="$RUNNER_TEMP/goroot"
+
+          echo "downloading go${GO_VER}"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$GO_TARBALL" \
+            "https://go.dev/dl/$GO_TARBALL"
+
+          # 校验 sha256：拿错包 / 被劫持 / 下载截断，这里就拦住
+          echo "$GO_SHA  $RUNNER_TEMP/$GO_TARBALL" | shasum -a 256 -c -
+
+          rm -rf "$GO_ROOT"
+          mkdir -p "$GO_ROOT"
+          tar -C "$GO_ROOT" --strip-components=1 -xzf "$RUNNER_TEMP/$GO_TARBALL"
+
+          "$GO_ROOT/bin/go" version
+          echo "$GO_ROOT/bin" >> "$GITHUB_PATH"
+
+      - name: Verify toolchain
+        run: |
+          set -e
+          # GITHUB_PATH 是给后续步骤用的，本步骤里不生效，自己补一次
+          export PATH="$RUNNER_TEMP/goroot/bin:$(brew --prefix llvm)/bin:$(brew --prefix)/bin:$PATH"
+
+          go version
+          # 挡住 Go 版本又漂回新版 —— 那样 rclone 会以一堆 undefined 报错
+          if ! go version | grep -q 'go1\.25\.'; then
+            echo "::error::Go 版本不是 1.25.x，rclone 会编译失败（见 Install Go 1.25.x 的注释）"
+            exit 1
+          fi
+          meson --version
+          ninja --version
+          echo "llvm: $(brew --prefix llvm)"
+
+          # lld 三查：装没装、PATH 里找不找得到、能不能真链出 aarch64 ELF。
+          # 只查"文件存在"不够 —— clang 的 -fuse-ld=lld 是按名字在 PATH 里找 ld.lld 的。
+          if ! command -v ld.lld >/dev/null 2>&1; then
+            echo "::error::PATH 里找不到 ld.lld。VDSO 交叉链接必须要它：brew install lld"
+            brew list --versions lld || echo "lld 未安装"
+            exit 1
+          fi
+          echo "ld.lld: $(command -v ld.lld)"
+          "$(brew --prefix llvm)/bin/clang" --version | head -1
+
+          # 用 vdso 的真实编译命令做一次最小验证，提前暴露问题而不是等 iSH 那步。
+          # 必须真链接（-shared）—— 只 -c 编译不会调用 linker，测不出 lld 缺失。
+          printf 'int x;\n' > /tmp/lld_probe.c
+          if ! "$(brew --prefix llvm)/bin/clang" -target aarch64-linux-gnu -fuse-ld=lld \
+                 -shared -nostdlib -fPIC /tmp/lld_probe.c -o /tmp/lld_probe.so; then
+            echo "::error::clang 无法用 -fuse-ld=lld 链接 aarch64-linux-gnu 目标"
+            exit 1
+          fi
+          echo "aarch64-linux-gnu + lld probe: OK"
+
+          xcrun -sdk iphoneos metal --version || {
+            echo "::warning::Metal 工具链缺失，FFmpeg 会静默丢掉 yadif_videotoolbox 滤镜"
+          }
+
+      # ── 3. 原生依赖缓存 ──
+      # 这一套全量编译要 30–50 分钟，不改 deps/ 就没必要重编。
+      # key 里带脚本和子模块的 hash，脚本一改自动失效。
+      - name: Compute deps cache key
+        id: depskey
+        run: |
+          # h1 = 依赖脚本自身内容的 hash（脚本一改，LAME/FFmpeg 缓存自动失效）
+          H1=$(find deps -maxdepth 2 -name 'build_*.sh' -o -maxdepth 2 -name 'prepare_*.sh' | sort | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
+          # h2 = 子模块 commit 的 hash（deps/ish 一换，iSH 缓存自动失效）
+          H2=$(git ls-tree HEAD deps/ | grep -E '160000' | shasum -a 256 | cut -d' ' -f1)
+          echo "h1=$H1" >> "$GITHUB_OUTPUT"
+          echo "h2=$H2" >> "$GITHUB_OUTPUT"
+          echo "key=deps-$H1-$H2" >> "$GITHUB_OUTPUT"
+          echo "h1=$H1"
+          echo "h2=$H2"
+
+      # 分片编号：把依赖拆成四个独立缓存，各自 restore / save。
+      # 原因：合成一个 key 的话，iSH 挂了整份缓存都不会存，前面 LAME/FFmpeg
+      # 白编 20 多分钟。拆开之后谁成功谁落盘，下一轮直接命中。
+      - name: Restore LAME cache
+        id: c_lame
+        uses: actions/cache/restore@v4
+        with:
+          path: deps/lame-build
+          key: lame-${{ steps.depskey.outputs.h1 }}
+
+      # build_ffmpeg.sh 产出的是整个 deps/frameworks 目录：
+      #   FFmpeg.framework（伞形）+ libav*/libsw* 各一个 .framework。
+      # 工程按 deps/frameworks/FFmpeg.framework/Headers 找头文件，缺一个都编不过。
+      - name: Restore FFmpeg cache
+        id: c_ff
+        uses: actions/cache/restore@v4
+        with:
+          path: deps/frameworks
+          key: ffmpeg-${{ steps.depskey.outputs.h1 }}
+
+      - name: Restore iSH cache
+        id: c_ish
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            deps/libs
+            deps/include
+            deps/resources/RootfsPatch.bundle
+          key: ish-v2-${{ steps.depskey.outputs.h2 }}
+
+      # rclone 也写进 deps/frameworks，单独缓存，
+      # 否则 FFmpeg 缓存的还原会把 Rclone.xcframework 一起盖掉。
+      - name: Restore rclone cache
+        id: c_rclone
+        uses: actions/cache/restore@v4
+        with:
+          path: deps/frameworks/Rclone.xcframework
+          key: rclone-go1.25-${{ steps.depskey.outputs.h2 }}
+
+      - name: Restore rootfs cache
+        id: c_rootfs
+        uses: actions/cache/restore@v4
+        with:
+          path: deps/resources/alpine-rootfs.zip
+          key: rootfs-alpine-v2
+      
+      # ── 4. 构建原生依赖 ──
+      # 顺序有依赖关系，不能并行也不能调换：
+      #   LAME  →  FFmpeg 要用它编 libmp3lame，没有就静默丢 MP3
+      #   iSH   →  产出 libish*.a + headers + VDSO
+      #   rootfs→  Alpine，转成 iSH 的 fakefs
+      #   rclone→  只要 Go，但要在 FFmpeg 之后（互不依赖，放最后统一收尾）
+      # 执行位兜底：Windows 上建的仓，git 未必记下 100755。
+      # 放在依赖构建之前统一补一遍，不要散落在各个 build 步骤里 ——
+      # 命中缓存时那些步骤根本不执行，chmod 也就跟着被跳过了。
+      - name: Fix script exec bits
+        run: |
+          chmod +x deps/*.sh 2>/dev/null || true
+          chmod +x scripts/*.sh 2>/dev/null || true
+          chmod +x deps/lame-3.100/configure deps/lame-3.100/install-sh 2>/dev/null || true
+          find deps/lame-3.100 -name 'depcomp' -o -name 'config.guess' -o -name 'config.sub' \
+               -o -name 'ltmain.sh' -o -name 'missing' -o -name 'compile' 2>/dev/null | xargs chmod +x 2>/dev/null || true
+          git ls-files -s deps/build_ish.sh deps/build_lame.sh deps/build_ffmpeg.sh
+
+      # rootfs 资源兜底：deps/resources/ 整体被 gitignore，靠 build_ish.sh 复制。
+      # 但 Build iSH 命中缓存时会整个跳过，那一步的复制也就没执行 ——
+      # 结果 deps/resources/ 只有 rootfs zip，缺 RootfsPatch.bundle，
+      # xcodebuild 编到 CpResource 才报 "couldn't be opened because there is
+      # no such file"，前面 30 分钟全白跑。
+      # 这里无条件补一次：源在子模块里，复制成本几乎为零。
+      - name: Ensure rootfs resources
+        run: |
+          set -e
+          mkdir -p deps/resources
+
+          SRC="deps/ish/app/RootfsPatch.bundle"
+          DST="deps/resources/RootfsPatch.bundle"
+          if [ -d "$DST" ]; then
+            echo "OK   $DST 已存在"
+          elif [ -d "$SRC" ]; then
+            cp -R "$SRC" "$DST"
+            echo "COPIED  $SRC -> $DST"
+          else
+            echo "::error::$SRC 不存在，工程硬引用这个 bundle，缺了必然编译失败"
+            exit 1
+          fi
+
+          # [R53] 只校验 RootfsPatch.bundle。alpine-rootfs.zip 由后面的
+          # 「Prepare Alpine rootfs」步骤负责生成/命中缓存 —— 那个步骤
+          # 在缓存 miss 时会跑 prepare_alpine_rootfs.sh 现打 zip。
+          # 这里提前检查 zip 会在缓存 miss（比如 bump 过缓存 key）时
+          # 误判「缺文件」直接 exit 1，导致编译没开始就失败。
+          for f in deps/resources/RootfsPatch.bundle; do
+            if [ -e "$f" ]; then
+              echo "OK   $f"
+            else
+              echo "::error::缺 $f —— xcodebuild 会在 CpResource 阶段失败"
+              exit 1
+            fi
+          done
+
+      - name: Build LAME
+        if: steps.c_lame.outputs.cache-hit != 'true'
+        run: ./deps/build_lame.sh
+
+      - name: Save LAME cache
+        if: success() && steps.c_lame.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: deps/lame-build
+          key: lame-${{ steps.depskey.outputs.h1 }}
+
+      - name: Build FFmpeg
+        if: steps.c_ff.outputs.cache-hit != 'true'
+        run: ./deps/build_ffmpeg.sh
+
+      - name: Save FFmpeg cache
+        if: success() && steps.c_ff.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: deps/frameworks
+          key: ffmpeg-${{ steps.depskey.outputs.h1 }}
+
+      - name: Build iSH
+        if: steps.c_ish.outputs.cache-hit != 'true'
+        run: ./deps/build_ish.sh
+
+      - name: Save iSH cache
+        if: success() && steps.c_ish.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            deps/libs
+            deps/include
+            deps/resources/RootfsPatch.bundle
+          key: ish-v2-${{ steps.depskey.outputs.h2 }}
+
+      - name: Prepare Alpine rootfs
+        run: |
+          # rootfs 的 key 不带 hash（Alpine 版本写死在脚本里），
+          # 但缓存里可能只有半份，所以还要检查 zip 是否真存在。
+          if [ -f deps/resources/alpine-rootfs.zip ]; then
+            echo "rootfs 已命中缓存，跳过"
+            ls -la deps/resources/alpine-rootfs.zip
+          else
+            ./deps/prepare_alpine_rootfs.sh
+          fi
+
+      - name: Save rootfs cache
+        if: success()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: deps/resources/alpine-rootfs.zip
+          key: rootfs-alpine-v2
+
+      - name: Build rclone
+        if: steps.c_rclone.outputs.cache-hit != 'true'
+        run: ./deps/build_rclone_ios.sh
+
+      # 这里必须是 success() 而不是 always()：构建失败时目录里可能留了
+      # 半成品 xcframework，存进缓存会被下一轮当成"已命中"直接复用，
+      # 一路错到链接阶段。LAME/FFmpeg/iSH 同理，见各自 save 步骤。
+      - name: Save rclone cache
+        if: success() && steps.c_rclone.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: deps/frameworks/Rclone.xcframework
+          key: rclone-go1.25-${{ steps.depskey.outputs.h2 }}
+
+      - name: Verify native deps
+        run: |
+          fail=0
+          check() {
+            if [ -e "$1" ]; then echo "OK   $1"; else echo "MISS $1"; fail=1; fi
+          }
+          check deps/include
+          check deps/libs
+          check deps/frameworks
+          check deps/resources/alpine-rootfs.zip
+          check deps/frameworks/FFmpeg.xcframework
+          check deps/frameworks/Rclone.xcframework
+          if [ "$fail" != "0" ]; then
+            echo "::error::原生依赖不完整，继续编只会得到一堆 undefined symbol。"
+            exit 1
+          fi
+          du -sh deps/libs deps/include deps/frameworks deps/resources
+
+      # ── 5. 生成构建期配置文件 ──
+      # BUILDING.md 明确写了这两个文件不入库，构建前从 .example 复制。
+      # 留空也能编 —— 只有用到对应功能的路径才需要在运行时补值。
+      - name: Prepare build config
+        run: |
+          cp -v src/ios/Configs/ProviderCustomization.xcconfig.example \
+                src/ios/Configs/ProviderCustomization.xcconfig || true
+          ls -la src/ios/Configs/
+
+      # ── 6. 编译 ──
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project src/ios/Minis.xcodeproj \
+            -scheme Minis \
+            -derivedDataPath "$DERIVED" 2>&1 | tail -40
+
+      - name: Build
+        id: build
+        run: |
+          # ── flag 形态 ──
+          #   -allowProvisioningUpdates 是开关，不能带值 —— 写成 "... NO" 会让
+          #   xcodebuild 把 NO 当成 build action，直接报
+          #   "xcodebuild: error: Unknown build action 'NO'."
+          #   我们要的是"不做自动签名"，所以这个开关根本不加。
+          #   CODE_SIGNING_ALLOWED=NO 这几个才是 key=value 形态。
+          #
+          # ── 内存控制：只在命令行写才生效 ──
+          #
+          # run #24 的失败形态（这是第一次真正编到主 target）：
+          #   6144 行日志里 **零个 error:**，236 条全是 warning，
+          #   4 分钟就结束，末尾 "Failed frontend command:" 跟着一条
+          #   14KB 的 swift-frontend 命令，然后 ** BUILD FAILED **。
+          #   那条命令里写着 `-num-threads 3 -O`，filelist 是 sources-1
+          #   （主 target 全部 669 个 .swift）。
+          #   这不是代码错 —— 是 swift-frontend 被 OOM killer 干掉，
+          #   连 error 都来不及打印。
+          #
+          # 为什么之前的 env 没救回来：xcodebuild 的 build settings 只认
+          # 命令行 KEY=VALUE 和工程文件，不认环境变量。下面这三条才是
+          # 真正把它压下来的开关。
+          #
+          #   1. SWIFT_COMPILATION_MODE=incremental
+          #      pbxproj 的 project 级 Release 写的是 wholemodule。WMO 下
+          #      **一个** frontend 进程要同时持有全部 669 个文件的 AST，
+          #      中途无法回收；-jobs 在这种模式下完全无效（压根没有第二个
+          #      job）—— 这是 run #15/#16/#24 被 OOM 杀的根因。
+          #      早先为躲 OOM 改成 singlefile：文件切成多个 batch 各自
+          #      独立类型检查，内存是下来了，但 AIChatView 这种 1900+ 行
+          #      的巨型 struct 被**单独**顶破类型推断预算，连续报
+          #      "unable to type-check ... in reasonable time"，且报错行号
+          #      每次随机游走（1410→1470→1510→1398）。
+          #      改 incremental 是两害相权的平衡点：按文件增量编译，类型
+          #      检查比 singlefile 宽松（有跨文件上下文分担），内存又远低于
+          #      wholemodule。代价是优化弱于 WMO，但 7GB runner 上出包优先。
+          #      要回全量优化，得换更大的 runner，不是加参数。
+          #
+          #   2. SWIFT_DRIVER_JOBS=1 / SWIFT_EXEC 并发
+          #      incremental 模式下 xcodebuild 也会并行开多个 frontend。
+          #      SWIFT_DRIVER_JOBS 限住一个 driver 内部并行几个；
+          #      -jobs 限住同时跑几个构建任务。两个都压到 1–2，
+          #      峰值 = 2 batch 并发 ≈ 1.5–2GB，7GB 装得下。
+          #
+          #   3. -quiet
+          #      日志从 1.2MB 降到几十 KB，失败时 tail 能直接截到错误，
+          #      不用再去下载 artifact 里的 build.log。warning 仍会打
+          #      （-quiet 只压 note 和进度），不影响诊断。
+          #
+          # 顺序不能调：所有 KEY=VALUE 必须在 build action 之前。
+          set -o pipefail
+          echo "== 内存 : 见下 =="
+          echo "BUILD_JOBS(-jobs)=$BUILD_JOBS"
+          free -m 2>/dev/null || vm_stat | head -5
+          echo "CPU: $(sysctl -n hw.ncpu)"
+          echo "=========================="
+
+          xcodebuild \
+            -project src/ios/Minis.xcodeproj \
+            -scheme Minis \
+            -configuration "$CONFIG" \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED" \
+            -jobs "$BUILD_JOBS" \
+            -quiet \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            ENABLE_BITCODE=NO \
+            SWIFT_COMPILATION_MODE=incremental \
+            SWIFT_DRIVER_JOBS=2 \
+            MARKETING_VERSION="1.${{ github.run_number }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            build 2>&1 | tee build.log | tail -150
+
+      # ── 6.5 判死因：OOM 还是代码错 ──
+      # Build 步骤失败时，两种死法的处理完全不同，但日志长得几乎一样
+      # （都是 "Failed frontend command" + BUILD FAILED）。这一步把两者分开，
+      # 让 Workflow Summary 一眼能看出该改参数还是改代码。
+      #
+      # 判据：
+      #   日志里 error: 数为 0，且出现 Failed frontend command
+      #     → swift-frontend 被杀（OOM）。改内存参数，别动代码。
+      #   日志里有 error:
+      #     → 真编译错。把那几行抽出来，其余不用看。
+      #
+      # 注入方式用 ::notice:: 而不是 exit 1：job 已经因为 Build 失败而红了，
+      # 这里再红一次只会把后面的 Collect artifacts / Upload artifacts 一起
+      # 掐掉 —— 那两步要留 artifact 给本地下载 build.log，比这里的诊断值钱。
+      - name: Diagnose failure
+        if: failure()
+        run: |
+          if [ ! -f build.log ]; then
+            echo "::warning::没有 build.log，构建步骤没产出日志"
+            exit 0
+          fi
+
+          ERRS=$(grep -cE '(^|: )error: ' build.log || true)
+          FRONTEND=$(grep -c 'Failed frontend command' build.log || true)
+
+          echo "error: 条数 = $ERRS"
+          echo "Failed frontend command = $FRONTEND"
+
+          if [ "$ERRS" = "0" ] && [ "$FRONTEND" != "0" ]; then
+            echo "::error::判定 OOM —— 零 error 但 frontend 被杀。不是代码问题，见 Build 步骤里 SWIFT_COMPILATION_MODE 的注释。"
+            echo "被杀时的并发参数："
+            grep -oE '\-num-threads [0-9]+' build.log | head -3 || true
+          elif [ "$ERRS" != "0" ]; then
+            echo "::error::判定真编译错 —— 有 $ERRS 条 error:"
+            grep -E '(^|: )error: ' build.log | head -40
+          else
+            echo "::warning::既没有 error 也没有 frontend 失败，看 Summary 与完整 build.log"
+          fi
+          # 不 exit 1：job 已经红了，这里只负责给出判定
+          exit 0
+
+      # ── 7. 收集产物：同时出 .app zip 和 .ipa ──
+      - name: Collect artifacts
+        if: always()
+        run: |
+          mkdir -p out
+          APP=$(find "$DERIVED/Build/Products" -maxdepth 3 -name "*.app" -type d 2>/dev/null | head -1 || true)
+
+          if [ -z "$APP" ] || [ ! -d "$APP" ]; then
+            echo "::warning::没找到 .app，构建大概失败了，看 build.log"
+            echo "app not found" > out/BUILD-INFO.txt
+            cp build.log out/ 2>/dev/null || true
+            exit 0
+          fi
+
+          echo "found: $APP"
+          BASE=$(basename "$APP" .app)
+          echo "bundle: $BASE"
+
+          # —— 先确认 .app 是完整的，再读身份 ——
+          #
+          # 为什么必须查：构建被 OOM 掐掉时，.app 目录已经建出来了，
+          # 但 Info.plist 还没写。此时 PlistBuddy 会把
+          #   "File Doesn't Exist, Will Create: <path>"
+          # 打到 **stdout**（不是 stderr！），`2>/dev/null` 拦不住，
+          # 于是这串错误文字被赋值给 $BUNDLE_ID / $SHORT_VER，
+          # 一路污染到 ipa 文件名，最后 zip 报
+          #   "Could not create output file (...-File Doesn't Exist...)"
+          # ——症状看着像打包脚本的 bug，其实是编译没编完。
+          # run #16 就是这么死的。
+          PLIST="$APP/Info.plist"
+          if [ ! -f "$PLIST" ]; then
+            echo "::error::$APP 里没有 Info.plist，说明编译没跑完（大概率 OOM 被杀）。看 build.log 里的 'Failed frontend command'"
+            echo "app incomplete (no Info.plist)" > out/BUILD-INFO.txt
+            cp build.log out/ 2>/dev/null || true
+            exit 1
+          fi
+
+          # PlistBuddy 读不到某个键时返回非零，此时用默认值。
+          # 这里显式把 stderr 也丢掉，并二次校验输出里不含 "Doesn't Exist"
+          # —— 双重保险，避免错误串再次污染文件名。
+          pb() {
+            local key="$1" dflt="$2" v
+            v=$(/usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" 2>/dev/null) || v=""
+            case "$v" in
+              *"Doesn't Exist"*|*Error*) v="" ;;
+            esac
+            printf '%s' "${v:-$dflt}"
+          }
+          BUNDLE_ID=$(pb CFBundleIdentifier "?")
+          DISPLAY_NAME=$(pb CFBundleDisplayName "?")
+          SHORT_VER=$(pb CFBundleShortVersionString "1.0")
+          BUILD_VER=$(pb CFBundleVersion "1")
+          MIN_OS=$(pb MinimumOSVersion "?")
+          EXEC_NAME=$(pb CFBundleExecutable "$BASE")
+
+          # —— 产物文件名：用显示名，不用 target 名 ——
+          #
+          # .app 目录名是 Minis.app（target 叫 Minis，改它要动 pbxproj 和
+          # 一堆 CODE_SIGN_ENTITLEMENTS 路径，风险大收益小），
+          # 但**交给用户下载的文件名**没必要跟着叫 Minis：
+          # 设备上装出来显示的是「全能AI」，下载下来的文件叫
+          # Minis-1.0.ipa 会让人怀疑装错东西。
+          #
+          # 所以只改产物名。ipa 内部的 Payload/Minis.app 保持原样 ——
+          # 那是包结构，TrollStore 靠它识别，不能乱动。
+          ARTIFACT_NAME="$DISPLAY_NAME"
+          case "$ARTIFACT_NAME" in
+            ""|"?"|*"Doesn't Exist"*) ARTIFACT_NAME="$BASE" ;;
+          esac
+
+          echo "bundle-id  : $BUNDLE_ID"
+          echo "display    : $DISPLAY_NAME"
+          echo "artifact   : $ARTIFACT_NAME-$SHORT_VER.ipa"
+          echo "version    : $SHORT_VER ($BUILD_VER)"
+          echo "min-os     : $MIN_OS"
+
+          # —— 0) 剥掉所有残留签名（必须在打包之前）——
+          #
+          # 为什么非做不可：
+          #
+          # 我们用 CODE_SIGNING_ALLOWED=NO 编，所以主程序 Minis 和三个
+          # appex（AgentWidget / MinisFileProvider / MinisShare）是**裸的**，
+          # 没有 LC_CODE_SIGNATURE。但 SPM binaryTarget 带进来的 8 个
+          # framework 是预编译产物，它们**自身带着原作者的签名**，
+          # Xcode 只是把它们复制进 .app/Frameworks，签名原样保留：
+          #
+          #   FFmpeg / libav{codec,filter,format,util}
+          #   libsw{resample,scale}                  -> org.ffmpeg.*  team=None
+          #   RealTimeCutVADCXXLibrary               -> io.code-concept.*
+          #                                             team=VBX7WSGEH9
+          #
+          # 结果是一个「半签不签」的包，自签工具两头堵：
+          #   · 若它见到有签名就跳过 → framework 保持 VBX7WSGEH9，
+          #     与用户自己的证书 team 不一致，dyld 加载 framework 时
+          #     校验失败，启动瞬间闪退。
+          #   · 若它强制全签但漏掉 appex → 三个 appex 的 bundle id 都是
+          #     com.ai.app.*，必须与主 app 同一 team，漏一个也闪退。
+          #
+          # 做法：
+          #   1. 找出 .app 里所有 Mach-O（file 命令判 "Mach-O"）
+          #   2. 用 codesign --remove-signature 剥离
+          #   3. 删掉所有 _CodeSignature 目录（里面是 CodeResources，
+          #      留着会让部分工具以为还有旧签名）
+          # 然后由下面第 0.5 段统一重签（带 entitlements）。
+          #
+          # 关于第 2 步为什么不直接无条件调用：
+          # codesign --remove-signature 对**本来就裸的**二进制行为不稳 ——
+          # 某些版本会报 "code object is not signed at all" 并以非零退出。
+          # 所以先用 `codesign -d --verbose=2` 判一次到底有没有签名，
+          # 真的带了才剥，避免把没签的也走一遍导致误判。
+          #
+          # 判据用 -d（display）而不是 --verify：
+          # --verify 会顺带校验资源封印，剥离前后都可能因为 CodeResources
+          # 缺失/过期而失败，那是另一个维度的问题，会污染这里的判断。
+          # -d 只回答「这个 Mach-O 里有没有 code signature」。
+          #
+          # 注意顺序：必须在 ditto / zip 打包之前。打包之后再改就得重打。
+          echo "== 剥离残留签名 =="
+          SIGNED_BEFORE=0
+          STRIPPED=0
+
+          # 这一整段都在 GitHub 默认的 `bash -e {0}` 下跑 ——
+          # 任何一条命令返回非零，步骤立刻红。
+          # 所以下面每一处「判断式」都必须自己兜住返回码：
+          #   · grep 没匹配 = 1        → 必须 || true
+          #   · codesign -d 对裸文件 = 1 → 必须 || true
+          #   · wc -l 读到空输入无关   → 但仍统一兜
+          # 这不是防御性冗余，是必需的：否则「没有残留签名」这种**正常情况**
+          # 会让 grep 返回 1，把整步打红，看起来像剥离失败。
+
+          # 收集所有 Mach-O 路径，后面两轮扫描都用这份清单，保证口径一致
+          MACHO_LIST=$(mktemp)
+          while IFS= read -r -d '' f; do
+            if file -b "$f" 2>/dev/null | grep -q "Mach-O"; then
+              printf '%s\n' "$f" >> "$MACHO_LIST"
+            fi
+          done < <(find "$APP" -type f -print0)
+          TOTAL_MACHO=$(wc -l < "$MACHO_LIST" 2>/dev/null | tr -d ' ' || echo 0)
+          TOTAL_MACHO=${TOTAL_MACHO:-0}
+          echo "  .app 内 Mach-O 共 $TOTAL_MACHO 个"
+
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            # 把 codesign 的输出先存进变量，再判 —— 避免管道把返回码搅在一起
+            CD_OUT=$(/usr/bin/codesign -d --verbose=2 "$f" 2>&1 || true)
+            case "$CD_OUT" in
+              *Signature*|*signature*)
+                SIGNED_BEFORE=$((SIGNED_BEFORE + 1))
+                if /usr/bin/codesign --remove-signature "$f" >/dev/null 2>&1; then
+                  STRIPPED=$((STRIPPED + 1))
+                  echo "  - 剥离 ${f#$APP/}"
+                else
+                  echo "  ! 剥离失败 ${f#$APP/}"
+                fi
+                ;;
+            esac
+          done < "$MACHO_LIST"
+
+          # 清 _CodeSignature 目录（含 framework 与 appex 内的）
+          CS_DIRS=$(find "$APP" -type d -name "_CodeSignature" 2>/dev/null | wc -l | tr -d ' ' || echo 0)
+          CS_DIRS=${CS_DIRS:-0}
+          find "$APP" -type d -name "_CodeSignature" -exec rm -rf {} + 2>/dev/null || true
+          echo "  带签名 $SIGNED_BEFORE 个 · 剥离 $STRIPPED 个 · 删 _CodeSignature 目录 $CS_DIRS 个"
+
+          # 剥完必须复核：任何一个还带签名，都说明剥离没生效，
+          # 这种包发出去用户照样闪退，所以这里硬失败。
+          REMAIN=0
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            CD_OUT=$(/usr/bin/codesign -d --verbose=2 "$f" 2>&1 || true)
+            case "$CD_OUT" in
+              *Signature*|*signature*)
+                REMAIN=$((REMAIN + 1))
+                echo "  !! 仍有签名: ${f#$APP/}"
+                ;;
+            esac
+          done < "$MACHO_LIST"
+          rm -f "$MACHO_LIST"
+          if [ "$REMAIN" != "0" ]; then
+            echo "::error::还有 $REMAIN 个 Mach-O 带签名，剥不干净会让自签工具跳过它们导致闪退"
+            exit 1
+          fi
+          echo "  复核通过：包内已无任何签名"
+
+          # —— 0.5) 写回 entitlements：ad-hoc 重签每个可执行体 ——
+          #
+          # 这一步是闪退的真正修复。
+          #
+          # 背景：App Group 能力由 entitlements 里的
+          #   com.apple.security.application-groups = [group.com.ai.app]
+          # 授予。CI 用 CODE_SIGNING_ALLOWED=NO + CODE_SIGN_ENTITLEMENTS=""
+          # 编出来的裸二进制里**没有**这份 entitlement，于是运行时
+          #
+          #   FileManager.containerURL(forSecurityApplicationGroupIdentifier:)
+          #
+          # 返回 nil。代码里有四处对它 `!` 解包，其中
+          # AIChatViewModel.minisAppGroupRoot 在 MinisApp.init() 的启动路径上
+          # 被 SoulStore.refreshCache() 同步调用 —— 于是「拿不到 App Group」
+          # 等价于「点开就闪退」：
+          #
+          #   EXC_BREAKPOINT · SIGTRAP · Trace/BPT trap: 5
+          #   MinisApp.init() → SoulStore.refreshCache()
+          #     → minisMemoryPersistentDir.getter
+          #     → minisAppGroupRoot.getter        ← brk #1
+          #
+          # 作者从没遇到，因为他用正式证书签名，entitlement 一直在。
+          #
+          # 修法：用 ad-hoc 签名（--sign -）把 entitlement 写回每个可执行体。
+          #   · ad-hoc 不需要证书、不需要 provisioning profile，macOS 原生支持
+          #   · 每个 target 用它自己那份 .entitlements，不能混用：
+          #     主 app 的还有 healthkit / nfc / icloud 等，appex 的只有自己的
+          #   · TrollStore（含 Lite）安装时会**保留**二进制上已有的
+          #     entitlements，所以写进去就能生效；越狱设备的 amfid 校验
+          #     已绕过，不会因签名链不完整而拒绝启动
+          #
+          # 顺序：先签 appex，再签主 app。codesign 对 .app 会顺带校验内部
+          # 嵌套的签名，反过来的话签完 appex 主 app 的封印又失效了。
+          echo "== 写入 entitlements（ad-hoc 重签）=="
+          ENT_OK=0
+          ENT_FAIL=0
+
+          # 小工具：签一个目标，成功返回 0。
+          #
+          # 为什么不写成 `if codesign ... | sed ...; then`：
+          # 那样 if 判的是**管道最后一个命令**（sed）的退出码。
+          # sed 永远成功，于是 codesign 失败也会被当成成功，
+          # ENT_FAIL 永远不涨 —— 复核形同虚设。踩过这个坑，所以显式落变量。
+          sign_one() {
+            local target="$1" ent="$2" out rc
+            if [ -n "$ent" ]; then
+              out=$(/usr/bin/codesign --force --sign - --timestamp=none \
+                      --entitlements "$ent" "$target" 2>&1)
+            else
+              out=$(/usr/bin/codesign --force --sign - --timestamp=none \
+                      "$target" 2>&1)
+            fi
+            rc=$?
+            [ -n "$out" ] && printf '%s\n' "$out" | sed 's/^/    /'
+            return $rc
+          }
+
+          # (a) 先签 Frameworks 里的二进制（不带 entitlements）。
+          #     它们被剥离后是裸的，而 ad-hoc 签主 app 包时 codesign 会
+          #     校验嵌套代码；framework 不先签好，主包会报
+          #     "code object is not signed at all"。
+          echo "  -- Frameworks --"
+          FW_OK=0
+          FW_FAIL=0
+          if [ -d "$APP/Frameworks" ]; then
+            while IFS= read -r fw; do
+              [ -n "$fw" ] || continue
+              # framework 目录里有同名可执行体，签目录即可（会带上 Info.plist 封印）
+              if sign_one "$fw" ""; then
+                FW_OK=$((FW_OK + 1))
+              else
+                FW_FAIL=$((FW_FAIL + 1))
+                echo "  ! framework 签名失败: $(basename "$fw")"
+              fi
+            done < <(find "$APP/Frameworks" -maxdepth 1 -name "*.framework" -type d 2>/dev/null | sort)
+            # 散落的 .dylib（有些 SPM 产物是裸 dylib 而不是 framework）
+            while IFS= read -r dy; do
+              [ -n "$dy" ] || continue
+              if sign_one "$dy" ""; then
+                FW_OK=$((FW_OK + 1))
+              else
+                FW_FAIL=$((FW_FAIL + 1))
+                echo "  ! dylib 签名失败: $(basename "$dy")"
+              fi
+            done < <(find "$APP/Frameworks" -maxdepth 1 -name "*.dylib" -type f 2>/dev/null | sort)
+          fi
+          echo "  Frameworks: 成功 $FW_OK · 失败 $FW_FAIL"
+
+          # (b) 三个 appex：各自用自己那份 entitlements。
+          #     必须各自签自己的 —— 主 app 的 entitlements 里有 healthkit /
+          #     nfc / icloud，套到 appex 上会被系统拒绝。
+          echo "  -- App Extensions --"
+          while IFS='|' read -r rel ent; do
+            [ -n "$rel" ] || continue
+            target="$APP/$rel"
+            if [ ! -d "$target" ]; then
+              echo "  ! 不存在，跳过: $rel"
+              ENT_FAIL=$((ENT_FAIL + 1))
+              continue
+            fi
+            if [ ! -f "$ent" ]; then
+              echo "::error::entitlements 文件不存在: $ent（工程配置变了？）"
+              ENT_FAIL=$((ENT_FAIL + 1))
+              continue
+            fi
+            if sign_one "$target" "$ent"; then
+              ENT_OK=$((ENT_OK + 1))
+              echo "  + 已签 $rel"
+            else
+              ENT_FAIL=$((ENT_FAIL + 1))
+              echo "  ! 签名失败 $rel"
+            fi
+          done <<'ENTMAP'
+          PlugIns/AgentWidgetExtension.appex|src/ios/AgentWidget/AgentWidget.entitlements
+          PlugIns/MinisFileProvider.appex|src/ios/FileProvider/FileProvider.entitlements
+          PlugIns/MinisShare.appex|src/ios/ShareExtension/ShareExtension.entitlements
+          ENTMAP
+
+          # (c) 最后签主 app **包**（不是只签可执行文件）。
+          #     签目录才会生成 _CodeSignature/CodeResources 并封印资源；
+          #     只签裸可执行体的话，包是半成品，某些工具会认为它损坏。
+          #     顺序必须在 appex 之后：主包会校验内部嵌套代码。
+          if [ -f "src/ios/Minis.entitlements" ]; then
+            if sign_one "$APP" "src/ios/Minis.entitlements"; then
+              ENT_OK=$((ENT_OK + 1))
+              echo "  + 已签 $BASE.app（主包）"
+            else
+              ENT_FAIL=$((ENT_FAIL + 1))
+              echo "  ! 主包签名失败"
+            fi
+          else
+            echo "::error::src/ios/Minis.entitlements 不存在"
+            ENT_FAIL=$((ENT_FAIL + 1))
+          fi
+
+          echo "  签名成功 $ENT_OK 个 · 失败 $ENT_FAIL 个 · framework 失败 $FW_FAIL 个"
+
+          # 复核：主程序与三个 appex 必须真的带上 App Group。
+          # 只查「有签名」不够 —— 签名成功但 entitlements 没进去
+          # 才是最难查的那种，装到机器上照样闪退。
+          echo "== 复核 entitlements =="
+          ENT_MISSING=0
+          for rel in "$BASE.app" "PlugIns/AgentWidgetExtension.appex" \
+                     "PlugIns/MinisFileProvider.appex" "PlugIns/MinisShare.appex"; do
+            t="$APP/$rel"
+            [ -e "$t" ] || continue
+            dump=$(/usr/bin/codesign -d --entitlements :- "$t" 2>/dev/null || true)
+            case "$dump" in
+              *group.com.ai.app*)
+                echo "  OK   $rel 带 group.com.ai.app"
+                ;;
+              *)
+                echo "  !!   $rel 没有 App Group entitlement"
+                ENT_MISSING=$((ENT_MISSING + 1))
+                ;;
+            esac
+          done
+
+          if [ "$ENT_FAIL" != "0" ] || [ "$ENT_MISSING" != "0" ]; then
+            echo "::error::entitlements 写入不完整（签名失败 $ENT_FAIL · 缺 App Group $ENT_MISSING 个）"
+            echo "::error::这种包装到越狱机上仍会闪退 —— 不是可接受的结果"
+            exit 1
+          fi
+          echo "  复核通过：主程序与三个 appex 全部带 group.com.ai.app"
+
+          # —— 1) 已签 .app（TrollStore / 越狱机直接吃）——
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "out/${ARTIFACT_NAME}.zip"
+
+          # —— 2) .ipa：Payload/<App>.app 的 zip，ipa 就这个结构 ——
+          # 这个 ipa 里已经带 ad-hoc 签名 + App Group entitlements，
+          # TrollStore / TrollStore Lite 装进去会保留 entitlements。
+          #
+          # 注意 zip 的 -y 不能去掉：它把符号链接存成链接而不是跟随复制。
+          # .app 里有些 framework 版本目录是软链，跟着复制会把包撑大一倍，
+          # 还可能让 dyld 找不到路径。
+          IPA_DIR=$(mktemp -d)
+          mkdir -p "$IPA_DIR/Payload"
+          cp -R "$APP" "$IPA_DIR/Payload/"
+          IPA_NAME="${ARTIFACT_NAME}-${SHORT_VER}.ipa"
+          ( cd "$IPA_DIR" && zip -qry "$OLDPWD/out/$IPA_NAME" Payload )
+          rm -rf "$IPA_DIR"
+          echo "ipa: out/$IPA_NAME"
+
+          # —— 3) 关键校验：确认打出来的确实是共存版 ——
+          echo "signed        = ad-hoc（已写入 App Group entitlements）" > out/BUILD-INFO.txt
+          {
+            echo "app          = $BASE"
+            echo "display-name = $DISPLAY_NAME"
+            echo "artifact     = $IPA_NAME"
+            echo "bundle-id    = $BUNDLE_ID"
+            echo "version      = $SHORT_VER ($BUILD_VER)"
+            echo "min-os       = $MIN_OS"
+            echo "executable   = $EXEC_NAME"
+            echo "configuration= $CONFIG"
+            echo "commit       = ${{ github.sha }}"
+            echo "run          = ${{ github.run_number }}"
+            echo "note         = ${{ inputs.note }}"
+            echo ""
+            echo "# 装法：越狱机用 TrollStore / TrollStore Lite 直接装这个 ipa。"
+            echo "# entitlements 已写进二进制，TrollStore 安装时保留，不需再签。"
+            echo "# 文件名用显示名「$DISPLAY_NAME」，包内结构仍是 Payload/$BASE.app（不能改）。"
+            echo "sig-stripped = $STRIPPED 个（剥离前带签名 $SIGNED_BEFORE 个）"
+            echo "sig-residual = 0（已复核）"
+            echo "app-group    = group.com.ai.app（主程序 + 3 appex 均已写入）"
+            echo "re-signed    = $ENT_OK 个可执行体 ad-hoc 重签"
+            echo "codesig-dirs = $CS_DIRS 个已删除"
+            echo "nested-macho  = 主程序 + 3 appex + 8 SPM framework，共 12 个，全部裸签"
+          } >> out/BUILD-INFO.txt
+          cat out/BUILD-INFO.txt
+
+          # 身份不对就让这一步真的红。
+          # 原来只 echo ::error:: 不 exit —— GitHub 会把 ::error:: 标红，
+          # 但步骤退出码仍是 0，于是「红着成功」，artifact 照样传上去，
+          # 很容易误以为没问题。现在是硬失败。
+          if [ "$BUNDLE_ID" != "com.ai.app" ]; then
+            echo "::error::Bundle ID 是 $BUNDLE_ID，不是 com.ai.app，装的会和原版冲突"
+            cp build.log out/ 2>/dev/null || true
+            exit 1
+          fi
+
+          # ipa 至少要能解开、里面有可执行文件，否则就是空壳
+          if ! unzip -l "out/$IPA_NAME" | grep -q "Payload/$BASE.app/$EXEC_NAME"; then
+            echo "::error::ipa 里找不到可执行文件 Payload/$BASE.app/$EXEC_NAME，包是空壳"
+            exit 1
+          fi
+          echo "OK ipa 内含可执行文件 $EXEC_NAME"
+
+          cp build.log out/ 2>/dev/null || true
+          ls -lh out/
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-quanneng-${{ github.run_number }}
+          path: out/
+          retention-days: 14
+          if-no-files-found: warn
+
+      # ── 7.5 自动发布 Release（给出可点击的直链）──
+      #
+      # 为什么必须有这一步：
+      #   actions 的 artifact 下载要带 Authorization 头，**没法当链接发给人点**。
+      #   以前每次构建完都要在本地把 zip 下回来、解出 ipa、再手动发一个
+      #   Release —— 既慢又容易出错，而且完全是重复劳动。
+      #
+      #   这里让构建自己发 Release，产物一出来就有直链：
+      #     https://github.com/<repo>/releases/download/latest/<包名>
+      #   `latest` 是滚动 tag，永远指向最新一次成功构建，
+      #   手机上收藏一次就不用再换地址了。
+      #
+      # 只在 Build 成功时跑（`if: success()`），失败的运行不会覆盖 latest，
+      # 免得把一个坏包推成「最新版」。
+      - name: "Publish release (rolling tag: latest)"
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # 找包。out/ 里可能有多个 .ipa，取最新的那个。
+          IPA=$(ls -t out/*.ipa 2>/dev/null | head -1 || true)
+          if [ -z "$IPA" ]; then
+            echo "::warning::out/ 里没有 .ipa，跳过 Release 发布"
+            exit 0
+          fi
+          NAME=$(basename "$IPA")
+          echo "要发布的包: $NAME ($(stat -c%s "$IPA" 2>/dev/null || echo '?') 字节)"
+
+          # 复制成纯 ASCII 名。
+          # GitHub 会剥掉 asset 名里的非 ASCII 字符，中文名会变成空名，
+          # 直链拼不出来。Release 里统一用 ASCII，显示名走 release title。
+          cp "$IPA" "out/AiQuanneng-1.0.ipa"
+
+          NOTE="${{ inputs.note }}"
+          if [ -z "$NOTE" ]; then NOTE="全能AI 1.${{ github.run_number }}"; fi
+
+          # latest 这个 tag 已存在就直接更新资产，不存在就建。
+          # 用 --clobber 覆盖同名资产，避免「资产已存在」报错。
+          if gh release view latest --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "更新已有的 latest release"
+            gh release edit latest \
+              --repo "${{ github.repository }}" \
+              --title "全能AI 1.${{ github.run_number }}" \
+              --notes "$NOTE"
+            gh release upload latest "out/AiQuanneng-1.0.ipa" \
+              --repo "${{ github.repository }}" --clobber
+          else
+            echo "创建 latest release"
+            gh release create latest "out/AiQuanneng-1.0.ipa" \
+              --repo "${{ github.repository }}" \
+              --title "全能AI 1.${{ github.run_number }}" \
+              --notes "$NOTE" \
+              --latest
+          fi
+
+          echo ""
+          echo "### 直链" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/${{ github.repository }}/releases/download/latest/AiQuanneng-1.0.ipa" >> $GITHUB_STEP_SUMMARY
+
+      # ── 8. 汇总，失败时一眼看出挂在哪 ──
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## 构建结果"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 结论 | ${{ job.status == 'success' && '✅ 成功' || '❌ 失败' }} |"
+            echo "| 配置 | \`$CONFIG\` |"
+            echo "| 运行号 | ${{ github.run_number }} |"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo "| 说明 | ${{ inputs.note || '（无）' }} |"
+            echo ""
+
+            if [ -f out/BUILD-INFO.txt ]; then
+              echo "### 产物身份"
+              echo ""
+              echo '```'
+              cat out/BUILD-INFO.txt
+              echo '```'
+              echo ""
+              echo "### 文件"
+              echo ""
+              echo '```'
+              ls -lh out/ | grep -v '^total'
+              echo '```'
+              echo ""
+            fi
+
+            echo "### 怎么装"
+            echo ""
+            echo "产物已做 ad-hoc 重签，**entitlements（含 App Group）已写进二进制**："
+            echo ""
+            echo "| 文件 | 用途 |"
+            echo "|---|---|"
+            echo "| \`*.ipa\` | **TrollStore / TrollStore Lite 直接装**（推荐，保留 entitlements） |"
+            echo "| \`*.zip\` | 解出来是签好的 \`.app\`，改包/调试用 |"
+            echo ""
+            echo "做 ad-hoc 重签不是为了「能装上」—— 是为了带 entitlements。"
+            echo "缺 \`com.apple.security.application-groups\` 时，"
+            echo "\`containerURL(forSecurityApplicationGroupIdentifier:)\` 返回 nil，"
+            echo "上游代码对它做了 \`!\` 强解包，启动即 \`brk #1\`（EXC_BREAKPOINT）闪退。"
+            echo ""
+            echo "走自己的证书重签（Sideloadly / ESign）时**必须保留 entitlements**，"
+            echo "否则回到闪退。Bundle id 是 \`com.ai.app\`，与原版冲突，不能共存。"
+          } >> "$GITHUB_STEP_SUMMARY"
