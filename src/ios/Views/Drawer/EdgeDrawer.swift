@@ -47,6 +47,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - 抽屉状态
 
@@ -147,22 +148,67 @@ final class DrawerState: ObservableObject {
     }
 }
 
+// MARK: - 抽屉的「关闭」入口
+
+/// 一个**不会被订阅**的关闭入口，专门给抽屉里的视图用。
+///
+/// [R80-滑动卡顿 / 手机发热] 抽屉原来是怎么关自己的：
+///
+///     @EnvironmentObject private var drawerState: DrawerState
+///
+/// `DrawerState` 是 `ObservableObject`，而 `progress` 在拖拽过程中是
+/// **每帧都在变**的连续值。于是 SwiftUI 每帧都把整棵抽屉（分组头 +
+/// 几十行会话 + 产物折叠区）的 body 重算一遍 —— 抽屉真正需要的其实只有
+/// 「点完之后把自己收起来」，为了这一件事付掉整棵树的构图成本，不值。
+///
+/// 现在只给一个闭包，装在类里走环境传下去：
+///   · 类实例在容器里是 `@State` 存的，跨 body 重算不变；
+///   · 环境值本身不变 → 不触发抽屉重算；
+///   · 里面那个闭包每帧刷成当前 `DrawerState.close`，所以一定收得掉。
+///
+/// 效果：拖动过程中抽屉的 body 一次都不重算，只在它自己关心的东西
+/// （搜索词、折叠状态、会话数据）变化时才重算。
+final class DrawerCloseAction: @unchecked Sendable {
+
+    /// 由容器在每次 body 里刷成当前 DrawerState 的 close。
+    var action: (@MainActor () -> Void)?
+
+    @MainActor
+    func close() { action?() }
+}
+
+private struct DrawerCloseActionKey: EnvironmentKey {
+    static let defaultValue = DrawerCloseAction()
+}
+
+extension EnvironmentValues {
+    /// 抽屉里调它就能收起自己，不需要订阅 `DrawerState`。
+    var drawerClose: DrawerCloseAction {
+        get { self[DrawerCloseActionKey.self] }
+        set { self[DrawerCloseActionKey.self] = newValue }
+    }
+}
+
 // MARK: - 容器
 
 /// 把「内容」和「抽屉」叠在一起，并接管全屏侧滑手势。
 ///
 /// 用法：
 /// ```swift
-/// DrawerContainer(width: geo.size.width, insets: geo.safeAreaInsets,
-///                 drawer: { SessionDrawer(...) }) {
+/// DrawerContainer(width: geo.size.width, drawer: { SessionDrawer(...) }) {
 ///     stackLayout
 /// }
 /// ```
-/// `insets` 必须传**父容器那个** GeometryReader 的安全区，它决定聊天卡片
-/// 能不能正好铺到屏幕上下边缘（见 body 里的 [R78] 注释）。
 struct DrawerContainer<Drawer: View, Content: View>: View {
 
     @StateObject private var state = DrawerState()
+
+    /// 抽屉的关闭入口，见 `DrawerCloseAction`。
+    /// `@State` 存的是**类实例**，跨 body 重算不变，所以环境值也稳定。
+    @State private var closeAction = DrawerCloseAction()
+
+    /// 这一轮拖拽里键盘是不是已经收过了（见 body 里的 onChange）。
+    @State private var keyboardDismissed = false
 
     /// 抽屉宽度。用固定值而不是比例：抽屉里那些行高、内边距都按
     /// 「一个相当确定的宽度」排的，纯比例会让文字折行位置在机型之间跑掉。
@@ -172,21 +218,25 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
     /// 整屏宽度。抽屉态右侧要留一条「点空白关闭」的热区，宽度靠它算。
     private let totalWidth: CGFloat
 
-    /// 父容器（ContentView 的 GeometryReader）当前的安全区。
+    /// [R80-滑动卡顿] 这两个**在 init 里就求好值**，不存闭包。
     ///
-    /// [R78-上下各缺一条] 只用来把聊天卡片撑到屏幕上下边缘，见 body 里
-    /// 那段 [R78] 注释。必须和父容器**完全相等**，负 padding 才能正好抵消。
-    private let insets: EdgeInsets
-
-    private let drawer: (DrawerState) -> Drawer
-    private let content: () -> Content
+    /// 存闭包的话，body 每重算一次就要把两个闭包各调一次，产出的
+    /// View 值每帧都是「新的」（内含新闭包、新数组），SwiftUI 判不出相等，
+    /// 于是每帧把聊天界面（NavigationStack + 消息列表）和整个抽屉都
+    /// 重新求值一遍 —— 拖一次抽屉等于把全屏重建几十次，这就是卡和发热的
+    /// 主因。存成值之后，拖动过程中这两个子树的值一个字都没变，SwiftUI
+    /// 直接跳过它们的 body，只改外层那几个变换修饰符（纯 GPU 合成）。
+    ///
+    /// 它们什么时候更新：ContentView 的 body 重算（会话增删、标题变化、
+    /// 搜索词变化……）→ 新的 `DrawerContainer` → init 重新求值。
+    /// 和原来「每次 body 都重新求值」相比，只少了 progress 那一类高频触发。
+    private let drawer: Drawer
+    private let content: Content
 
     init(width: CGFloat,
-         insets: EdgeInsets = EdgeInsets(),
-         @ViewBuilder drawer: @escaping (DrawerState) -> Drawer,
-         @ViewBuilder content: @escaping () -> Content) {
+         @ViewBuilder drawer: () -> Drawer,
+         @ViewBuilder content: () -> Content) {
         self.totalWidth = width
-        self.insets = insets
 
         // [R68] 「屏宽 − 54」定宽，再受 348 上限约束。
         //
@@ -202,12 +252,44 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         let cap = DrawerState.widthMax
         self.drawerWidth = max(min(width - peek, cap), width * 0.62)
 
-        self.drawer = drawer
-        self.content = content
+        self.drawer = drawer()
+        self.content = content()
+    }
+
+    /// 当前窗口的安全区和尺寸（UIKit 实测值）。
+    ///
+    /// [R79-上下各缺一条] 为什么不从 SwiftUI 的 `GeometryReader` 读：
+    /// `geo.safeAreaInsets` 在这棵树上拿到的是 **0**。R78 那版就是把它
+    /// 当「出血量」往下传的，结果整段改动等于没写 —— 真机上画面一点变化
+    /// 都没有，用户直接回一句「还在」。窗口自己的 `safeAreaInsets` /
+    /// `bounds` 是 UIKit 的实测值，不经过 SwiftUI 的布局，不会被抹成 0。
+    ///
+    /// 顺带一个好处：窗口安全区**不含键盘**。走 SwiftUI 安全区的话，
+    /// 键盘一弹 bottom 会变成 300 多，卡片会被撑到屏幕外面去。
+    @MainActor
+    private static func windowMetrics() -> (top: CGFloat, bottom: CGFloat,
+                                             width: CGFloat, height: CGFloat)? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        guard let scene,
+              let win = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first
+        else { return nil }
+        return (win.safeAreaInsets.top,
+                win.safeAreaInsets.bottom,
+                win.bounds.width,
+                win.bounds.height)
     }
 
     var body: some View {
-        ZStack(alignment: .leading) {
+        // [R80] 关闭入口每帧刷一次，指向当前 state。
+        // 实例本身（环境值）不变，所以不会引发任何重算；变的只是里面那个闭包。
+        let s = state
+        closeAction.action = { s.close() }
+
+        // [R79] 卡片出血全靠这四个数，取一次，整段 body 共用。
+        let m = Self.windowMetrics()
+
+        return ZStack(alignment: .leading) {
             // ── 抽屉层（最底下，静止不动）──
             //
             // [R67-抽屉沉底] 用户给的参照（截图 + 原话）：
@@ -224,7 +306,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             // 命中测试天然上层优先，所以抽屉露出来的那一条能正常点、
             // 被卡片盖住的部分不会误触；完全收起时卡片盖满全屏，
             // 抽屉那一层根本接不到触摸。
-            drawer(state)
+            drawer
                 .frame(width: drawerWidth)
                 // 收起过程中（progress 还在 0 附近）不参与命中：
                 // 否则动画刚起步那一瞬，露出的 1~2pt 会把聊天界面左边缘的
@@ -242,58 +324,57 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             //   · 圆角 `24 * progress` —— 0 的时候是方正的一整屏，
             //     一开始滑就长出圆角，越滑越圆，最后是一张完整的卡片。
             //     圆角是「这是一张被推开的纸」的信号，比缩放或淡出都准确；
-            //   · 模糊 + 蒙底 —— 见下面 [R68]，越推越浅；
-            //   · 阴影跟着圆角一起长，把卡片和底下的抽屉分开 —— 没有它，
-            //     卡片边缘和抽屉背景颜色接近时会糊成一片，看不出层次。
+            //   · 变浅 —— 见下面 [R80]，靠蒙一层底色，不靠模糊；
+            //   · 阴影把卡片和底下的抽屉分开 —— 没有它，卡片边缘和抽屉
+            //     背景颜色接近时会糊成一片，看不出层次。
             //
-            // [R67] 曾经去掉过 R63 加的 blur，理由写的是「模糊和圆角打架、
-            // 参照里聊天内容是清晰的」。R68 用户重新给了参照并明确要求
-            // 「要和他一样模糊，就感觉字体越走越浅」—— 右侧露出的那一条
-            // 确实是虚的。所以补回来，但比 R63 的 4.0 弱：只到 2.5，
-            // 目的是把文字化开、不是把整屏糊掉。
-            // [R78-上下各缺一条·真因] 卡片必须自己是一块**整屏的板**。
+            // [R67] 曾经去掉过 R63 加的 blur，R68 又补回来（参数 2.5）。
+            // [R80] 现在**彻底删掉**，用户原话：
+            //   「人家的是背景不模糊，聊天记录变浅，你弄的整体模糊，
+            //     多滑动几次感觉可晕了，就感觉往右滑动的时候卡」
             //
-            // R76 那版只写了 `content().ignoresSafeArea(edges: .vertical)`，
-            // 真机上一点用都没有 —— 用户截图里那两条还在，而且宽度正好
-            // 是状态栏 59pt 和 home indicator 34pt。原因两条：
+            // 两条都对，而且指向同一个东西：
+            //   1. 观感错了 —— 参照里卡片底色是清楚的，只有字变浅。
+            //      高斯模糊是「磨砂玻璃」，不是「内容退到后面」；
+            //   2. `.blur` 是**离屏渲染**：每一帧都要把 1290×2796 的整屏
+            //      重新做一遍高斯卷积，再加上模糊半径还在跟着 progress
+            //      连续变化，等于每帧重算一张整屏位图。拖几次就掉帧，
+            //      手机也跟着烫 —— 那就是发热的来源。
             //
-            //   1. `.ignoresSafeArea` 只在「这棵子树自己挨着安全区边缘」时
-            //      才把 frame 撑出去。这里的子树是 NavigationStack，它内部
-            //      会按 safeArea 再布一次导航栏 / 列表，外层 frame 撑没撑
-            //      出去，看画面根本分辨不出来 —— 白底是它自己画的，
-            //      裁在哪儿由它的布局决定。
-            //   2. 紧跟其后的 `.clipShape` 按**布局 frame** 裁剪。
-            //      frame 没出去，裁出来就还是安全区那一块：
-            //      上沿停在状态栏下沿、下沿停在 home indicator 上沿，
-            //      中间露出来的正是抽屉底色 #fbfbfd —— 那两条窄带。
+            // 现在换成纯合成操作：`.overlay` 蒙一层同色底（见下），
+            // 只改 alpha，GPU 一次混合就完事，字变浅、底色不动、帧率稳。
+            // [R79-上下各缺一条·第二版] 卡片是一块**和屏幕等大的板**。
             //
-            // 所以换个做法，把卡片做成真的整屏板：
-            //   · 底座 `Color(systemBackground)` 负责撑满、负责底色；
-            //   · `content()` 自己上下加 padding，退回原来的安全区位置 ——
-            //     NavigationStack / 导航栏 / 返回键 / 列表 inset 一个点不动；
-            //   · 外面再用**等量的负 padding** 把整个 ZStack 撑到屏幕上下边缘。
+            // 走过两条弯路：
+            //   · R76 给 content() 加 `.ignoresSafeArea(edges: .vertical)` —— 无效，
+            //     NavigationStack 内部按 safeArea 重新布导航栏，外层 frame 没动；
+            //   · R78 靠「负 padding + geo.safeAreaInsets」撑出去 —— 也无效，
+            //     因为 `geo.safeAreaInsets` 在这里是 0，等于什么都没做。
             //
-            // `insets` 必须来自父容器那个 GeometryReader，不能在这里另读：
-            // 负 padding 只有在「值完全等于父容器被切掉的那一截」时才会
-            // 正好抵消 —— 多一点会露出窗口底色，少一点又缺一条。
+            // 现在两头都堵死：
+            //   1. 出血量从**窗口**拿（`windowMetrics()`），不经过 SwiftUI 布局；
+            //   2. 用 `.frame(height:)` 这种硬要求把板撑到整屏高，不指望
+            //      负 padding 会被布局系统认；
+            //   3. 里面的 content 自己上下加 padding，退回安全区原位 ——
+            //      导航栏、返回键、列表 inset 一个点不动。
             //
-            // 只借垂直方向：右侧要留 `peekStrip` 那条给「点空白关闭」，
-            // 左边要刚好停在抽屉宽度上，横向一旦铺满，
-            // 卡片的偏移量就和抽屉宽度对不上了。
+            // 位置怎么算：父容器是安全区高度（`H`, 上下少 top / bottom），
+            // 这块板是 `H + top + bottom` 高，ZStack 默认居中摆，于是板顶
+            // 落在 `-(top + bottom)/2`；要它落在 `-top`，再推
+            // `(bottom − top)/2` 刚好。
             //
-            // 对齐用 `.top` 而不是默认的居中：ZStack 里底座是撑满的、
-            // content 是被 padding 收窄的，居中会让 content 上下各浮 30pt，
-            // 导航栏跟着掉下去。`.top` + top padding 才落回原位。
+            // 取不到窗口信息（`m == nil`）时 height 传 nil，等于不约束、
+            // 退回原样：宁可维持现状，也绝不把聊天页弄没。
             ZStack(alignment: .top) {
                 Color(UIColor.systemBackground)
-                content()
-                    .padding(.top, insets.top)
-                    .padding(.bottom, insets.bottom)
+                content
+                    .padding(.top, m?.top ?? 0)
+                    .padding(.bottom, m?.bottom ?? 0)
             }
-            .padding(.top, -insets.top)
-            .padding(.bottom, -insets.bottom)
-            .blur(radius: 2.5 * state.progress)
-            // 「越走越浅」靠这层底色蒙出来。
+            .frame(width: totalWidth, height: m?.height, alignment: .top)
+            .offset(y: m.map { ($0.bottom - $0.top) / 2 } ?? 0)
+            // 「越走越浅」靠这层底色蒙出来。[R80] 这里是**唯一**的变浅手段，
+            // 不再有 blur —— 只改 alpha，一次合成，不碰离屏渲染。
             //
             // 不用 `.opacity(1 - k * progress)`：卡片是**不透明**的，
             // 整张降透明度会把底下的东西（抽屉右缘、窗口底色）
@@ -303,18 +384,25 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             //
             // 蒙的是 `systemBackground` 而不是白：深色模式下蒙白会
             // 把深色卡片糊成一片雾。
+            //
+            // 系数从 0.22 提到 0.34：少了模糊之后，0.22 太弱，右侧露出来的
+            // 那一条还是「一清二楚」。0.34 差不多是「看得出有字、读不出内容」，
+            // 和参照里那条虚影对得上。
             .overlay {
                 Color(UIColor.systemBackground)
-                    .opacity(0.22 * state.progress)
+                    .opacity(0.34 * state.progress)
                     .allowsHitTesting(false)
             }
             // 先蒙再裁：蒙层在 clipShape 里面，圆角外面那圈不会被
             // 糊成方角。
             .clipShape(RoundedRectangle(cornerRadius: 24 * state.progress,
                                         style: .continuous))
-            .shadow(color: .black.opacity(0.18 * Double(state.progress)),
-                    radius: 18 * state.progress,
-                    x: -8 * state.progress,
+            // [R80] 阴影半径和偏移**不再跟着 progress 连续变**，固定成
+            // 终值，只动 alpha。半径一变，系统每帧都要按新形状重新生成
+            // 一遍阴影位图；固定之后形状只由圆角决定，开销小一截。
+            .shadow(color: .black.opacity(0.16 * Double(state.progress)),
+                    radius: 14,
+                    x: -6,
                     y: 0)
             .offset(x: drawerWidth * state.progress)
             // 抽屉开着时，这张卡片**彻底退出命中链**。
@@ -354,18 +442,25 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             //
             // 手势完全不在这里竞争：三个 pan 都挂在 window 上，不参与
             // hitTest，也就不用管谁在上面。「往左拖收回」走的是 closePan。
-            if state.isOpen {
-                HStack(spacing: 0) {
-                    Color.clear
-                        .frame(width: drawerWidth)
-                        .allowsHitTesting(false)
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { state.close() }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .zIndex(3)
+            //
+            // [R80] 改成**常驻**，不再用 `if state.isOpen` 包着。
+            //
+            // `if` 是结构性条件：越过 progress 0.5 那一刻，ZStack 的子视图
+            // 列表会多一个 / 少一个，SwiftUI 得重建这层容器 —— 正好发生在
+            // 拖动中段，手感上就是「滑到一半顿一下」。改成常驻 + 命中开关，
+            // 拖动全程结构不变，只改一个 Bool。
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: drawerWidth)
+                    .allowsHitTesting(false)
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { state.close() }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 关着的时候整层不接触摸 —— 否则聊天页里的所有点击都会被它吃掉。
+            .allowsHitTesting(state.isOpen)
+            .zIndex(3)
 
             // ── 手势层（不可见的宿主）──
             //
@@ -396,6 +491,8 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                 .zIndex(2)
         }
         .environmentObject(state)
+        // [R80] 抽屉里的视图靠它收自己，不再订阅 `state`（见 DrawerCloseAction）。
+        .environment(\.drawerClose, closeAction)
         // 抽屉出来就收键盘。
         //
         // 为什么必须收：抽屉是聊天界面底下的一层，输入框在卡片上。
@@ -407,9 +504,17 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         // isOpen 是「已经完全展开」，但用户拉到一半就已经能看见抽屉了，
         // 那时候键盘还挂着就很别扭。0.35 是「明显是在拉抽屉」的位置，
         // 又不会被一次轻微的边缘误触触发。
+        //
+        // [R80] 加了 `keyboardDismissed` 这个闸：`progress` 在 > 0.35 的
+        // 区间里是**每帧都变**的，原来那个写法会在拖动这一段里每秒发 60 次
+        // `sendAction`（响应链广播），纯浪费。现在只在跨过 0.35 那一刻收一次，
+        // 回到 0.05 以下再复位，准备下一次。
         .onChange(of: state.progress) { p in
-            if p > 0.35 {
+            if p > 0.35, !keyboardDismissed {
+                keyboardDismissed = true
                 dismissKeyboard()
+            } else if p < 0.05 {
+                keyboardDismissed = false
             }
         }
     }
@@ -437,7 +542,14 @@ private func dismissKeyboard() {
 /// 不可见的 UIKit 宿主，只做一件事：把三个 pan 挂到 window 上。
 private struct EdgePanOverlay: UIViewRepresentable {
 
-    @ObservedObject var state: DrawerState
+    /// [R80] 刻意**不用** `@ObservedObject`。
+    ///
+    /// 用了的话，progress 每变一次 SwiftUI 就调一次 `updateUIView`，
+    /// 而那里面的 `syncWindowPans()` 会遍历三个手势、再递归一遍
+    /// rootViewController 去找 UINavigationController —— 每帧一趟，
+    /// 纯属白烧 CPU。state 这个引用本身永远不变，手势也不需要知道
+    /// progress 是多少（它只在回调里读），所以让它当个普通 let 就行。
+    let state: DrawerState
     let drawerWidth: CGFloat
 
     func makeUIView(context: Context) -> UIView {
@@ -461,11 +573,19 @@ private struct EdgePanOverlay: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        context.coordinator.width = drawerWidth
-        context.coordinator.state = state
-        // window 可能被换掉（SwiftUI 偶尔会把 hosting view 搬到另一个
-        // window，比如弹 sheet），所以每次更新都核对一遍。
-        context.coordinator.syncWindowPans()
+        // [R80] 值没变就立刻返回。
+        //
+        // 拖动过程中外层 body 每帧重算，这个 representable 也会跟着重建，
+        // 于是 `updateUIView` 每帧被调一次 —— 而 `syncWindowPans()` 里要
+        // 递归找 UINavigationController，每帧一趟纯属白烧 CPU。
+        // 真正需要重挂的只有两种情况：屏宽变了、state 换了个实例；
+        // 窗口被搬走由 `HostView.didMoveToWindow` 兜。
+        let coord = context.coordinator
+        guard coord.width != drawerWidth || coord.state !== state else { return }
+
+        coord.width = drawerWidth
+        coord.state = state
+        coord.syncWindowPans()
         uiView.backgroundColor = .clear
     }
 
