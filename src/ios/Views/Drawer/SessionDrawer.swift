@@ -90,12 +90,15 @@ struct SessionDrawer: View {
                         normalList
                     }
                 }
-                // [R28-设置齿轮不被压住] 底部留白 = 齿轮 52 + 底边距 20 + 一点余量。
+                // [R28-设置齿轮不被压住] 底部留白 = 齿轮直径 + 底边距 + 一点余量。
                 // 齿轮是 overlay 里的绝对定位元素，不参与 VStack 布局，
                 // 少了这段留白最后一个会话会被齿轮盖住点不到。
-                // [R51] 76 → 80：齿轮底边距从 70 改 20 后，
-                // 留白同步对齐（52 + 20 + 余量 8）。
-                .padding(.bottom, 80)
+                //
+                // [R64] 齿轮从 52/24 改成 60/16，留白跟着重算：
+                // 60 + 16 + 余量 10 = 86，取 88。
+                // 不跟着改的后果很具体 —— 齿轮下移了 8pt、又胖了 8pt，
+                // 原来 80 的留白刚好够不到，最后一条会话的下半截会被压住。
+                .padding(.bottom, 88)
             }
             .scrollDismissesKeyboard(.interactively)
         }
@@ -111,7 +114,7 @@ struct SessionDrawer: View {
                 : UIColor(red: 0xfb / 255.0, green: 0xfb / 255.0, blue: 0xfd / 255.0, alpha: 1)
         }))
         // [R28-设置入口右下角] 设置入口从导航栏 `.topBarLeading` 挪到这里：
-        // 抽屉右下角一枚 52pt 悬浮齿轮，点它直接开原版 SettingsSheet。
+        // 抽屉右下角一枚悬浮齿轮，点它直接开原版 SettingsSheet。
         //
         // 抽屉里齿轮是唯一固定在右下角的元素，用 overlay 浮在列表之上，
         // 不参与 VStack 布局。
@@ -144,34 +147,35 @@ struct SessionDrawer: View {
 
     /// 右下角悬浮齿轮。
     ///
-    /// [R63-对齐设计稿] 尺寸/配色全部取自 ui.html 的 `.dw-gear`：
-    ///   width/height 52, border-radius 50%
-    ///   background `--card` #fff（深色下走 grouped 卡片色）
-    ///   box-shadow 0 2px 12px rgba(0,0,0,.13) + 0 0 0 .5px rgba(0,0,0,.04)
-    ///   svg 26×26，颜色 #3a3a3c → SwiftUI 用 .primary 替代（深色下自动反色）
-    ///   right 14, bottom max(24, safeArea + 8)
+    /// [R64-蓝底加粗加大下移] 用户要求：「改成蓝色背景，齿轮加粗，齿轮整体
+    /// 加大，在往下移动一些」。这是对 R63 那版（白底细线 52pt）的直接覆盖。
     ///
-    /// 和 R53 那版（蓝底白齿轮、56pt、加粗）的取舍：设计稿是**整套**的，
-    /// 白底细线齿轮配 #fbfbfd 抽屉底色，才和上面两张白卡是一个体系；
-    /// 单独留一个蓝底气泡会跳出来，像贴上去的。所以这里跟设计稿走。
+    /// R63 我按 ui.html 的 `.dw-gear` 做成了白底细线，理由是「白卡配白底
+    /// 才是一套」。但那版在实际界面上是个问题：抽屉底色 #fbfbfd 本来就白，
+    /// 又一个白气泡贴上去，齿轮几乎没有存在感 —— 用户找不到设置入口。
+    /// 设计稿是静态图，看不出这个；真机上一眼就显。
+    ///
+    /// 参数：
+    ///   底色    白 → accentColor（和「新建任务」同一个蓝，是主色而不是装饰）
+    ///   齿轮    .regular → .bold（「加粗」）
+    ///   尺寸    52 → 60（「整体加大」）
+    ///   图标    26 → 30（跟着容器等比放，否则 60 的圈里会显得空）
+    ///   阴影    黑 0.13 → 蓝 0.35；蓝底气泡要有蓝色投影才「浮」得起来
+    ///   bottom  24 → 16（「往下移动一些」）
     private var settingsGear: some View {
         Button {
             onOpenSettings()
         } label: {
             Image(systemName: "gearshape")
-                .font(.system(size: 26, weight: .regular))
-                .foregroundStyle(.primary)
-                .frame(width: 52, height: 52)
-                .background(Color(.secondarySystemGroupedBackground), in: Circle())
-                .shadow(color: .black.opacity(0.13), radius: 12, y: 2)
+                .font(.system(size: 30, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 60, height: 60)
+                .background(Color.accentColor, in: Circle())
+                .shadow(color: Color.accentColor.opacity(0.35), radius: 10, y: 3)
         }
         .buttonStyle(.plain)
         .padding(.trailing, 14)
-        // 设计稿 bottom: max(24px, safeArea + 8px)。SwiftUI 里 overlay
-        // 已经避开安全区了，所以直接 24 就等价 —— 但 Home 指示条的机型上
-        // 24 会比 safeArea+8 更贴条，这里取两者较大者的语义：用 24 打底，
-        // 再叠安全区（由外层容器决定）。padding 只写 24，安全区由父级负责。
-        .padding(.bottom, 24)
+        .padding(.bottom, 16)
         .accessibilityLabel("设置")
     }
 
