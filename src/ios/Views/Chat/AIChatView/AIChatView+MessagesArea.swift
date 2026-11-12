@@ -87,20 +87,11 @@ extension AIChatView {
                     .contentShape(Rectangle())
                     .onTapGesture { inputFocused = false }
             }
-            // Empty-chat onboarding tip: a single card explaining the
-            // per-session vs cross-session /var/ai/ layout. Only shown
-            // on a true draft (vm.sessionId == nil) — opening an existing
-            // session would otherwise flash the card during the brief
-            // window before its messages load. Returning users with any
-            // prior chat skip the tip even on a fresh draft (so it's a
-            // genuine first-launch hint).
-            if vm.sessionId == nil
-                && vm.messages.isEmpty
-                && !vm.isLoadingSession
-                && (totalSessionCount ?? Int.max) == 0 {
-                EmptyChatDirectoryTimeline(onBrowse: { showFileBrowser = true })
-                    .padding(.horizontal, 24)
-            }
+            // [R38-删目录结构提示] 这里原本是空会话中间的「Minis 工作目录结构」
+            // 卡片（workspace / attachments / offloads / browser 那四行说明）。
+            // 用户要求删掉：进新会话就该是干净的可输入界面，不要被一块说明
+            // 卡片占着。组件 `EmptyChatDirectoryTimeline.swift` 一并删除，
+            // 这里不再引用 —— 留着组件但不挂载，等于给下一个人留一个死文件。
         }
         .overlay(alignment: .bottom) {
             // Open the overlay only when at least one button will actually

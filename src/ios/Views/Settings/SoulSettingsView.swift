@@ -51,12 +51,6 @@ struct SoulSettingsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0, pinnedViews: []) {
-                // ── 身份（头像 / 名字 / 风格 / 语言）──
-                // 原版 SoulSettingsView 的这四项人格页没有，补在最上面一行。
-                // 人格正文不在这里摆 —— 人格页的 8 套正文更强，再放一个
-                // 2000 token 的编辑器只会让人不知道哪份在生效。
-                SoulIdentityCard()
-
                 searchBar
 
                 // ── 人格选择 ──
