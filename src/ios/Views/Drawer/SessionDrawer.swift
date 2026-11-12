@@ -2,19 +2,13 @@
 //  SessionDrawer.swift
 //  全能AI - 抽屉里的会话列表
 //
-//  R25 / R28 的落地。抽屉内容 = 标题 + 搜索 + 两个入口 + 产物折叠区 + 分组会话列表。
-//  R46 对齐 R40 模板：标题固定「全能AI管理」，副标题「N 个对话 · N 个产物」，
-//  两个入口（全部产物 / 新建任务）上移到搜索框下方，「全部产物」改为原地折叠展开。
+//  结构：标题 + 搜索 + 两个入口（全部产物 / 新建任务）+ 产物折叠区 + 分组会话列表。
 //
-//  刻意复用的东西：行渲染直接用现成的 `SessionStackRow`，不另造一套。
-//  理由很实在 —— 那一行里有运行指示、未读徽标、高亮匹配片段、拖拽、
-//  长按菜单、文件夹归属背景，重写一遍必然漏东西，而且以后原版改了这里
-//  也不会跟着变。抽屉只是把它从 List 挪到了 VStack 里。
-//
-//  刻意不复用的东西：外层容器。原来那套 `List` + `Section` 的 chrome
-//  （分组头吸顶、侧滑删除、多选）是为「列表是主界面」设计的；抽屉里宽度
-//  只有「屏宽 − 54」左右，那些 chrome 会挤成一团。所以这里用 ScrollView + VStack，
-//  分组头自己画。
+//  行渲染直接复用现成的 `SessionStackRow`，不另造一套：那一行里有运行指示、
+//  未读徽标、高亮匹配片段、拖拽、长按菜单、文件夹归属背景，重写必然漏。
+//  但外层容器不复用 —— 原来 `List` + `Section` 的 chrome（分组头吸顶、
+//  侧滑删除、多选）是为「列表是主界面」设计的，抽屉只有「屏宽 − 54」宽，
+//  那些 chrome 会挤成一团。所以这里用 ScrollView + VStack，分组头自己画。
 //
 
 import SwiftUI
@@ -25,12 +19,8 @@ struct SessionDrawer: View {
 
     /// 收自己的入口（点会话 / 关闭键 / 新建任务之后）。
     ///
-    /// [R80-滑动卡顿 / 发热] 原来这里是
-    /// `@EnvironmentObject private var drawerState: DrawerState`。
-    /// 那是**订阅**：DrawerState 的 `progress` 在拖拽时每帧都在变，
-    /// 于是整棵抽屉（分组 + 几十行会话 + 产物折叠区）每帧重算一遍。
-    /// 抽屉其实只用它做一件事 —— 关自己，不值得为这个订阅整个拖动流。
-    /// 现在换成 `DrawerCloseAction`（一个环境里的类实例，值不随 progress 变）。
+    /// 不要换成 `@EnvironmentObject DrawerState`：那是订阅，progress 拖动时
+    /// 每帧都变，整棵抽屉会跟着每帧重算，而抽屉只用它做「关自己」一件事。
     @Environment(\.drawerClose) private var drawerClose
 
     /// 会话数据。由 ContentView 传进来，抽屉不自己读库 —— 两处各读一次
@@ -40,8 +30,7 @@ struct SessionDrawer: View {
     let groups: [SidebarGroup]
     let currentSessionId: String?
 
-    /// 产物数据源。R46 起「全部产物」改为抽屉内原地折叠展开（对齐 R40），
-    /// 需要按对话聚合的产物分组来渲染折叠区 + 算副标题里的产物总数。
+    /// 产物数据源。折叠区和副标题里的产物总数都来自它。
     @ObservedObject var artifactStore: ArtifactStore
 
     /// 每个会话的运行态。抽成闭包而不是传整张 Set，是为了不让抽屉在
@@ -97,41 +86,19 @@ struct SessionDrawer: View {
                         normalList
                     }
                 }
-                // [R28-设置齿轮不被压住] 底部留白 = 齿轮直径 + 底边距 + 一点余量。
-                // 齿轮是 overlay 里的绝对定位元素，不参与 VStack 布局，
-                // 少了这段留白最后一个会话会被齿轮盖住点不到。
-                //
-                // [R64] 齿轮从 52/24 改成 60/16，留白跟着重算：
-                // 60 + 16 + 余量 10 = 86，取 88。
-                // 不跟着改的后果很具体 —— 齿轮下移了 8pt、又胖了 8pt，
-                // 原来 80 的留白刚好够不到，最后一条会话的下半截会被压住。
+                // 底部留白 = 齿轮直径 60 + 底边距 16 + 余量 10 = 88。
+                // 齿轮是 overlay 里的绝对定位元素、不参与 VStack 布局，
+                // 少了这段留白最后一条会话会被齿轮盖住点不到。
                 .padding(.bottom, 88)
             }
             .scrollDismissesKeyboard(.interactively)
         }
-        // [R63-对齐设计稿] 抽屉底色 #fbfbfd。
+        // 抽屉底色 #fbfbfd：只比纯白暗一点点，白卡片摆上去才有那层薄阴影可看。
+        // 深色模式用 secondarySystemGroupedBackground。
         //
-        // 原来用 systemGroupedBackground（浅色下是 #f2f2f7），比设计稿灰
-        // 一档，白卡片摆上去对比不够，整块看着发闷。设计稿 :root 里
-        // --bg 是 #f2f2f7 但那说的是「手机外框」，抽屉本身铺的是 .drawer
-        // 的 #fbfbfd —— 只比纯白暗一点点，卡片才有那层薄阴影可看。
-        // [R76-上下各缺一条] 底色必须**铺进上下安全区**。
-        //
-        // 抽屉的父容器（ContentView 的 GeometryReader → DrawerContainer）
-        // 是遵守安全区布局的，所以抽屉这一层的 frame 上下各被切掉一截：
-        // 上面是状态栏（44/59pt），下面是 home indicator（34pt）。
-        // 那两截露出来的是窗口底色（纯白 #fff），而抽屉底色是 #fbfbfd ——
-        // 只差一点点白，于是屏幕上就是「上面缺一条、下面缺一条」，
-        // 一条比周围略白的窄带贴在抽屉上下两端（深色模式下更明显）。
-        //
-        // 修法只让**背景**忽略安全区，不给整个 VStack 加：
-        //   · 内容（标题、搜索框、列表）必须继续待在安全区内，否则标题
-        //     会被顶到状态栏底下、最后一行会被 home indicator 压住；
-        //   · 只有底色需要出血，`.ignoresSafeArea(edges: .vertical)`
-        //     正好只补上下两条，左右不动（右侧要留 peek 那条给卡片）。
-        //
-        // 不加 `.edges: .all` 的原因：左右一旦也忽略，抽屉底色会往左
-        // 吃掉横屏时的左安全区、往右可能压到 peek 条上，得不偿失。
+        // 只用 background 忽略上下安全区，不给整个 VStack 加：内容（标题、
+        // 搜索框、列表）必须待在安全区内，否则标题顶到状态栏底下、最后一行
+        // 被 home indicator 压住。左右也不忽略 —— 右边要留 peek 那条给卡片。
         .background(
             Color(UIColor { trait in
                 trait.userInterfaceStyle == .dark
@@ -140,27 +107,18 @@ struct SessionDrawer: View {
             })
             .ignoresSafeArea(edges: .vertical)
         )
-        // [R28-设置入口右下角] 设置入口从导航栏 `.topBarLeading` 挪到这里：
-        // 抽屉右下角一枚悬浮齿轮，点它直接开原版 SettingsSheet。
-        //
-        // 抽屉里齿轮是唯一固定在右下角的元素，用 overlay 浮在列表之上，
-        // 不参与 VStack 布局。
+        // 右下角悬浮齿轮，点它开原版 SettingsSheet。
         .overlay(alignment: .bottomTrailing) {
             settingsGear
         }
         // 会话真的切过去了才关抽屉。
         //
-        // 为什么不写在点击回调里：行是 SessionStackRow(内部 Button)，
-        // 点击先经过原版通道 `menuActions.send(.open)`，再由 ContentView
-        // 改 currentSessionId。在这里观察它的变化，既能保证「切成功才关」，
-        // 也不用和行的 Button 抢手势优先级。旧写法是先 onOpenSession 再
-        // close，顺序反了会在新页面上看到抽屉飘一下。
+        // 不写在点击回调里：行本身是 Button，点击先走 `menuActions.send(.open)`，
+        // 再由 ContentView 改 currentSessionId。观察它变化既能保证「切成功才关」，
+        // 也不用和 Button 抢手势优先级。
         //
-        // [R52-删对话后抽屉不关] 原来只在 newValue != nil 时才关（切到
-        // 某会话）。但删除当前会话后 currentSessionId 变 nil（回到列表），
-        // 这个条件不满足 → 抽屉一直开着、遮罩盖着，右侧还残留被删对话
-        // 的画面。改成「变了就关」（不管切去会话还是回到列表）——
-        // 从抽屉里点会话会走到这、删除后回列表也走到这，都该关。
+        // 条件是「变了就关」，不是「变成某个会话才关」—— 删除当前会话后
+        // currentSessionId 变 nil 也要关，否则抽屉一直开着盖住列表。
         .onChange(of: currentSessionId) { _ in
             // 不用再判断 isOpen：关一个已经关着的抽屉本来就什么都不发生，
             // 而为了那个判断去订阅 state，代价是整棵抽屉每帧重算。
@@ -172,23 +130,10 @@ struct SessionDrawer: View {
         }
     }
 
-    /// 右下角悬浮齿轮。
+    /// 右下角悬浮齿轮：accentColor 底 + 白色粗齿轮，60pt，底边距 16。
     ///
-    /// [R64-蓝底加粗加大下移] 用户要求：「改成蓝色背景，齿轮加粗，齿轮整体
-    /// 加大，在往下移动一些」。这是对 R63 那版（白底细线 52pt）的直接覆盖。
-    ///
-    /// R63 我按 ui.html 的 `.dw-gear` 做成了白底细线，理由是「白卡配白底
-    /// 才是一套」。但那版在实际界面上是个问题：抽屉底色 #fbfbfd 本来就白，
-    /// 又一个白气泡贴上去，齿轮几乎没有存在感 —— 用户找不到设置入口。
-    /// 设计稿是静态图，看不出这个；真机上一眼就显。
-    ///
-    /// 参数：
-    ///   底色    白 → accentColor（和「新建任务」同一个蓝，是主色而不是装饰）
-    ///   齿轮    .regular → .bold（「加粗」）
-    ///   尺寸    52 → 60（「整体加大」）
-    ///   图标    26 → 30（跟着容器等比放，否则 60 的圈里会显得空）
-    ///   阴影    黑 0.13 → 蓝 0.35；蓝底气泡要有蓝色投影才「浮」得起来
-    ///   bottom  24 → 16（「往下移动一些」）
+    /// 不能用白底细线：抽屉底色 #fbfbfd 本来就白，再贴一个白气泡，
+    /// 齿轮几乎没有存在感，用户找不到设置入口。
     private var settingsGear: some View {
         Button {
             onOpenSettings()
@@ -209,21 +154,11 @@ struct SessionDrawer: View {
     // MARK: 标题
 
     private var titleBar: some View {
-        // 标题居中，关闭按钮浮在右侧 —— 用 ZStack 而不是 HStack + Spacer。
-        //
-        // 为什么不能用 HStack：
-        //   HStack { 标题; Spacer(); 关闭按钮 } 里，标题的居中位置取决于
-        //   右侧按钮的宽度。按钮 28pt + 右 padding，标题就会被推得偏离
-        //   真正的中线约 19pt。改 Spacer 权重只能凑近似值，换个字号又歪。
-        //
-        // 用 ZStack 后两件事解耦：标题按整条宽度居中（不管右边有没有按钮），
-        // 按钮单独贴右。这样以后加第二个按钮也不会再动标题的位置。
+        // 标题居中、关闭按钮贴右 —— 必须用 ZStack 而不是 HStack + Spacer：
+        // HStack 里标题的居中位置取决于右侧按钮宽度，会被推偏约 19pt，
+        // 改 Spacer 权重只能凑近似值。
         ZStack {
-            // [R63-对齐设计稿] .dw-title / .dw-sub
-            //   .dw-title: font-size 27, weight 700, letter-spacing -.02em（≈ -0.54）
-            //              line-height 1.12 → 行距收紧
-            //   .dw-sub:   12.5px，margin-top 5
-            //   .dw-head:  padding 0 22 14，text-align center
+            // 字号取自设计稿 .dw-title（27 / bold / kerning −0.54）与 .dw-sub（12.5）。
             VStack(spacing: 5) {
                 Text(sidebarTitle)
                     .font(.system(size: 27, weight: .bold))
@@ -268,7 +203,7 @@ struct SessionDrawer: View {
     }
 
     private var sidebarTitle: String {
-        // [R46-对齐R40] 抽屉标题固定「全能AI管理」，不再用 SOUL 名。
+        // 固定文案，不用 SOUL 名 —— 抽屉是全局入口，不是某个角色的人格页。
         "全能AI管理"
     }
 
@@ -277,7 +212,6 @@ struct SessionDrawer: View {
             let n = sessionMatchCount + artifactMatches.count
             return n == 0 ? "没找到" : "找到 \(n) 项"
         }
-        // [R46-对齐R40] 副标题 = 「N 个对话 · N 个产物」。
         let artifactCount = artifactStore.groups.reduce(0) { $0 + $1.items.count }
         return "\(sessions.count) 个对话 · \(artifactCount) 个产物"
     }
@@ -285,10 +219,8 @@ struct SessionDrawer: View {
     // MARK: 搜索
 
     private var searchBar: some View {
-        // [R63-对齐设计稿] .dw-search
-        //   margin 0 18 16 / height 38 / radius 11 / gap 8 / padding 0 11
-        //   底色 --fill = rgba(120,120,128,.12) → .tertiarySystemFill
-        //   聚集时背景转白 + 3px 蓝色光晕（.dw-search.focus）
+        // 尺寸取自设计稿 .dw-search：高 38 / 圆角 11 / gap 8 / 内边距 11，
+        // 底色 tertiarySystemFill，聚焦时转白 + 蓝色光晕。
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .medium))
@@ -414,20 +346,13 @@ struct SessionDrawer: View {
         let session = sessions.first(where: { $0.id == sid })
             ?? .missingRowPlaceholder(sid)
 
-        // 不要再在这行外面套 `.onTapGesture { onOpenSession(sid) }`。
+        // 不要再在这行外面套 `.onTapGesture { onOpenSession(sid) }`：
+        // SessionStackRow 内部本身就是 Button，会走 `menuActions.send(.open)`
+        // → 原版 `switchToSession`（替换栈 + 按 shouldAnimateSessionPush 决定
+        // 动画）。外面再套一层等于同一个会话开两次，而且路径口径不同
+        // （append 会把栈堆起来）—— 点一次抽屉、后退一次还停在原页面。
         //
-        // SessionStackRow 内部本身就是一个 Button，点了会走
-        // `menuActions.send(.open(sid))` → ContentView 的
-        // `switchToSession(sid, animated: true)`，那是原版路径：
-        // 它会替换而不是追加导航栈，还会按 shouldAnimateSessionPush
-        // 决定要不要动画。
-        //
-        // 外面再套一层 tap 就等于同一个会话开两次，而且两条路径口径不同
-        // （onOpenSession 用的是 append，会把栈堆起来）。点一次抽屉、
-        // 后退一次发现还在原页面，就是这么来的。
-        //
-        // 关抽屉交给 `.onChange(of: currentSessionId)` —— 会话真的切过去了
-        // 才关，这不依赖点击事件的先后顺序，也不会和行的 Button 抢手势。
+        // 关抽屉交给下面 `.onChange(of: currentSessionId)`，不依赖点击顺序。
         return SessionStackRow(
             session: session,
             isActive: isActive(sid),
@@ -447,22 +372,13 @@ struct SessionDrawer: View {
                     .padding(.horizontal, 8)
             }
         }
-        // [R79-点当前会话抽屉不收] 用户原话：
-        //   「点击别的会话，也能回来，只有点击本轮会话他不回来」。
+        // 点的是当前正在聊的那条时，id 不变 → 上面的 onChange 不触发 → 抽屉
+        // 杵在那儿。这里补一个并行轻点，只处理这一种情况。
         //
-        // 原因很直接：关抽屉走的是下面 `.onChange(of: currentSessionId)`，
-        // 也就是说「会话真的换了才关」。点的就是当前正在聊的那一条时，
-        // id 压根没变，onChange 不触发 —— 抽屉就杵在那儿。
-        //
-        // 这里补一个**并行的**轻点手势，只处理「点的是当前这条」这一种情况：
-        //   · 用 `.simultaneousGesture` 而不是 `.onTapGesture`：行本身是
-        //     Button，onTapGesture 会被 Button 吃掉，simultaneous 才会
-        //     两边都收到；
-        //   · 只对当前会话生效，别的会话仍然交给 onChange 在切换成功后关 ——
-        //     提前关会在新页面上看到抽屉飘一下（R52 踩过）。
-        //
-        // 长按菜单不受影响：TapGesture 和 LongPressGesture 是两种手势，
-        // 这里只认「按下即抬起」。
+        // 必须用 `.simultaneousGesture`：行本身是 Button，`.onTapGesture`
+        // 会被它吃掉。只对当前会话生效，别的会话仍交给 onChange 在切换
+        // 成功之后关 —— 提前关会在新页面上看到抽屉飘一下。
+        // 长按菜单不受影响：Tap 和 LongPress 是两种手势。
         .simultaneousGesture(
             TapGesture().onEnded {
                 guard currentSessionId == sid else { return }
@@ -588,33 +504,13 @@ struct SessionDrawer: View {
 
     // MARK: 两个入口（全部产物 / 新建任务）
 
-    /// 搜索框正下方的两个入口。
+    /// 搜索框正下方的两个入口，上下排列。
     ///
-    /// [R63-对齐设计稿 + 上下排列]
-    /// 版式来自用户明确要求：「要上下排列的，气泡上下宽一点，字体大一点」，
-    /// 再叠「还有这个字体要居中」。设计稿 `.dw-entry` 原本是左右并排、
-    /// 文字靠左，那套在里面要塞两个 136pt 的块，字号只能到 15。
+    /// 「图标 + 文字」作为一个整体在行内居中，徽标贴图标、折叠箭头绝对贴右 ——
+    /// 箭头不参与居中计算，否则它会把整体往左推 12pt，展开/收起时文字还会跳。
     ///
-    /// **文字居中**：设计稿是左对齐（图标 + 文字 + 箭头三段撑满）。
-    /// 用户要求居中后，改成「图标 + 文字」作为一个整体在行内居中，
-    /// 徽标贴图标、折叠箭头绝对贴右 —— 箭头不参与居中计算，
-    /// 否则它会把整体往左推 12pt，两种状态下文字位置还会跳。
-    ///
-    /// [R68-尺寸回调到参照]
-    /// 用户拿参照（WorkBuddy 手机端）比：「二个气泡也和他上下一样宽，
-    /// 字体大小也一样」。R63 那版是**故意**做得比设计稿大一档的
-    /// （56 高 / 17pt 字，原话「气泡上下宽一点，字体大一点」），
-    /// 所以 17 本身就是「偏大」的值，不是参照值。这次往回收：
-    ///
-    ///   height  56 → 48    参照里是紧凑的行，不是厚卡片
-    ///   .et     17 → 16    iOS 列表行的标准字号，比 17 小一档
-    ///   .ei     34 → 29    图标底跟着行高收
-    ///   svg     19 → 16    图标本身
-    ///   radius  14 → 13    圆角跟着高度收，比例不塌
-    ///   badge   18 → 16    角标跟着图标收
-    ///   padding 16 → 14    横向留白跟着收
-    ///
-    /// 保留 R63 的两条：文字整体居中、箭头绝对贴右。
+    /// 尺寸：高 48 / 字号 16 / 图标底 29 / 图标 16 / 圆角 13 / 徽标 16 /
+    /// 横向 14。参照是紧凑的行，不是厚卡片。
     private var actionBar: some View {
         VStack(spacing: 10) {
 
@@ -642,8 +538,7 @@ struct SessionDrawer: View {
             .accessibilityLabel("全部产物，\(artifactTotalCount) 个，\(artifactsExpanded ? "已展开" : "已收起")")
 
             // ── 下：新建任务 ──
-            // 设计稿 `.dw-entry.primary` 是**淡蓝底 + 蓝字**（rgba(0,122,255,.09)），
-            // 不是整块饱和蓝 —— 那版是我之前自己加的，用户没要求过。
+            // 淡蓝底 + 蓝字（rgba(0,122,255,.09)），不是整块饱和蓝：
             // 淡蓝底跟上面那张白卡只差一档，两张摆一起才是一套。
             Button {
                 onNewChat()
@@ -730,23 +625,14 @@ struct SessionDrawer: View {
 
 // MARK: - 入口卡片
 
-/// 抽屉里「全部产物 / 新建任务」共用的行版式。
+/// 抽屉里「全部产物 / 新建任务」共用的行版式。两张卡只有配色和尾部元素不同，
+/// 几何完全一致 —— 分开写必然有一处漏改。
 ///
-/// 单独抽一个 struct 而不是 ViewBuilder 函数，原因是这两张卡**只有配色
-/// 和尾部元素不同**：几何完全一致（同高 56、同圆角 14、同图标底 34、
-/// 同字号 17、同内边距 16）。任何一处分别写两遍，下次调高度必定漏一个。
-/// 设计稿也是同一个 `.dw-entry` 类加 `.primary` 修饰符，这里直接对应。
+/// 用 ZStack 而不是 HStack + Spacer：「图标 + 文字」作为一个整体居中，
+/// 折叠箭头用 overlay 绝对贴右，不参与居中计算（放进 HStack 会把整体
+/// 往左推约 12pt，展开/收起时文字位置还会跳）。
 ///
-/// **文字居中**（用户要求）：
-/// 用 ZStack 而不是 HStack + Spacer：
-///   · 主体是「图标 + 文字」的 HStack，整体在行内居中；
-///   · 折叠箭头（`caretExpanded != nil` 时才有）用 overlay 绝对贴右，
-///     不参与居中计算。若把它放进 HStack，它会把整体往左推约 12pt，
-///     而且展开时箭头旋转不影响、收回时又变回去 —— 文字位置会跳。
-///
-/// 角标（`badge`）：贴图标右上角，用卡片底色描一圈边让它「浮」起来。
-/// 这是设计稿 `.dw-entry .ei .badge-n` 的做法（`box-shadow:0 0 0 1.6px #fff`），
-/// 比直接压在图标上清楚得多。
+/// 角标贴图标右上角，用卡片底色描一圈边让它「浮」起来。
 private struct DrawerEntry: View {
 
     let icon: String
