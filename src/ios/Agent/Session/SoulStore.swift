@@ -902,6 +902,13 @@ enum SoulStore {
               let data = try? Data(contentsOf: url),
               let str = String(data: data, encoding: .utf8) else { return nil }
         var file = SoulMDParser.parse(str)
+        // [R45-名称迁移] 旧版本默认人格名叫「Minis」，改名「全能AI」后老用户的
+        // SOUL.md 里还存着旧名，聊天标题、气泡头、「正在思考」会一直显示 Minis。
+        // 这里在唯一的磁盘读取边界做一次迁移：旧默认名一律换成新默认名。
+        // 只动「Minis」这一个精确值 —— 用户后来自己改过的任何名字都不碰。
+        if file.metadata.name.trimmingCharacters(in: .whitespacesAndNewlines) == "Minis" {
+            file.metadata.name = "全能AI"
+        }
         // [T-soul-icon-sidecar] Frontmatter may name the PNG sidecar; every
         // consumer expects `icon` to be a data URI (or an emoji), so resolve
         // it here at the single disk-read boundary.
@@ -1002,6 +1009,10 @@ enum SoulStore {
         // exists to remove, so normalize inbound content the same way a local
         // save does: bytes to the sidecar, filename in the frontmatter.
         var inbound = SoulMDParser.parse(markdown)
+        // [R45-名称迁移] 与 load() 同一条规则：旧默认名「Minis」一律换新。
+        if inbound.metadata.name.trimmingCharacters(in: .whitespacesAndNewlines) == "Minis" {
+            inbound.metadata.name = "全能AI"
+        }
         let resolvedIcon = resolveIconForRead(inbound.metadata.icon)
         inbound.metadata.icon = persistIconSidecar(resolvedIcon)
         let textToWrite = SoulMDParser.serialize(inbound)
