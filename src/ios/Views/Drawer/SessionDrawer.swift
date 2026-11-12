@@ -23,8 +23,15 @@ import SwiftUI
 
 struct SessionDrawer: View {
 
-    /// 抽屉状态（用来在点会话后关自己）
-    @EnvironmentObject private var drawerState: DrawerState
+    /// 收自己的入口（点会话 / 关闭键 / 新建任务之后）。
+    ///
+    /// [R80-滑动卡顿 / 发热] 原来这里是
+    /// `@EnvironmentObject private var drawerState: DrawerState`。
+    /// 那是**订阅**：DrawerState 的 `progress` 在拖拽时每帧都在变，
+    /// 于是整棵抽屉（分组 + 几十行会话 + 产物折叠区）每帧重算一遍。
+    /// 抽屉其实只用它做一件事 —— 关自己，不值得为这个订阅整个拖动流。
+    /// 现在换成 `DrawerCloseAction`（一个环境里的类实例，值不随 progress 变）。
+    @Environment(\.drawerClose) private var drawerClose
 
     /// 会话数据。由 ContentView 传进来，抽屉不自己读库 —— 两处各读一次
     /// 就会出现「列表已更新、抽屉还是旧的」。
@@ -155,9 +162,9 @@ struct SessionDrawer: View {
         // 的画面。改成「变了就关」（不管切去会话还是回到列表）——
         // 从抽屉里点会话会走到这、删除后回列表也走到这，都该关。
         .onChange(of: currentSessionId) { _ in
-            if drawerState.isOpen {
-                drawerState.close()
-            }
+            // 不用再判断 isOpen：关一个已经关着的抽屉本来就什么都不发生，
+            // 而为了那个判断去订阅 state，代价是整棵抽屉每帧重算。
+            drawerClose.close()
         }
         .task {
             // R46：进抽屉时刷新产物分组（按对话聚合），供折叠区和副标题用。
@@ -238,7 +245,7 @@ struct SessionDrawer: View {
             HStack {
                 Spacer(minLength: 0)
                 Button {
-                    drawerState.close()
+                    drawerClose.close()
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 13, weight: .semibold))
@@ -440,6 +447,28 @@ struct SessionDrawer: View {
                     .padding(.horizontal, 8)
             }
         }
+        // [R79-点当前会话抽屉不收] 用户原话：
+        //   「点击别的会话，也能回来，只有点击本轮会话他不回来」。
+        //
+        // 原因很直接：关抽屉走的是下面 `.onChange(of: currentSessionId)`，
+        // 也就是说「会话真的换了才关」。点的就是当前正在聊的那一条时，
+        // id 压根没变，onChange 不触发 —— 抽屉就杵在那儿。
+        //
+        // 这里补一个**并行的**轻点手势，只处理「点的是当前这条」这一种情况：
+        //   · 用 `.simultaneousGesture` 而不是 `.onTapGesture`：行本身是
+        //     Button，onTapGesture 会被 Button 吃掉，simultaneous 才会
+        //     两边都收到；
+        //   · 只对当前会话生效，别的会话仍然交给 onChange 在切换成功后关 ——
+        //     提前关会在新页面上看到抽屉飘一下（R52 踩过）。
+        //
+        // 长按菜单不受影响：TapGesture 和 LongPressGesture 是两种手势，
+        // 这里只认「按下即抬起」。
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                guard currentSessionId == sid else { return }
+                drawerClose.close()
+            }
+        )
     }
 
     private func showMoreRow(_ group: SidebarGroup) -> some View {
@@ -618,7 +647,7 @@ struct SessionDrawer: View {
             // 淡蓝底跟上面那张白卡只差一档，两张摆一起才是一套。
             Button {
                 onNewChat()
-                drawerState.close()
+                drawerClose.close()
             } label: {
                 DrawerEntry(
                     icon: "plus",
