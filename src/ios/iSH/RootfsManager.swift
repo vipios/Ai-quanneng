@@ -18,6 +18,16 @@ class RootfsManager {
     private static let mcpCliLibDir = "/usr/local/lib/minis-mcp-cli"
     private static let mcpCliLibPrefix = "/usr/local/lib/minis-mcp-cli/"
 
+    /// `/etc/profile` 里上游写死的提示符片段，以及换成什么。
+    /// 见 `stripPromptBranding()`。`"\\u"` 是字面量 `\u`（反斜杠 + u），
+    /// 不是 Unicode 转义 —— 提示符里那是 PS1 的「用户名」占位符。
+    private static let promptBrandToken = "\\u@minis:"
+    private static let promptReplacement = "\\u:"
+
+    /// apk 源：上游写的官方 CDN → 国内镜像。见 `patchApkMirrorIfNeeded()`。
+    private static let apkOfficialHost = "dl-cdn.alpinelinux.org"
+    private static let apkMirrorHost = "mirrors.tuna.tsinghua.edu.cn"
+
     /// [T-rootfs-reset-terminal-crash] Set once `reset()` deletes the rootfs
     /// directory from disk. The `ISHKernel` singleton boots exactly once per
     /// process and irreversibly becomes PID 1 via `become_first_process()`, so
@@ -380,10 +390,82 @@ class RootfsManager {
         removeExternallyManagedMarker()
         let markerMs = (CFAbsoluteTimeGetCurrent() - markerStart) * 1000
 
+        // 提示符去掉上游品牌名（root@minis → root）。
+        let brandStart = CFAbsoluteTimeGetCurrent()
+        stripPromptBranding()
+        let brandMs = (CFAbsoluteTimeGetCurrent() - brandStart) * 1000
+
+        // apk 源换成国内镜像（不预装工具链，靠模型自己 apk add）。
+        patchApkMirrorIfNeeded()
+
         let totalMs = (CFAbsoluteTimeGetCurrent() - totalStart) * 1000
         let avgCopyMs = fileCount > 0 ? copyTotalMs / Double(fileCount) : 0
         let avgMetaMs = fileCount > 0 ? metaDbTotalMs / Double(fileCount) : 0
-        logger.info("[DefaultMount] Done. \(fileCount) file(s) overlaid in \(String(format: "%.1f", totalMs))ms — copy: \(String(format: "%.1f", copyTotalMs))ms (avg \(String(format: "%.2f", avgCopyMs))ms/file), metaDB: \(String(format: "%.1f", metaDbTotalMs))ms (avg \(String(format: "%.2f", avgMetaMs))ms/file), marker: \(String(format: "%.1f", markerMs))ms")
+        logger.info("[DefaultMount] Done. \(fileCount) file(s) overlaid in \(String(format: "%.1f", totalMs))ms — copy: \(String(format: "%.1f", copyTotalMs))ms (avg \(String(format: "%.2f", avgCopyMs))ms/file), metaDB: \(String(format: "%.1f", metaDbTotalMs))ms (avg \(String(format: "%.2f", avgMetaMs))ms/file), marker: \(String(format: "%.1f", markerMs))ms, prompt: \(String(format: "%.1f", brandMs))ms")
+    }
+
+    /// 去掉 shell 提示符里的上游品牌名。
+    ///
+    /// rootfs 的 `/etc/profile` 末尾写着（由 `deps/prepare_alpine_rootfs.sh` 生成）：
+    ///
+    ///     export PS1='\u@minis:\w\$ '
+    ///
+    /// 装到「全能AI」里，终端一打开就是 `root@minis:/var/ai#`。这里把
+    /// `\u@minis:` 换成 `\u:`，提示符就成了 `root:/var/ai#`。
+    ///
+    /// **为什么不在生成脚本里改完就算**：rootfs 只在首次启动时装一次，
+    /// 之后不再重装，光改脚本对已经用过的设备永远不生效。而
+    /// `default_mount/` 那条「每次启动覆盖一遍」的路子也不合适 ——
+    /// 整份 `/etc/profile` 搬进仓库就意味着要维护 Alpine 那一整段
+    /// PATH / profile.d / 别名，改错一处 shell 直接起不来。
+    /// 这里只替换提示符那几个字符，文件其它部分一个字不动。
+    ///
+    /// 幂等：文件里已经没有 `@minis` 就直接返回，不重写、不动时间戳，
+    /// 所以每次启动跑一遍也不会反复写盘。
+    private func stripPromptBranding() {
+        let profileURL = dataPath.appendingPathComponent("etc/profile")
+        guard let text = try? String(contentsOf: profileURL, encoding: .utf8),
+              text.contains(Self.promptBrandToken) else { return }
+
+        // `"\\u@minis:"` 是 Swift 里对字面量 `\u@minis:` 的转义 —— 这里要的是
+        // 两个字符 `\` 和 `u`，不是 Unicode 转义。
+        let fixed = text.replacingOccurrences(of: Self.promptBrandToken,
+                                              with: Self.promptReplacement)
+        do {
+            // 不用 atomically:true：原子写是「写临时文件再改名」，会把文件
+            // 换成一个新 inode、权限回到默认值。原地截断写保留原来的 0644。
+            try fixed.write(to: profileURL, atomically: false, encoding: .utf8)
+            logger.info("[Rootfs] shell prompt: @minis removed (root@minis → root)")
+        } catch {
+            logger.error("[Rootfs] prompt rewrite failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// 把 guest 里 apk 的源换成国内镜像。
+    ///
+    /// 背景：我们**不预装工具链**（定制仓那条预装 86 个包的路一直在返工），
+    /// 改成让模型自己 `apk add`。那么 guest 的 /etc/apk/repositories 就从
+    /// 「基本用不到」变成了关键路径 —— 上游写的是
+    /// `https://dl-cdn.alpinelinux.org/...`，国内装一个包几十秒到几分钟，
+    /// 模型等不及就会判成失败、转头去编别的东西。
+    ///
+    /// 只换**主机名**，版本路径（v3.21/main 这种）原样保留：
+    /// 写死版本号的话，哪天换 Alpine 版本就成了「找不到包」—— 那比慢更糟。
+    ///
+    /// 幂等：已经不含官方域名就直接返回。
+    private func patchApkMirrorIfNeeded() {
+        let repoURL = dataPath.appendingPathComponent("etc/apk/repositories")
+        guard let old = try? String(contentsOf: repoURL, encoding: .utf8),
+              old.contains(Self.apkOfficialHost) else { return }
+
+        let fixed = old.replacingOccurrences(of: Self.apkOfficialHost,
+                                            with: Self.apkMirrorHost)
+        do {
+            try fixed.write(to: repoURL, atomically: false, encoding: .utf8)
+            logger.info("[Rootfs] apk sources → \(Self.apkMirrorHost)")
+        } catch {
+            logger.error("[Rootfs] apk mirror rewrite failed: \(error.localizedDescription)")
+        }
     }
 
     /// [T-aojit-restore] Copy the regular files of a bundle directory into the
@@ -419,6 +501,101 @@ class RootfsManager {
                 logger.info("[DefaultMount] removed EXTERNALLY-MANAGED from \(entry)")
             }
         }
+    }
+
+    // MARK: - Kernel boot recovery
+
+    /// 尝试修好 `meta.db` 里的 bug，让下一次 mount 能过。
+    ///
+    /// 内核 `fake_db_init` 里有一段 inode 校验 —— 把 meta 表的 db_inode
+    /// 跟 meta.db 文件自己的 st_ino 比，不等就调 `fakefs_rebuild()` 全表重建。
+    /// 而 fakefsify 产出的 db_inode 是 **0**，真 inode 永远不是 0，
+    /// 所以**每次启动都全量重建一次**。
+    ///
+    /// `fakefs_rebuild` 的头几条 SQL 是：
+    ///     create table paths_old (...)
+    ///     create table stats_old (...)
+    /// 不带 if not exists。重建跑到一半被打断（用户等不及退出、系统杀进程），
+    /// 这两张残表就留在库里；下一次重建再执行 create 直接报
+    /// "table already exists" → `_EIO` → mount 返回 -5。
+    ///
+    /// 修法很直接：删掉残表，顺便把 db_inode 写成真实值。
+    /// 这样下一次 mount 要么不重建、要么能完整重建，两条路都通。
+    ///
+    /// 注意：这里**不重建 data/ 目录树**。只是清两张临时表 + 改一个整数，
+    /// 用户数据一个字节都不动。所以可以安全地在 boot 失败后立即调用。
+    @discardableResult
+    func repairMetaDBIfNeeded() -> Bool {
+        let metaDBPath = rootfsPath.appendingPathComponent("meta.db").path
+        guard FileManager.default.fileExists(atPath: metaDBPath) else { return false }
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(metaDBPath, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+              let db else {
+            logger.warning("[Rootfs] repairMetaDB: 打不开 meta.db")
+            return false
+        }
+        defer { sqlite3_close(db) }
+
+        var changed = false
+        for table in ["paths_old", "stats_old"] {
+            // DROP TABLE IF EXISTS 对不存在的表也返回 OK，所以不能靠返回值
+            // 判断「有没有真的删掉」。先查 sqlite_master 确认它存在。
+            var probe: OpaquePointer?
+            var existed = false
+            if sqlite3_prepare_v2(db,
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                -1, &probe, nil) == SQLITE_OK, let probe {
+                sqlite3_bind_text(probe, 1, table, -1, Self.SQLITE_TRANSIENT)
+                existed = sqlite3_step(probe) == SQLITE_ROW
+                sqlite3_finalize(probe)
+            }
+            if existed {
+                if sqlite3_exec(db, "DROP TABLE IF EXISTS \(table)", nil, nil, nil) == SQLITE_OK {
+                    changed = true
+                    logger.warning("[Rootfs] repairMetaDB: 删掉残表 \(table)")
+                } else {
+                    logger.error("[Rootfs] repairMetaDB: 删 \(table) 失败 — \(String(cString: sqlite3_errmsg(db)))")
+                }
+            }
+        }
+
+        // 把 db_inode 写成 meta.db 自己的 st_ino。
+        // 解压后 inode 变过，所以这个值下次启动一定又对不上、还要重建一次 ——
+        // 但那时候重建表是干净的，能跑完。跑完之后内核自己会把 db_inode
+        // 更新成当时的正确值，此后就不再重建了。
+        //
+        // 用 stat(2) 而不是 attributesOfItem：后者拿 [.systemFileNumber] 是走
+        // FileAttributeKey → NSNumber → UInt64 的桥接，出错时静默得 0
+        // （这个文件里 [.size] 已经踩过一次）。ino_t 是 C 类型，直接读最稳。
+        var st = stat()
+        if stat(metaDBPath, &st) == 0, st.st_ino != 0 {
+            let sql = "UPDATE meta SET db_inode = \(st.st_ino)"
+            if sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK {
+                logger.info("[Rootfs] repairMetaDB: db_inode → \(st.st_ino)")
+                // 写成功也算「动过库」。残表可能本来就没有（真损坏的情形），
+                // 那时也要让调用方重试一次 —— 万一就是 db_inode 造成的。
+                changed = true
+            } else {
+                logger.warning("[Rootfs] repairMetaDB: 写 db_inode 失败")
+            }
+        }
+
+        // 顺手确认库本身没坏。integrity_check 返回 "ok" 才算过。
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "PRAGMA integrity_check", -1, &stmt, nil) == SQLITE_OK, let stmt {
+            defer { sqlite3_finalize(stmt) }
+            if sqlite3_step(stmt) == SQLITE_ROW,
+               let cstr = sqlite3_column_text(stmt, 0) {
+                let verdict = String(cString: cstr)
+                if verdict != "ok" {
+                    logger.error("[Rootfs] repairMetaDB: integrity_check 报 \(verdict)")
+                }
+            }
+        }
+
+        logger.info("[Rootfs] repairMetaDB done (changed=\(changed))")
+        return changed
     }
 
     // MARK: - Fakefs meta.db helpers

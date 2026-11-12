@@ -218,8 +218,8 @@ configure_rootfs() {
     # Configure /etc/profile for better shell experience
     cat >> "$ROOTFS_DATA/etc/profile" << 'EOF'
 
-# MinisApp iSH Configuration
-export PS1='\u@minis:\w\$ '
+# 全能AI iSH Configuration
+export PS1='\u:\w\$ '
 export TERM=xterm-256color
 export HOME=/root
 export LANG=C.UTF-8
@@ -236,15 +236,13 @@ cd ~
 EOF
 
     # Create /etc/motd
+    # 原来这里是一段 figlet 拼的 "Minis" ASCII art + "Welcome to MinisApp
+    # Linux Shell"。上游品牌名不能留在我们的包里，而且 iSH 的终端不跑
+    # login shell、这段其实很少显示（真正的提示符在 /etc/profile 的
+    # PS1 里），所以直接换成一行素文本，不再画图。
     cat > "$ROOTFS_DATA/etc/motd" << 'EOF'
 
-  __  __ _       _        _    _ _
- |  \/  (_)_ __ (_)___   | |  (_) |_ ___
- | |\/| | | '_ \| / __|  | |  | | __/ _ \
- | |  | | | | | | \__ \  | |__| | ||  __/
- |_|  |_|_|_| |_|_|___/  |____|_|\__\___|
-
- Welcome to MinisApp Linux Shell
+ Welcome to 全能AI Linux Shell
  Alpine Linux aarch64 on iSH-ARM64 Emulator
 
 EOF
