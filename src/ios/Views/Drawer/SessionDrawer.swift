@@ -13,7 +13,7 @@
 //
 //  刻意不复用的东西：外层容器。原来那套 `List` + `Section` 的 chrome
 //  （分组头吸顶、侧滑删除、多选）是为「列表是主界面」设计的；抽屉里宽度
-//  只有 318pt，那些 chrome 会挤成一团。所以这里用 ScrollView + VStack，
+//  只有「屏宽 − 54」左右，那些 chrome 会挤成一团。所以这里用 ScrollView + VStack，
 //  分组头自己画。
 //
 
@@ -544,22 +544,28 @@ struct SessionDrawer: View {
     /// [R63-对齐设计稿 + 上下排列]
     /// 版式来自用户明确要求：「要上下排列的，气泡上下宽一点，字体大一点」，
     /// 再叠「还有这个字体要居中」。设计稿 `.dw-entry` 原本是左右并排、
-    /// 文字靠左，那套在 318pt 宽度里要塞两个 136pt 的块，字号只能到 15。
-    /// 上下排列后每行占满宽度，字号可以放大到 17 才不显空。
-    ///
-    /// 尺寸对照（设计稿 → 这里）：
-    ///   height    46 → 56      「气泡上下宽一点」
-    ///   radius    12 → 14      高度放大后同步放，圆角比例才不塌
-    ///   .ei       27 → 34      图标底同步放
-    ///   svg       17 → 19      图标本身
-    ///   .et       15 → 17      「字体大一点」
-    ///   badge-n   15 → 18      角标跟着放大
-    ///   padding   0 12 → 0 16  横向留白按高度等比放
+    /// 文字靠左，那套在里面要塞两个 136pt 的块，字号只能到 15。
     ///
     /// **文字居中**：设计稿是左对齐（图标 + 文字 + 箭头三段撑满）。
     /// 用户要求居中后，改成「图标 + 文字」作为一个整体在行内居中，
     /// 徽标贴图标、折叠箭头绝对贴右 —— 箭头不参与居中计算，
     /// 否则它会把整体往左推 12pt，两种状态下文字位置还会跳。
+    ///
+    /// [R68-尺寸回调到参照]
+    /// 用户拿参照（WorkBuddy 手机端）比：「二个气泡也和他上下一样宽，
+    /// 字体大小也一样」。R63 那版是**故意**做得比设计稿大一档的
+    /// （56 高 / 17pt 字，原话「气泡上下宽一点，字体大一点」），
+    /// 所以 17 本身就是「偏大」的值，不是参照值。这次往回收：
+    ///
+    ///   height  56 → 48    参照里是紧凑的行，不是厚卡片
+    ///   .et     17 → 16    iOS 列表行的标准字号，比 17 小一档
+    ///   .ei     34 → 29    图标底跟着行高收
+    ///   svg     19 → 16    图标本身
+    ///   radius  14 → 13    圆角跟着高度收，比例不塌
+    ///   badge   18 → 16    角标跟着图标收
+    ///   padding 16 → 14    横向留白跟着收
+    ///
+    /// 保留 R63 的两条：文字整体居中、箭头绝对贴右。
     private var actionBar: some View {
         VStack(spacing: 10) {
 
@@ -714,33 +720,33 @@ private struct DrawerEntry: View {
     var body: some View {
         ZStack {
             // 主体：图标 + 文字，整体居中
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon)
-                        .font(.system(size: 19, weight: iconWeight))
+                        .font(.system(size: 16, weight: iconWeight))
                         .foregroundStyle(iconColor)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 29, height: 29)
                         .background(iconBackground,
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
                     if let n = badge, n > 0 {
                         Text("\(n)")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 4)
-                            .frame(minWidth: 18, minHeight: 18)
+                            .frame(minWidth: 16, minHeight: 16)
                             .background(Color(.systemIndigo), in: Capsule())
                             .overlay {
                                 Capsule()
                                     .strokeBorder(Color(.secondarySystemGroupedBackground),
-                                                  lineWidth: 1.8)
+                                                  lineWidth: 1.6)
                             }
-                            .offset(x: 7, y: -6)
+                            .offset(x: 5, y: -4)
                     }
                 }
 
                 Text(title)
-                    .font(.system(size: 17, weight: titleWeight))
+                    .font(.system(size: 16, weight: titleWeight))
                     .foregroundStyle(titleColor)
                     .lineLimit(1)
             }
@@ -750,22 +756,22 @@ private struct DrawerEntry: View {
                 HStack {
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity)
-        .frame(height: 56)
+        .frame(height: 48)
         .background(background,
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         // 设计稿 box-shadow 0 1px 3px rgba(0,0,0,.055) + 0 0 0 .5px rgba(0,0,0,.04)。
         // 「新建任务」是淡蓝底，设计稿明确 box-shadow:none —— 有阴影反而
         // 像浮起来的按钮，两张卡就不再是一套了。
         .shadow(color: hasShadow ? .black.opacity(0.055) : .clear, radius: 3, y: 1)
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
 
