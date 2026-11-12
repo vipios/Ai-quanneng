@@ -195,6 +195,9 @@ struct AppearanceSettingsView: View {
     @AppStorage("appLanguage") private var appLanguage: String = ""
     @AppStorage("launchScreen") private var launchScreen: Int = 0  // 0=Auto, 1=Last Session, 2=New Chat, 3=Home
     @AppStorage("toolPreviewEnabled") private var toolPreviewEnabled: Bool = true
+    /// [R80-fg-cpu-cap] 前台 CPU 上限。默认关 —— 默认开着等于所有人都被降速，
+    /// 那不该由我们替用户决定。
+    @AppStorage(ForegroundCPUCap.defaultsKey) private var foregroundCPUCap: Bool = false
     /// 0 = Return inserts a newline (default), 1 = Return sends the message.
     @AppStorage("returnKeyBehavior") private var returnKeyBehavior: Int = 0
     /// When true, holds `UIApplication.isIdleTimerDisabled` while any session
@@ -355,6 +358,23 @@ struct AppearanceSettingsView: View {
                 Text("Tool Status Bar")
             } footer: {
                 Text("Show a live preview thumbnail alongside the tool status bar during agent execution.")
+            }
+
+            // [R80-fg-cpu-cap] 前台 CPU 上限。就摆在「工具预览窗口」下面 ——
+            // 两个都是「为了少烧点电、降点温，压着点什么」的开关，摆一起好找。
+            //
+            // 打开之后 Linux 环境最多用 80% 的 CPU：任务慢两成，换温度低、
+            // 滑动不卡。跑重命令（几百个包、长脚本）时差别最明显。
+            Section {
+                Toggle(AppLocalized("Foreground CPU Cap"), isOn: $foregroundCPUCap)
+                    .onChange(of: foregroundCPUCap) { _ in
+                        // 立刻生效，不用重启 App；底层会自己 poke 正在跑的 guest。
+                        ForegroundCPUCap.apply()
+                    }
+            } header: {
+                Text("Performance")
+            } footer: {
+                Text("Caps CPU while a task runs so the phone stays cooler. Tasks take about 20% longer.")
             }
 
             // [T-thinking-auto-expand-toggle] Whether a NEW streaming thinking
@@ -556,6 +576,46 @@ private struct InteractivePopGestureDisabler: UIViewRepresentable {
                 }
                 responder = r.next
             }
+        }
+    }
+}
+
+// MARK: - 前台 CPU 上限（「降温」开关）
+
+/// 设置 › 外观 › 前台 CPU 上限 的落点。
+///
+/// [R80-fg-cpu-cap] 用户原话：「压一下这个 cpu 吧，手机温度升高，cpu 也升高，
+/// 就非常的卡了」。打开就把 Linux 环境的占空比压到 80%：任务慢两成，温度
+/// 明显低、掉帧少；关掉就是全速跑。
+///
+/// 为什么不做「按温度自动调」：自动调用户没法判断任务为什么忽快忽慢，
+/// 也说不清到底该等多久。一个明确的开关，代价他一次就记住了。
+///
+/// 底层是 `ISHKernel.beginForegroundCPUGovernor:`，它每 100ms poke 一次
+/// guest —— 光写比率不够，链式执行的 guest 代码不会回到钩子。
+enum ForegroundCPUCap {
+
+    /// 键名。设置页和冷启动读的是同一个。
+    static let defaultsKey = "foregroundCPUCapEnabled"
+
+    /// 目标占空比：0.80 → 最多用 80% 的 CPU。
+    static let dutyCycle: Float = 0.80
+
+    static var isEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: defaultsKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: defaultsKey)
+            apply()
+        }
+    }
+
+    /// 按存储值应用一次。冷启动时调一次，把上次的选择挂回去 ——
+    /// 用户可能根本不进设置页就开始跑任务。
+    static func apply() {
+        if isEnabled {
+            ISHKernel.shared.beginForegroundCPUGovernor(dutyCycle)
+        } else {
+            ISHKernel.shared.endForegroundCPUGovernor()
         }
     }
 }

@@ -2655,6 +2655,85 @@ static void gov_tick(void) {
           t, gov_zone_name(g_gov_zone), sleeps, (double)sleep_ns / 1e9);
 }
 
+#pragma mark - Foreground CPU cap (user-facing "降温" switch)
+
+// [R80-fg-cpu-cap] 用户侧的「降温」开关：把 guest 的占空比压到一个固定
+// 上限（0.8 = 最多用 80% 的 CPU），代价是任务慢两成，换来温度低、掉帧少。
+//
+// 为什么不用 `enableCPUThrottleWithDutyCycle:` 一把梭：那个只写比率、不
+// poke。governor 那段注释里记着实测 —— 链式执行的 guest 代码根本不回
+// dispatch loop，INT_TIMER 钩子一直是哑的，比率写进去也白写（"a busy
+// shell loop ran at 99% straight through RED with the hook never firing"）。
+// 所以照 governor 的做法来：100ms 一次 poke，把 guest 踹回执行器，钩子
+// 才有机会跑，才睡得下。
+//
+// 后台 governor 在跑的时候让位：它压得更狠、而且自己会 poke，这里只看
+// `g_gov_pub_running`，不去抢它的比率。
+static dispatch_source_t g_fg_timer;
+static dispatch_queue_t  g_fg_queue;
+static _Atomic int       g_fg_cap_q16;   // 0 = 关闭
+
+- (void)beginForegroundCPUGovernor:(float)dutyCycle {
+    if (dutyCycle <= 0.05f) dutyCycle = 0.05f;
+    if (dutyCycle >= 0.99f) { [self endForegroundCPUGovernor]; return; }
+
+    float ratio = (1.0f - dutyCycle) / dutyCycle;
+    int q = (int)(ratio * 65536.0f);
+    if (q <= 0) q = 1;
+    atomic_store_explicit(&g_fg_cap_q16, q, memory_order_release);
+
+    // 钩子必须挂着，否则比率没人读。
+    ish_set_timer_tick_hook(ish_throttle_trampoline);
+    // 立刻生效一次，不等第一个 tick（用户刚拨开关就该有反应）。
+    atomic_store_explicit(&g_throttle_ratio_q16, q, memory_order_release);
+    gov_poke_all_tasks();
+
+    if (g_fg_timer) return;   // 幂等：已经在跑就只更新比率
+    if (!g_fg_queue)
+        g_fg_queue = dispatch_queue_create("com.openminis.ish.fgcpucap",
+            dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
+
+    dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, g_fg_queue);
+    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, GOV_CADENCE_NS),
+                              GOV_CADENCE_NS, 50ULL * 1000000ULL /* 50ms leeway */);
+    dispatch_source_set_event_handler(timer, ^{
+        int cap = atomic_load_explicit(&g_fg_cap_q16, memory_order_relaxed);
+        if (cap <= 0) return;
+        // 后台 governor 在跑：让位（它更狠，poke 它自己做）。
+        if (atomic_load_explicit(&g_gov_pub_running, memory_order_relaxed)) return;
+        // 每个 tick 重新压一次：后台 governor 结束时会把自己的比率清成 0，
+        // 不重压的话回到前台后这个上限就静默失效了。
+        atomic_store_explicit(&g_throttle_ratio_q16, cap, memory_order_release);
+        gov_poke_all_tasks();
+    });
+    dispatch_source_set_cancel_handler(timer, ^{
+        // 只在「后台 governor 没在跑」且「前台上限确实已经不需要了」的时候
+        // 清比率 —— 两个刹车都不能踩。
+        // 后半个条件是防这个竞态：关开关后立刻又打开，旧的 cancel handler
+        // 是异步回来的，它要是无条件清零，就会把新挂上的上限抹掉一整个
+        // tick（100ms），表现为「开关拨了没反应」。
+        if (!atomic_load_explicit(&g_gov_pub_running, memory_order_relaxed) &&
+            atomic_load_explicit(&g_fg_cap_q16, memory_order_relaxed) <= 0)
+            atomic_store_explicit(&g_throttle_ratio_q16, 0, memory_order_release);
+    });
+    g_fg_timer = timer;
+    dispatch_resume(timer);
+    NSLog(@"ISHKernel: [FgCap] ON duty=%.0f%% ratio_q16=%d cadence=%llums",
+          dutyCycle * 100, q, GOV_CADENCE_NS / 1000000ULL);
+}
+
+- (void)endForegroundCPUGovernor {
+    BOOL wasOn = (g_fg_timer != nil);
+    atomic_store_explicit(&g_fg_cap_q16, 0, memory_order_release);
+    if (g_fg_timer) {
+        dispatch_source_cancel(g_fg_timer);   // cancel handler 负责清比率
+        g_fg_timer = nil;
+    } else if (!atomic_load_explicit(&g_gov_pub_running, memory_order_relaxed)) {
+        atomic_store_explicit(&g_throttle_ratio_q16, 0, memory_order_release);
+    }
+    if (wasOn) NSLog(@"ISHKernel: [FgCap] OFF — back to full speed");
+}
+
 - (NSDictionary<NSString *, id> *)backgroundCPUGovernorStatus {
     int zone = atomic_load_explicit(&g_gov_pub_zone, memory_order_relaxed);
     return @{

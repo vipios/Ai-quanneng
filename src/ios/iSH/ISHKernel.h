@@ -181,6 +181,21 @@ typedef NSString * _Nullable (^ISHPathReverseHandler)(NSString *hostPath);
 /// but fast-paths on dutyCycle==0 (single atomic load).
 - (void)disableCPUThrottle;
 
+/// [R80-fg-cpu-cap] 前台 CPU 上限（用户侧「降温」开关）。
+///
+/// 和 `enableCPUThrottleWithDutyCycle:` 的区别只有一个：这个会**自己 poke**。
+/// governor 的注释里记着实测 —— 链式的 guest 代码（busy loop）根本不回
+/// dispatch loop，INT_TIMER 钩子一直是哑的，光写比率没用。所以这里每
+/// 100ms 踹一次 guest，钩子才有机会跑、才睡得下。
+///
+/// 后台 governor 在跑的时候自动让位（它压得更狠，并且自己会 poke）。
+/// @param dutyCycle 目标占空比 0.0–1.0，例如 0.8 = 最多用 80% CPU；
+///        传 ≥0.99 等同关闭。
+- (void)beginForegroundCPUGovernor:(float)dutyCycle;
+
+/// 关掉前台 CPU 上限，恢复全速。可重复调用。
+- (void)endForegroundCPUGovernor;
+
 /// [T-ish-bg-cpu-governor] Start the closed-loop background CPU governor
 /// (see docs/internal/ish-bg-cpu-governor-design.md): samples process-wide CPU at
 /// 4 Hz into a 60s sliding window and dynamically drives the throttle

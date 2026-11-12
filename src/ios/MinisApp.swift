@@ -136,6 +136,10 @@ struct MinisApp: App {
         // this run's ring + 15 s resource sampling, before anything else runs.
         CrashBreadcrumbs.start()
         ResourceSampler.shared.start()
+        // [R80-fg-cpu-cap] 「降温」开关：上次开着的话，冷启动就把 CPU 上限挂回去。
+        // 放在这里而不是设置页的 onAppear —— 用户可能根本不进设置就开始跑任务，
+        // 而温度是跑起来之后才升的。
+        ForegroundCPUCap.apply()
         // [T-auto-grouping-default-on] Auto-grouping ships ON. `bool(forKey:)`
         // returns false for an unregistered key, so the default has to be
         // registered here rather than expressed at the (multiple) read sites —
