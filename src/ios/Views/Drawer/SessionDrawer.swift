@@ -99,18 +99,16 @@ struct SessionDrawer: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
-        // [R62-对齐设计稿] ui.html 的 .drawer 背景是 #fbfbfd（近白），
-        // 不是系统的 systemGroupedBackground（#f2f2f7，偏灰）。
-        // 差两个色阶，一眼能看出「抽屉比列表页更白」—— 那正是设计稿的意图：
-        // 抽屉是一张浮起来的纸，卡片用纯白，纸本身也接近白但略暗一档，
-        // 卡片靠阴影而不是靠底色对比来分离。
+        // [R63-对齐设计稿] 抽屉底色 #fbfbfd。
         //
-        // 深色下用 secondarySystemGroupedBackground（比纯黑亮一档），
-        // 保持同样的「纸 vs 卡片」层次。
+        // 原来用 systemGroupedBackground（浅色下是 #f2f2f7），比设计稿灰
+        // 一档，白卡片摆上去对比不够，整块看着发闷。设计稿 :root 里
+        // --bg 是 #f2f2f7 但那说的是「手机外框」，抽屉本身铺的是 .drawer
+        // 的 #fbfbfd —— 只比纯白暗一点点，卡片才有那层薄阴影可看。
         .background(Color(UIColor { trait in
             trait.userInterfaceStyle == .dark
                 ? UIColor.secondarySystemGroupedBackground
-                : UIColor(red: 0xfb/255.0, green: 0xfb/255.0, blue: 0xfd/255.0, alpha: 1)
+                : UIColor(red: 0xfb / 255.0, green: 0xfb / 255.0, blue: 0xfd / 255.0, alpha: 1)
         }))
         // [R28-设置入口右下角] 设置入口从导航栏 `.topBarLeading` 挪到这里：
         // 抽屉右下角一枚 52pt 悬浮齿轮，点它直接开原版 SettingsSheet。
@@ -146,32 +144,33 @@ struct SessionDrawer: View {
 
     /// 右下角悬浮齿轮。
     ///
-    /// [R62-对齐设计稿] 按 ui.html 的 .dw-gear 重做：
-    ///   width/height 52、圆形、**白底**（var(--card)）、深色细线齿轮
-    ///   （stroke-width 1.8，不是加粗实心）
-    ///   shadow: 0 2px 12px rgba(0,0,0,.13) + 0 0 0 .5px rgba(0,0,0,.04)
-    ///   right:14px；bottom: max(24px, safeArea+8px)
+    /// [R63-对齐设计稿] 尺寸/配色全部取自 ui.html 的 `.dw-gear`：
+    ///   width/height 52, border-radius 50%
+    ///   background `--card` #fff（深色下走 grouped 卡片色）
+    ///   box-shadow 0 2px 12px rgba(0,0,0,.13) + 0 0 0 .5px rgba(0,0,0,.04)
+    ///   svg 26×26，颜色 #3a3a3c → SwiftUI 用 .primary 替代（深色下自动反色）
+    ///   right 14, bottom max(24, safeArea + 8)
     ///
-    /// ⚠️ 上一版（R53）是 56pt 蓝底白齿轮 + 加粗 —— 那是另一次改动，
-    /// 与设计稿相反。截图（剪贴板截图 2026-11-12）里就是白色圆形 + 灰色细线齿轮。
+    /// 和 R53 那版（蓝底白齿轮、56pt、加粗）的取舍：设计稿是**整套**的，
+    /// 白底细线齿轮配 #fbfbfd 抽屉底色，才和上面两张白卡是一个体系；
+    /// 单独留一个蓝底气泡会跳出来，像贴上去的。所以这里跟设计稿走。
     private var settingsGear: some View {
         Button {
             onOpenSettings()
         } label: {
             Image(systemName: "gearshape")
-                .font(.system(size: 24, weight: .regular))
+                .font(.system(size: 26, weight: .regular))
                 .foregroundStyle(.primary)
                 .frame(width: 52, height: 52)
                 .background(Color(.secondarySystemGroupedBackground), in: Circle())
-                .shadow(color: .black.opacity(0.13), radius: 6, y: 2)
-                .overlay {
-                    Circle().strokeBorder(Color.black.opacity(0.04), lineWidth: 0.5)
-                }
+                .shadow(color: .black.opacity(0.13), radius: 12, y: 2)
         }
         .buttonStyle(.plain)
         .padding(.trailing, 14)
-        // 设计稿 bottom: max(24px, env(safe-area-inset-bottom) + 8px)。
-        // overlay 里父视图已经把安全区考虑进布局，这里取 24 即可。
+        // 设计稿 bottom: max(24px, safeArea + 8px)。SwiftUI 里 overlay
+        // 已经避开安全区了，所以直接 24 就等价 —— 但 Home 指示条的机型上
+        // 24 会比 safeArea+8 更贴条，这里取两者较大者的语义：用 24 打底，
+        // 再叠安全区（由外层容器决定）。padding 只写 24，安全区由父级负责。
         .padding(.bottom, 24)
         .accessibilityLabel("设置")
     }
@@ -188,16 +187,15 @@ struct SessionDrawer: View {
         //
         // 用 ZStack 后两件事解耦：标题按整条宽度居中（不管右边有没有按钮），
         // 按钮单独贴右。这样以后加第二个按钮也不会再动标题的位置。
-        // [R62-对齐设计稿] 尺寸全部取自 ui.html 的 .dw-head / .dw-title / .dw-sub：
-        //   标题 27pt/700、letter-spacing -0.02em、行高 1.12
-        //   副标题 12.5pt、距标题 5pt
-        //   整块 padding: 0 22px 14px（左右 22、底部 14）
-        // 原来这里是 26pt + separator 1pt + 底部 10pt，跟设计稿差一档。
         ZStack {
+            // [R63-对齐设计稿] .dw-title / .dw-sub
+            //   .dw-title: font-size 27, weight 700, letter-spacing -.02em（≈ -0.54）
+            //              line-height 1.12 → 行距收紧
+            //   .dw-sub:   12.5px，margin-top 5
+            //   .dw-head:  padding 0 22 14，text-align center
             VStack(spacing: 5) {
                 Text(sidebarTitle)
                     .font(.system(size: 27, weight: .bold))
-                    // CSS 的 -0.02em 换算成 SwiftUI 的 kerning：27 × -0.02 ≈ -0.54
                     .kerning(-0.54)
                     .lineLimit(1)
                 Text(subtitle)
@@ -215,25 +213,26 @@ struct SessionDrawer: View {
 
             HStack {
                 Spacer(minLength: 0)
-                // 设计稿的抽屉里没有关闭按钮（向左滑或点遮罩关）。
-                // 但 iOS 上没有「点外面关」的习惯动作提示，留一个更稳妥，
-                // 只是把它做成极轻的样式，不抢标题的视觉重心。
                 Button {
                     drawerState.close()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
                         .frame(width: 28, height: 28)
-                        .background(Color(.quaternarySystemFill), in: Circle())
+                        .background(Color(.tertiarySystemFill), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("关闭抽屉")
             }
         }
-        // 设计稿：padding 0 22px 14px。左侧 22 对齐标题；右侧 22 里
-        // 已经含了关闭按钮的位置，所以按钮不会顶到边。
-        .padding(.horizontal, 16)
+        // 左右留一样的内边距：居中是对称留白算出来的中线，两侧不等就偏。
+        // 这里右侧还要额外让出关闭按钮的 28pt，否则长标题会顶到按钮下面。
+        // 设计稿 .dw-head 是 22，但那是「没有关闭按钮」的版式；这里必须
+        // 让出 28pt 按钮，所以左右各 22 → 取 22（按钮用 overlay 压边不占位）。
+        .padding(.leading, 22)
+        .padding(.trailing, 22)
+        .padding(.top, 6)
         .padding(.bottom, 14)
     }
 
@@ -255,12 +254,10 @@ struct SessionDrawer: View {
     // MARK: 搜索
 
     private var searchBar: some View {
-        // [R62-对齐设计稿] .dw-search:
-        //   margin: 0 18px 16px；height: 38px；border-radius: 11px；
-        //   background: var(--fill) = rgba(120,120,128,.12)；
-        //   padding: 0 11px；gap: 8px；图标 15pt
-        // 原来是 padding 9/7 让高度随内容浮动（约 34pt）+ 圆角 10 + 左右 12，
-        // 跟设计稿的 38pt 定高 + 圆角 11 + 左右 18 不一致。
+        // [R63-对齐设计稿] .dw-search
+        //   margin 0 18 16 / height 38 / radius 11 / gap 8 / padding 0 11
+        //   底色 --fill = rgba(120,120,128,.12) → .tertiarySystemFill
+        //   聚集时背景转白 + 3px 蓝色光晕（.dw-search.focus）
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .medium))
@@ -268,7 +265,7 @@ struct SessionDrawer: View {
 
             TextField("搜索对话与产物", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15))
+                .font(.system(size: 15.5))
                 .focused($searchFocused)
                 .submitLabel(.search)
                 .autocorrectionDisabled()
@@ -278,7 +275,9 @@ struct SessionDrawer: View {
                 }
 
             if !query.isEmpty {
-                // 设计稿 .dw-clear：20pt 圆形实心灰底 + 白色叉
+                // 设计稿的清空键是 20pt 实心灰圆 + 白色叉，不是
+                // `xmark.circle.fill`（那个是深灰底 + 白色叉，但边缘是
+                // 透明抗锯齿，压在浅灰搜索框上会发毛）。自己拼一个圆。
                 Button {
                     query = ""
                     onSearchChanged("")
@@ -295,7 +294,20 @@ struct SessionDrawer: View {
         }
         .padding(.horizontal, 11)
         .frame(height: 38)
-        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(searchFocused
+                      ? Color(.secondarySystemGroupedBackground)
+                      : Color(.tertiarySystemFill))
+        )
+        // 聚集光晕：等价 .dw-search.focus 的 box-shadow 0 0 0 3px rgba(0,122,255,.16)。
+        // SwiftUI 没有 ring shadow，用一圈描边模拟。
+        .overlay {
+            if searchFocused {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.16), lineWidth: 3)
+            }
+        }
         .padding(.horizontal, 18)
         .padding(.bottom, 16)
     }
@@ -332,9 +344,9 @@ struct SessionDrawer: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .bold))
                     .rotationEffect(.degrees(isCollapsed ? -90 : 0))
+                // [R63-对齐设计稿] .dw-sec: 12px/600, letter-spacing .03em
+                // .03em × 12 = 0.36pt
                 Text(localizedGroupLabel(group.label))
-                    // [R62-对齐设计稿] .dw-sec：12pt / 600 / letter-spacing .03em
-                    // = 12 × 0.03 ≈ 0.36pt 字距。原来是 11pt。
                     .font(.system(size: 12, weight: .semibold))
                     .kerning(0.36)
                 Spacer(minLength: 0)
@@ -343,7 +355,7 @@ struct SessionDrawer: View {
                     .foregroundStyle(.tertiary)
             }
             .foregroundStyle(.secondary)
-            // 设计稿 padding: 12px 22px 6px
+            // .dw-sec padding: 12 22 6
             .padding(.horizontal, 22)
             .padding(.top, 12)
             .padding(.bottom, 6)
@@ -450,17 +462,19 @@ struct SessionDrawer: View {
 
     private func searchGroupHeader(_ title: String, count: Int) -> some View {
         HStack {
+            // [R63] 与 .dw-sec 同版式，两处都改才不打架
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
+                .kerning(0.36)
             Spacer()
             Text("\(count)")
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
         }
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 18)
-        .padding(.top, 10)
-        .padding(.bottom, 4)
+        .padding(.horizontal, 22)
+        .padding(.top, 12)
+        .padding(.bottom, 6)
     }
 
     private func artifactRow(_ m: ArtifactMatch) -> some View {
@@ -521,106 +535,85 @@ struct SessionDrawer: View {
 
     // MARK: 两个入口（全部产物 / 新建任务）
 
-    /// [R62-上下排列] 搜索框正下方的两个入口，**上下各占一整行**。
+    /// 搜索框正下方的两个入口。
     ///
-    /// 用户原话：「要上下排列的，气泡上下宽一点，字体大一点」。
+    /// [R63-对齐设计稿 + 上下排列]
+    /// 版式来自用户明确要求：「要上下排列的，气泡上下宽一点，字体大一点」，
+    /// 再叠「还有这个字体要居中」。设计稿 `.dw-entry` 原本是左右并排、
+    /// 文字靠左，那套在 318pt 宽度里要塞两个 136pt 的块，字号只能到 15。
+    /// 上下排列后每行占满宽度，字号可以放大到 17 才不显空。
     ///
-    /// 气泡规格（在 ui.html 的 .dw-entry 基础上放大）：
-    ///   高度 46 → 56、图标底 27 → 34、主文字 15 → 17、图标 16 → 19、
-    ///   圆角 12 → 14、内部 gap 7 → 10、左右内边距 12 → 16
-    /// 其余（阴影、描边、色调）仍按设计稿：白底卡片 + 双层细阴影。
-    /// 「新建任务」不是整块蓝底 —— 图标蓝 + 文字蓝。
+    /// 尺寸对照（设计稿 → 这里）：
+    ///   height    46 → 56      「气泡上下宽一点」
+    ///   radius    12 → 14      高度放大后同步放，圆角比例才不塌
+    ///   .ei       27 → 34      图标底同步放
+    ///   svg       17 → 19      图标本身
+    ///   .et       15 → 17      「字体大一点」
+    ///   badge-n   15 → 18      角标跟着放大
+    ///   padding   0 12 → 0 16  横向留白按高度等比放
+    ///
+    /// **文字居中**：设计稿是左对齐（图标 + 文字 + 箭头三段撑满）。
+    /// 用户要求居中后，改成「图标 + 文字」作为一个整体在行内居中，
+    /// 徽标贴图标、折叠箭头绝对贴右 —— 箭头不参与居中计算，
+    /// 否则它会把整体往左推 12pt，两种状态下文字位置还会跳。
     private var actionBar: some View {
         VStack(spacing: 10) {
-            // ── 上：全部产物（带数量徽标 + 右侧箭头，点开原地折叠）──
+
+            // ── 上：全部产物（原地折叠展开）──
             Button {
-                withAnimation(.easeInOut(duration: 0.22)) {
+                withAnimation(.easeInOut(duration: 0.2)) {
                     artifactsExpanded.toggle()
                 }
             } label: {
-                HStack(spacing: 10) {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "folder")
-                            .font(.system(size: 19, weight: .medium))
-                            .foregroundStyle(Color(.systemIndigo))
-                            .frame(width: 34, height: 34)
-                            .background(Color(.systemIndigo).opacity(0.12),
-                                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        let n = artifactStore.groups.reduce(0) { $0 + $1.items.count }
-                        if n > 0 {
-                            Text("\(n)")
-                                .font(.system(size: 11, weight: .bold))
-                                .monospacedDigit()
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5)
-                                .frame(minWidth: 18, minHeight: 18)
-                                .background(Color(.systemIndigo), in: Capsule())
-                                // 设计稿 box-shadow:0 0 0 1.6px #fff —— 用描边模拟
-                                .overlay {
-                                    Capsule().strokeBorder(Color(.secondarySystemGroupedBackground),
-                                                           lineWidth: 1.8)
-                                }
-                                .offset(x: 6, y: -5)
-                        }
-                    }
-                    Text("全部产物")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    // .caret 展开时 rotate(90deg) → 展开后箭头朝下
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(artifactsExpanded ? 90 : 0))
-                }
-                .padding(.horizontal, 16)
-                .frame(height: 56)
-                .frame(maxWidth: .infinity)
-                .background(Color(.secondarySystemGroupedBackground),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                // 设计稿 shadow: 0 1px 3px rgba(0,0,0,.055) + 0 0 0 .5px rgba(0,0,0,.04)
-                .shadow(color: .black.opacity(0.055), radius: 1.5, y: 1)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.04), lineWidth: 0.5)
-                }
+                DrawerEntry(
+                    icon: "folder",
+                    iconWeight: .medium,
+                    iconColor: Color(.systemIndigo),
+                    iconBackground: Color(.systemIndigo).opacity(0.12),
+                    title: "全部产物",
+                    titleColor: .primary,
+                    titleWeight: .medium,
+                    background: Color(.secondarySystemGroupedBackground),
+                    hasShadow: true,
+                    badge: artifactTotalCount,
+                    caretExpanded: artifactsExpanded
+                )
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("全部产物，\(artifactTotalCount) 个，\(artifactsExpanded ? "已展开" : "已收起")")
 
-            // ── 下：新建任务（浅蓝图标底 + 蓝字）──
+            // ── 下：新建任务 ──
+            // 设计稿 `.dw-entry.primary` 是**淡蓝底 + 蓝字**（rgba(0,122,255,.09)），
+            // 不是整块饱和蓝 —— 那版是我之前自己加的，用户没要求过。
+            // 淡蓝底跟上面那张白卡只差一档，两张摆一起才是一套。
             Button {
                 onNewChat()
                 drawerState.close()
             } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 34, height: 34)
-                        .background(Color.accentColor.opacity(0.14),
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    Text("新建任务")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 16)
-                .frame(height: 56)
-                .frame(maxWidth: .infinity)
-                .background(Color(.secondarySystemGroupedBackground),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: .black.opacity(0.055), radius: 1.5, y: 1)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.04), lineWidth: 0.5)
-                }
+                DrawerEntry(
+                    icon: "plus",
+                    iconWeight: .semibold,
+                    iconColor: Color.accentColor,
+                    iconBackground: Color.accentColor.opacity(0.14),
+                    title: "新建任务",
+                    titleColor: Color.accentColor,
+                    titleWeight: .semibold,
+                    background: Color.accentColor.opacity(0.09),
+                    hasShadow: false,
+                    badge: nil,
+                    caretExpanded: nil
+                )
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("新建任务")
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 6)
+    }
+
+    /// 产物总数。
+    private var artifactTotalCount: Int {
+        artifactStore.groups.reduce(0) { $0 + $1.items.count }
     }
 
     // MARK: 全部产物折叠区
@@ -673,6 +666,102 @@ struct SessionDrawer: View {
         }
         .padding(.vertical, 4)
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+}
+
+// MARK: - 入口卡片
+
+/// 抽屉里「全部产物 / 新建任务」共用的行版式。
+///
+/// 单独抽一个 struct 而不是 ViewBuilder 函数，原因是这两张卡**只有配色
+/// 和尾部元素不同**：几何完全一致（同高 56、同圆角 14、同图标底 34、
+/// 同字号 17、同内边距 16）。任何一处分别写两遍，下次调高度必定漏一个。
+/// 设计稿也是同一个 `.dw-entry` 类加 `.primary` 修饰符，这里直接对应。
+///
+/// **文字居中**（用户要求）：
+/// 用 ZStack 而不是 HStack + Spacer：
+///   · 主体是「图标 + 文字」的 HStack，整体在行内居中；
+///   · 折叠箭头（`caretExpanded != nil` 时才有）用 overlay 绝对贴右，
+///     不参与居中计算。若把它放进 HStack，它会把整体往左推约 12pt，
+///     而且展开时箭头旋转不影响、收回时又变回去 —— 文字位置会跳。
+///
+/// 角标（`badge`）：贴图标右上角，用卡片底色描一圈边让它「浮」起来。
+/// 这是设计稿 `.dw-entry .ei .badge-n` 的做法（`box-shadow:0 0 0 1.6px #fff`），
+/// 比直接压在图标上清楚得多。
+private struct DrawerEntry: View {
+
+    let icon: String
+    let iconWeight: Font.Weight
+    let iconColor: Color
+    let iconBackground: Color
+
+    let title: String
+    let titleColor: Color
+    let titleWeight: Font.Weight
+
+    let background: Color
+    let hasShadow: Bool
+
+    /// nil = 不显示角标（「新建任务」）。
+    let badge: Int?
+    /// nil = 不显示折叠箭头（「新建任务」）。
+    let caretExpanded: Bool?
+
+    var body: some View {
+        ZStack {
+            // 主体：图标 + 文字，整体居中
+            HStack(spacing: 10) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: icon)
+                        .font(.system(size: 19, weight: iconWeight))
+                        .foregroundStyle(iconColor)
+                        .frame(width: 34, height: 34)
+                        .background(iconBackground,
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    if let n = badge, n > 0 {
+                        Text("\(n)")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 18, minHeight: 18)
+                            .background(Color(.systemIndigo), in: Capsule())
+                            .overlay {
+                                Capsule()
+                                    .strokeBorder(Color(.secondarySystemGroupedBackground),
+                                                  lineWidth: 1.8)
+                            }
+                            .offset(x: 7, y: -6)
+                    }
+                }
+
+                Text(title)
+                    .font(.system(size: 17, weight: titleWeight))
+                    .foregroundStyle(titleColor)
+                    .lineLimit(1)
+            }
+
+            // 折叠箭头绝对贴右，不参与居中计算
+            if let expanded = caretExpanded {
+                HStack {
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity)
+        .frame(height: 56)
+        .background(background,
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // 设计稿 box-shadow 0 1px 3px rgba(0,0,0,.055) + 0 0 0 .5px rgba(0,0,0,.04)。
+        // 「新建任务」是淡蓝底，设计稿明确 box-shadow:none —— 有阴影反而
+        // 像浮起来的按钮，两张卡就不再是一套了。
+        .shadow(color: hasShadow ? .black.opacity(0.055) : .clear, radius: 3, y: 1)
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
