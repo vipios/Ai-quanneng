@@ -535,7 +535,7 @@ final class EnvVarStore: ObservableObject {
             logger.info("[ShortcutEnvVar] updated \(key) (\(bytes) bytes)")
             return (key, false)
         }
-        let entry = EnvVarEntry(key: key, note: AppLocalized("Saved by the Shortcuts action “Save Environment Variable to Minis”."))
+        let entry = EnvVarEntry(key: key, note: AppLocalized("Saved by the Shortcuts action “Save Environment Variable to 全能AI”."))
         entries.append(entry)
         saveEntries()
         markEntryDirty(entryId: entry.id, operation: "upsert")

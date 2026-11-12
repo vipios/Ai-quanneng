@@ -108,21 +108,12 @@ struct SkillsManagementView: View {
             }
         }
         .navigationTitle("Skills")
+        // [R42-统一外观] 和设置首页同一套底色 / 紧致标题。
+        .settingsPageChrome()
         .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: Text(AppLocalized("Search skills")))
         .onAppear { store.reload() }
         .toolbar {
-            // [R61-技能直达管理] 能力域浏览入口。独立一个按钮而不是塞进加号
-            // 菜单里：它是「看 AI 会什么」的入口，跟导入/同步不是一类事，
-            // 藏在菜单里等于没有。
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink {
-                    SkillsCatalogView()
-                } label: {
-                    Image(systemName: "book")
-                }
-                .accessibilityLabel(Text(AppLocalized("能力域")))
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 // Sort menu — same structure as the file browser's (sort-key
                 // picker + direction toggle), persisted via AppStorage.

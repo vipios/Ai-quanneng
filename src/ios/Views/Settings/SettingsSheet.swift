@@ -180,6 +180,33 @@ struct SettingsSheet: View {
 
                 rowDivider()
 
+                // [R65-中转站入口搬进设置]
+                // 这个入口原来在「AI 服务商」页右上角加号菜单里（和添加服务商、
+                // 导入服务商挤在一个 Menu 里）。用户的要求是：别在那个菜单里
+                // 出现，挪到设置页、紧跟在「AI 服务商」下面，图标样式和上面
+                // 那一行保持一致。
+                //
+                // 所以这里用同一套 SettingsRowContent（蓝底圆角方块 + 标题），
+                // 而不是菜单里那种纯文字 Label ——「样式对齐」指的就是这个外框。
+                // 图形仍用 network：它本来就是中转站在这台机器上的记号，换掉
+                // 反而要重新认。
+                //
+                // 服务商页那个 Menu 里的对应项已同步删除，否则同一个动作会有
+                // 两个入口，改了一个忘了另一个就是下次的 bug。
+                NavigationLink {
+                    AddRelayProviderView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.addRelay,
+                                                        fallback: "Add AI Relay")),
+                        symbol: "network",
+                        iconTint: SettingsDesign.blue
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
                 NavigationLink {
                     ModelGroupsView()
                 } label: {
@@ -306,15 +333,15 @@ struct SettingsSheet: View {
                 rowDivider()
 
                 NavigationLink {
-                    // [R61-技能直达管理] 这里原来进 SkillsCatalogView（20 个
-                    // 能力域的浏览页），用户点「技能」看到的是一屏介绍文字，
-                    // 找不到自己装了什么、也没法导入或删 —— 观感就是「技能页
-                    // 里面没有东西」。
+                    // 「技能」进的是能力域浏览页（20 个域 + 自动路由试用），
+                    // 和定制仓一致。
                     //
-                    // 改成直达 SkillsManagementView：已装技能列表、导入、删除、
-                    // 开关、同步都在这一页。能力域浏览页没有删掉，入口挪到
-                    // 管理页右上角（book 图标），浏览和自动路由试用照旧。
-                    SkillsManagementView()
+                    // 之前这里被我改成直达 SkillsManagementView（已装技能
+                    // 列表），结果是：内置技能本来只有一个 skill-creator，
+                    // 这一页就只有一行，看着像「技能里面是空的」。
+                    // 那张列表是「管理已装技能」的工具页，不该当入口。
+                    // 管理页的入口在浏览页右上角（square.and.arrow.down）。
+                    SkillsCatalogView()
                 } label: {
                     SettingsRowContent(
                         title: AnyView(SettingsRowLabel(.skills,
@@ -589,8 +616,8 @@ struct SettingsSheet: View {
         case .usage:
             UsageStatsView()
         case .skills:
-            // 与设置首页那一行保持一致：直达管理页（见上面的说明）。
-            SkillsManagementView()
+            // 与设置首页那一行保持一致：技能 = 能力域浏览页。
+            SkillsCatalogView()
         case .soul:
             SoulSettingsView()
         case .tools:
