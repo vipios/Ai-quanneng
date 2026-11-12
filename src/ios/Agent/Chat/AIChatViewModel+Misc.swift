@@ -24,9 +24,43 @@ extension AIChatViewModel {
 
                     let kernelStart = CFAbsoluteTimeGetCurrent()
                     let rootPath = RootfsManager.shared.rootfsPath.path
-                    let err = ISHKernel.shared.boot(withRootPath: rootPath)
+                    var err = ISHKernel.shared.boot(withRootPath: rootPath)
                     let kernelElapsed = (CFAbsoluteTimeGetCurrent() - kernelStart) * 1000
                     logger.info("[KernelBoot] kernel boot call: \(String(format: "%.1f", kernelElapsed))ms")
+
+                    // [T-fakefs-rebuild-storm] -5 = -EIO，来自内核 fake_db_init
+                    // 打开 / 初始化 meta.db 失败。最常见的成因是上次
+                    // fakefs_rebuild 被打断，留下 paths_old / stats_old 残表，
+                    // 下次 `create table paths_old` 报「表已存在」。
+                    //
+                    // 这不是数据损坏，只是两张临时表卡住了。清掉就能继续，
+                    // 用户数据（/root、/var/ai）一个字节都不用动 —— 比让用户
+                    // 看到「内核启动失败」然后重装整个 App 好太多。
+                    //
+                    // 试一次就够：修完还失败说明是别的原因（真损坏、没空间），
+                    // 再重试只是浪费用户时间。
+                    if err == -5 {
+                        logger.warning("[KernelBoot] boot 返回 -5（meta.db EIO）— 尝试清残表后重试一次")
+                        // isBooted 只有在 boot 全程成功末尾才置 YES；-5 来自
+                        // mount_root → fake_db_init，位置在 become_first_process
+                        // 之前，所以内核还是「没启动」的干净状态，可以重来。
+                        // 但仍然显式确认一次：become_first_process 不可逆，
+                        // 误判会让重试直接把 App 打崩。
+                        guard !ISHKernel.shared.isBooted else {
+                            logger.error("[KernelBoot] 内核已标记 booted，不再重试（避免二次 become_first_process）")
+                            kernelStatus = .failed("Kernel boot failed: \(err)")
+                            return
+                        }
+                        let repaired = RootfsManager.shared.repairMetaDBIfNeeded()
+                        logger.info("[KernelBoot] repairMetaDB changed=\(repaired)")
+                        if repaired {
+                            let retryStart = CFAbsoluteTimeGetCurrent()
+                            err = ISHKernel.shared.boot(withRootPath: rootPath)
+                            let retryElapsed = (CFAbsoluteTimeGetCurrent() - retryStart) * 1000
+                            logger.info("[KernelBoot] retry boot after repair: err=\(err) \(String(format: "%.1f", retryElapsed))ms")
+                        }
+                    }
+
                     if err < 0 {
                         kernelStatus = .failed("Kernel boot failed: \(err)")
                         return
