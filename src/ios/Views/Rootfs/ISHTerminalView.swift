@@ -93,7 +93,7 @@ struct ISHTerminalView: View {
             )
         }
         .background(Color.black)
-        .navigationTitle("Minis Shell")
+        .navigationTitle("全能AI Shell")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if showCloseButton {
@@ -340,7 +340,7 @@ class ISHTerminalViewModel: ObservableObject {
 
         Task { @MainActor in MirrorSpeedTestViewModel.shared.autoDetectOnceIfNeeded() }
 
-        // Mount /var/minis/* for this session BEFORE starting the shell — the
+        // Mount /var/ai/* for this session BEFORE starting the shell — the
         // shell must see the mounts — but do it ASYNCHRONOUSLY.
         //
         // [T-terminal-mount-watchdog-crash] This used to block the main thread
@@ -422,7 +422,7 @@ class ISHTerminalViewModel: ObservableObject {
         // If opened from a session, cd to the session's shared directory
         if sessionId != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                if let data = "cd /var/minis && clear\n".data(using: .utf8) {
+                if let data = "cd /var/ai && clear\n".data(using: .utf8) {
                     self?.sendInput(data)
                 }
                 // Pre-fill init command (without newline) so the user can review before pressing Enter

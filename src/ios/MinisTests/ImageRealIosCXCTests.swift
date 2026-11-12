@@ -84,7 +84,7 @@ final class ImageRealIosCXCTests: XCTestCase {
         // What the live turn hands the model for this screenshot.
         let live = AIChatViewModel.browserUseInferenceImage(original).data
         let snapRef = await store.saveMedia(data: original, mimeType: "image/jpeg", sessionId: sessionId,
-                                                       subdir: "browser", linuxPath: "/var/minis/browser/screenshot_1.jpg")
+                                                       subdir: "browser", linuxPath: "/var/ai/browser/screenshot_1.jpg")
         let snap = ToolSnapshot(type: .image, text: nil, mediaRef: snapRef, duration: 1)
         XCTAssertNil(AIChatViewModel.toolResultMediaRef(imageData: nil, snapshot: snap), "no image to the model -> no ref")
         let ref = try XCTUnwrap(AIChatViewModel.toolResultMediaRef(imageData: live, snapshot: snap))
@@ -100,7 +100,7 @@ final class ImageRealIosCXCTests: XCTestCase {
         XCTAssertEqual(data, original)
         XCTAssertEqual(pixelSize(data).1, 21891)
         XCTAssertEqual(mime, "image/jpeg")
-        XCTAssertEqual(lp, "/var/minis/browser/screenshot_1.jpg")
+        XCTAssertEqual(lp, "/var/ai/browser/screenshot_1.jpg")
 
         let vm = AIChatViewModel()
         let request = vm.applyRequestImageBudget([rebuilt])
@@ -117,9 +117,9 @@ final class ImageRealIosCXCTests: XCTestCase {
     func testMissingMediaFileIsDroppedWithoutPlaceholder_today() async throws {
         let present = page(400, 300)
         let kept = await AIChatViewModel.persistedUserImageRef(data: present, mimeType: "image/jpeg", sessionId: sessionId,
-                                                               linuxPath: "/var/minis/attachments/uploads/kept.jpg")
+                                                               linuxPath: "/var/ai/attachments/uploads/kept.jpg")
         let gone = MediaRef(id: "gone", relativePath: "\(sessionId)/attachments/gone.jpg", mimeType: "image/jpeg",
-                            originalFileName: nil, linuxPath: "/var/minis/attachments/uploads/gone.jpg")
+                            originalFileName: nil, linuxPath: "/var/ai/attachments/uploads/gone.jpg")
         let toolGone = ToolResult(toolUseId: "t2", output: "shot", success: true, mediaRef: gone, snapshot: nil, pageURL: nil, status: "success")
         let parts = try viaJSON([.text("two pictures"), .mediaRef(kept), .mediaRef(gone), .toolResult(toolGone)])
         let raw = RawMessage(id: "m2", sessionId: sessionId, role: .user, parts: parts, createdAt: Date())
@@ -127,11 +127,11 @@ final class ImageRealIosCXCTests: XCTestCase {
 
         XCTAssertEqual(rebuilt.parts.count, 3, "text + the image that exists + the tool result; the missing image leaves nothing")
         guard case .imageData(let d, let m, let lp) = rebuilt.parts[1] else { return XCTFail() }
-        XCTAssertEqual(d, present); XCTAssertEqual(m, "image/jpeg"); XCTAssertEqual(lp, "/var/minis/attachments/uploads/kept.jpg")
+        XCTAssertEqual(d, present); XCTAssertEqual(m, "image/jpeg"); XCTAssertEqual(lp, "/var/ai/attachments/uploads/kept.jpg")
         guard case .toolResult(_, _, let content, _, let toolData, let toolMime, _, let toolLp, _) = rebuilt.parts[2] else { return XCTFail() }
         XCTAssertEqual(content, "shot")
         XCTAssertNil(toolData); XCTAssertNil(toolMime)
-        XCTAssertEqual(toolLp, "/var/minis/attachments/uploads/gone.jpg")
+        XCTAssertEqual(toolLp, "/var/ai/attachments/uploads/gone.jpg")
 
         XCTExpectFailure("a missing image should leave a visible placeholder")
         XCTAssertTrue(rebuilt.parts.contains { if case .text(let t) = $0 { return t.contains("gone.jpg") }; return false })
@@ -142,7 +142,7 @@ final class ImageRealIosCXCTests: XCTestCase {
     func testUserImageRoundTripKeepsBytesMimeAndPath() async throws {
         let jpeg = page(2000, 1500)
         let ref = await AIChatViewModel.persistedUserImageRef(data: jpeg, mimeType: "image/jpeg", sessionId: sessionId,
-                                                              linuxPath: "/var/minis/attachments/uploads/photo.jpg")
+                                                              linuxPath: "/var/ai/attachments/uploads/photo.jpg")
         XCTAssertTrue(ref.relativePath.hasPrefix("\(sessionId)/attachments/"))
         XCTAssertTrue(ref.relativePath.hasSuffix(".jpg"))
         let raw = RawMessage(id: "m3", sessionId: sessionId, role: .user,
@@ -151,7 +151,7 @@ final class ImageRealIosCXCTests: XCTestCase {
         guard case .imageData(let d, let m, let lp) = rebuilt.parts.last else { return XCTFail("image lost") }
         XCTAssertEqual(d, jpeg)
         XCTAssertEqual(m, "image/jpeg")
-        XCTAssertEqual(lp, "/var/minis/attachments/uploads/photo.jpg")
+        XCTAssertEqual(lp, "/var/ai/attachments/uploads/photo.jpg")
     }
 
     // MARK: - P-i8: the request budget counts bytes; the gate before it resizes
@@ -195,7 +195,7 @@ final class ImageRealIosCXCTests: XCTestCase {
         // (rightly) turned into placeholders by the gate before the budget.
         let images = (0..<6).map { compliantNoiseJPEG(width: 2000 - $0) }
         let history = images.enumerated().map { i, d in
-            AgentMessage(role: .user, parts: [.imageData(data: d, mimeType: "image/jpeg", linuxPath: i == 1 ? "/var/minis/attachments/uploads/b.jpg" : nil)])
+            AgentMessage(role: .user, parts: [.imageData(data: d, mimeType: "image/jpeg", linuxPath: i == 1 ? "/var/ai/attachments/uploads/b.jpg" : nil)])
         }
         let budgeted = try XCTUnwrap(AIChatViewModel.budgetedRequestImages(history, sessionId: sessionId))
         XCTAssertEqual(budgeted.plan.droppedCount, 1, "the plan drops the oldest image")
@@ -204,7 +204,7 @@ final class ImageRealIosCXCTests: XCTestCase {
             if case .text(let t) = p, t.hasPrefix("[image elided to fit 25MB request budget.") { return t }; return nil
         }
         XCTAssertFalse(placeholders.isEmpty)
-        XCTAssertTrue(placeholders[0].contains("/var/minis/attachments/spillover/"), "the oldest has no linuxPath -> spilled")
+        XCTAssertTrue(placeholders[0].contains("/var/ai/attachments/spillover/"), "the oldest has no linuxPath -> spilled")
         // [T-budget-position-ids] Was XCTExpectFailure: the rewrite matched parts
         // by a temporary box's ObjectIdentifier and elided them all.
         XCTAssertEqual(placeholders.count, 1, "only the planned image is elided")
@@ -227,7 +227,7 @@ final class ImageRealIosCXCTests: XCTestCase {
         XCTAssertFalse(AIChatViewModel.isUserBubbleEntry(msg), "not a user bubble")
         XCTAssertEqual(pixelSize(d).0, 2000, "P-i4: sent within 2000 px like other screenshots")
         XCTAssertEqual(m, "image/jpeg")
-        XCTAssertEqual(lp, "/var/minis/browser/takeover_1791000000.jpg")
+        XCTAssertEqual(lp, "/var/ai/browser/takeover_1791000000.jpg")
         let file = AIChatViewModel.minisBrowserPersistentDir(for: sessionId).appendingPathComponent("takeover_1791000000.jpg")
         XCTAssertEqual(try Data(contentsOf: file), shot, "the original is kept for viewing / read_image")
     }

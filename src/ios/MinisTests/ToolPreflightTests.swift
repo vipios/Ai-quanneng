@@ -38,7 +38,7 @@ final class ToolPreflightTests: XCTestCase {
 
     func testFileEdit_emptyNewString_isAllowed() {
         let err = validate("file_edit", [
-            "path": "/var/minis/workspace/a.txt",
+            "path": "/var/ai/workspace/a.txt",
             "old_string": "delete me",
             "new_string": "",
         ])
@@ -47,7 +47,7 @@ final class ToolPreflightTests: XCTestCase {
 
     func testFileEdit_missingNewString_isBlocked() {
         let err = validate("file_edit", [
-            "path": "/var/minis/workspace/a.txt",
+            "path": "/var/ai/workspace/a.txt",
             "old_string": "delete me",
         ])
         XCTAssertNotNil(err)
@@ -56,7 +56,7 @@ final class ToolPreflightTests: XCTestCase {
 
     func testFileEdit_nullNewString_isBlocked() {
         let err = validate("file_edit", [
-            "path": "/var/minis/workspace/a.txt",
+            "path": "/var/ai/workspace/a.txt",
             "old_string": "delete me",
             "new_string": NSNull(),
         ])
@@ -67,7 +67,7 @@ final class ToolPreflightTests: XCTestCase {
     func testFileEdit_emptyOldString_isStillBlocked() {
         // The whitelist is per-field: only new_string may be empty.
         let err = validate("file_edit", [
-            "path": "/var/minis/workspace/a.txt",
+            "path": "/var/ai/workspace/a.txt",
             "old_string": "",
             "new_string": "x",
         ])
@@ -103,7 +103,7 @@ final class ToolPreflightTests: XCTestCase {
         // "\n" / "  " are legitimate payloads (documented in the validator);
         // the trim-then-reject behavior must not come back.
         XCTAssertNil(validate("file_edit", [
-            "path": "/var/minis/workspace/a.txt",
+            "path": "/var/ai/workspace/a.txt",
             "old_string": "  ",
             "new_string": "\n",
         ]))

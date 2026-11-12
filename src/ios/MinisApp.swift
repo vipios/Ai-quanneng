@@ -186,6 +186,18 @@ struct MinisApp: App {
             KeepScreenAwakeController.shared.start()
             // [T-always-on] Black screen + per-chat lease on top of Keep Screen Awake.
             AlwaysOnController.shared.start()
+            // [T-relay-dual-base] 冷启动判定一次线路，把结果写进
+            // 「AI 中转站」服务商档案 —— 否则用户装完 App 直接发消息时，
+            // 请求会打到上次缓存的那条线路上（可能已经从家里出来了）。
+            //
+            // 判据用 `hasAnyConfig`，不是 `allProfiles().isEmpty`：
+            // 只配了路由器后台（没配中转站档案）的用户，档案列表是空的，
+            // 用旧判据就不会 bootstrap —— 进路由器页要等 onAppear 自己判，
+            // 首帧空白，看起来像没数据。全新安装的用户两者都空，
+            // 仍然不产生任何网络请求。
+            if RelayStore.shared.hasAnyConfig {
+                RelayStore.shared.bootstrap()
+            }
         }
         // [T-zombie-child-sweep] Retire sub agent sessions whose parent
         // conversation was truncated away — see sweepZombieChildSessions for
@@ -385,7 +397,7 @@ struct MinisApp: App {
                     StreamingHangLogger.shared.acquire(reason: "app-launch always-on")
                     // [T-ios-backup-shared-leak] One-shot migration: an earlier
                     // build delivered backup packages into shared/Backups/,
-                    // which is bind-mounted into the guest at /var/minis/shared
+                    // which is bind-mounted into the guest at /var/ai/shared
                     // and is itself the Shared Files backup category. Move any
                     // leftovers out of the agent-visible workspace.
                     BackupDelivery.migrateLegacySharedBackups()
@@ -453,7 +465,7 @@ struct MinisApp: App {
                     // Activate security scopes for user-mounted external folders
                     // (e.g. Obsidian vault in iCloud Drive). Held for app lifetime.
                     MountedFoldersManager.shared.activateAll()
-                    // Create /var/minis/mounts/<name> symlinks in the fakefs now
+                    // Create /var/ai/mounts/<name> symlinks in the fakefs now
                     // that the rootfs exists and mounts are active.
                     AIChatViewModel.refreshMountedFolderSymlinks()
                     // Start iCloud sync engine. v2 takes precedence when its
@@ -527,6 +539,18 @@ struct MinisApp: App {
             // Providers-list row cache — foreground resume can follow a
             // credential change that never bumped `authRevision`.
             ProviderRowCredentialCache.shared.invalidateAll()
+
+            // [T-relay-dual-base] 回到前台重判一次线路。用户可能在家开
+            // App、出门路上继续用 —— 不重判就会一直打内网地址。
+            // refreshIfStale 自带 1 秒去抖，连续切换不会打多次。
+            //
+            // 这里直接调，不包 MainActor.assumeIsolated：`App` 协议的
+            // 方法体本身就在 @MainActor 上（body 是 @MainActor 隔离的），
+            // RelayStore 也是 @MainActor 类，两边已经同域。套一层
+            // assumeIsolated 反而会触发「在已隔离上下文里重复断言」的编译错误。
+            if RelayStore.shared.hasAnyConfig {
+                RelayStore.shared.becameActive()
+            }
 
             // Unified audio re-assertion on foreground return: stop the background
             // keep-alive track and re-apply the correct session category for the

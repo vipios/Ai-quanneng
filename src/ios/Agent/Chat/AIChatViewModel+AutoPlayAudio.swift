@@ -99,9 +99,9 @@ extension AIChatViewModel {
         }
 
         // [T-ios-minisurl-cross-session-isolation] Fallback to the iSH-visible
-        // /var/minis data dir ONLY for the global, non-session-scoped
+        // /var/ai data dir ONLY for the global, non-session-scoped
         // namespaces (memory/skills/shared). For a session-scoped host like
-        // `attachments`, /var/minis/<host> binds to whichever session is
+        // `attachments`, /var/ai/<host> binds to whichever session is
         // currently MOUNTED — which may not be the session whose message is
         // being rendered — so reaching it here would be a cross-session leak.
         // Session-scoped resolution already happened above against
@@ -109,7 +109,7 @@ extension AIChatViewModel {
         if globalDirs.contains(host) {
             let dataPath = RootfsManager.shared.dataPath
             for subPath in subPaths {
-                let linuxPath = "/var/minis/\(host)/\(subPath)"
+                let linuxPath = "/var/ai/\(host)/\(subPath)"
                 let hostPath = dataPath.appendingPathComponent(linuxPath.hasPrefix("/") ? String(linuxPath.dropFirst()) : linuxPath)
                 if fm.fileExists(atPath: hostPath.path) { return hostPath }
             }

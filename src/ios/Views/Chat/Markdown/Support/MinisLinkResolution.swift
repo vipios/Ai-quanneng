@@ -121,7 +121,7 @@ func resolveMinisFileURLForNativeText(url: URL) -> URL? {
     // model-use-zimage-0.jpg would resolve to session A's image. minis:// is
     // session-scoped; not-found is the correct result for a cross-session ref.
     //
-    // The rootfs `/var/minis/<host>` fallback is kept ONLY for the global,
+    // The rootfs `/var/ai/<host>` fallback is kept ONLY for the global,
     // non-session-scoped namespaces (skills/memory/shared) — for those it just
     // points at the same global dir the iSH mount binds to. We explicitly
     // restrict it to those hosts so it can never reach another session's
@@ -130,7 +130,7 @@ func resolveMinisFileURLForNativeText(url: URL) -> URL? {
     if globalHosts.contains(host) {
         for subPath in subPaths {
             let rootfsURL = RootfsManager.shared.dataPath
-                .appendingPathComponent("var/minis", isDirectory: true)
+                .appendingPathComponent("var/ai", isDirectory: true)
                 .appendingPathComponent(host, isDirectory: true)
                 .appendingPathComponent(subPath)
             if fm.fileExists(atPath: rootfsURL.path) {

@@ -53,7 +53,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
     var hasInflightDownloads: Bool { !inflightDownloads.isEmpty }
 
     /// Returns the chat session id owning this browser — wired by BrowserTabPool.
-    /// Downloads are saved into that session's /var/minis/workspace/ directory.
+    /// Downloads are saved into that session's /var/ai/workspace/ directory.
     var sessionIdProvider: (() -> String?)?
 
     /// Returns this tab's pool id — wired by BrowserTabPool. Diagnostics only,
@@ -277,7 +277,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
         let printController = UIPrintInteractionController.shared
         let printInfo = UIPrintInfo.printInfo()
         printInfo.outputType = .general
-        printInfo.jobName = pageTitle.isEmpty ? "Minis" : pageTitle
+        printInfo.jobName = pageTitle.isEmpty ? "全能AI" : pageTitle
         printController.printInfo = printInfo
         printController.printFormatter = webView.viewPrintFormatter()
         printController.present(animated: true) { _, completed, error in
@@ -1273,10 +1273,10 @@ final class BrowserUseManager: NSObject, ObservableObject {
         let safeDomain = rootDomain.replacingOccurrences(of: ".", with: "_")
         let envFilename = "env_cookies_\(safeDomain)_\(timestamp).sh"
         let offloadsDir = RootfsManager.shared.dataPath
-            .appendingPathComponent("var/minis/offloads", isDirectory: true)
+            .appendingPathComponent("var/ai/offloads", isDirectory: true)
         try? FileManager.default.createDirectory(at: offloadsDir, withIntermediateDirectories: true)
         let envFileURL = offloadsDir.appendingPathComponent(envFilename)
-        let envGuestPath = "/var/minis/offloads/\(envFilename)"
+        let envGuestPath = "/var/ai/offloads/\(envFilename)"
 
         var envLines: [String] = ["#!/bin/sh"]
         var cookieHeaderParts: [String] = []
@@ -2972,7 +2972,7 @@ final class BrowserDownloadCenter: ObservableObject {
         entries[idx].seen = false
         let e = entries[idx]
         queueAgentEvent(sessionId: e.sessionId, filename: e.filename,
-                        line: "\(e.filename): download COMPLETED (\(sizeText)) → minis://workspace/\(e.filename) (shell path: /var/minis/workspace/\(e.filename))")
+                        line: "\(e.filename): download COMPLETED (\(sizeText)) → minis://workspace/\(e.filename) (shell path: /var/ai/workspace/\(e.filename))")
     }
 
     func failed(id: UUID, reason: String) {
@@ -3043,7 +3043,7 @@ final class BrowserDownloadCenter: ObservableObject {
             + "\nDo NOT re-download these files with curl/wget in shell_execute. "
             + "Completed files are already fully saved at the given path; for in-progress "
             + "downloads, wait and check again (e.g. via a later browser_use call or "
-            + "shell `ls -l /var/minis/workspace/`) instead of downloading in parallel."
+            + "shell `ls -l /var/ai/workspace/`) instead of downloading in parallel."
     }
 
     private func queueAgentEvent(sessionId: String, filename: String, line: String) {

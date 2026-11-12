@@ -28,6 +28,9 @@ private enum SettingsDestination: Hashable {
     case mountedFolders
     case sharedFolders
     case logs
+    // [T-minis-relay] 设备管理：中转站后台 / 路由器后台
+    case relayAdmin
+    case relayRouter
     case appearance
     case background
     case about
@@ -44,378 +47,33 @@ struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
     @State private var navPath = NavigationPath()
-    @State private var showFeedbackDialog = false
 
     var body: some View {
         NavigationStack(path: $navPath) {
-            List {
-                Section {
-                    NavigationLink {
-                        ProviderInstancesView()
-                    } label: {
-                        if #available(iOS 26, *) {
-                            Label("Manage Providers", systemImage: "key.circle.fill")
-                        } else {
-                            Label("Manage Providers", systemImage: "lock.circle.fill")
-                        }
-                    }
-
-                    NavigationLink {
-                        ModelGroupsView()
-                    } label: {
-                        Label("Model Groups", systemImage: "gearshape.circle.fill")
-                    }
-
-                    NavigationLink {
-                        RelayAdminView()
-                    } label: {
-                        Label("中转站后台", systemImage: "bolt.horizontal.circle")
-                    }
-
-                    NavigationLink {
-                        RelayRouterView()
-                    } label: {
-                        Label("路由器后台", systemImage: "arrow.up.arrow.down.circle")
-                    }
-
-                    NavigationLink {
-                        UsageStatsView()
-                    } label: {
-                        Label("Token Usage", systemImage: "chart.line.uptrend.xyaxis.circle.fill")
-                    }
-                } header: {
-                    Text("LLM Providers")
-                } footer: {
-                    Text("Configure which models the agent uses, manage API keys & OAuth for each provider, and create model groups for fallback or load balancing.")
+            // [R42-换皮] 这一版只换外观，功能一行没动。
+            //
+            // 原来的 `List` 用的是系统 chrome：分组标题是小号灰字、
+            // 行高由系统决定、图标 21pt 圆形。设计稿是另一套度量 ——
+            // 图标 29×29 圆角 7.5、行最小 52、标题 17pt、分组标题
+            // 13pt/600 且用黑色、卡片圆角 14、左右边距 16。
+            //
+            // 换成 ScrollView + 自己排的卡片之后，那些数值才落得下来
+            // （List 的 row inset / separator inset 是系统接管的，改不干净）。
+            // 所有跳转仍然是原来的 `NavigationLink`，目标页面一个没换。
+            ScrollView {
+                VStack(spacing: 0) {
+                    providersSection
+                    deviceSection
+                    appearanceSection
+                    agentSection
+                    storageSection
+                    permissionsSection
+                    logsSection
+                    selfUpdateSection
                 }
-
-                Section("Appearance") {
-                    NavigationLink {
-                        AppearanceSettingsView()
-                    } label: {
-                        Label {
-                            Text("Appearance")
-                        } icon: {
-                            Image(systemName: "paintbrush.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.indigo, in: Circle())
-                        }
-                    }
-                }
-
-                Section("Agent Runtime") {
-                    // [T-tools-granular-switches] First row: per-tool switches.
-                    NavigationLink {
-                        ToolsSettingsView()
-                    } label: {
-                        Label {
-                            Text(AppLocalized("Agent Tools"))
-                        } icon: {
-                            Image(systemName: "wrench.and.screwdriver.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.indigo, in: Circle())
-                        }
-                    }
-                    // [T-sub-agents-v1] Directly under Agent Tools: the two pages
-                    // are the tool surface (which tools exist) and the delegation
-                    // surface (who runs a delegated task), so they read as a pair.
-                    NavigationLink {
-                        HelperSettingsView()
-                    } label: {
-                        Label {
-                            Text(AppLocalized("Sub Agents"))
-                        } icon: {
-                            // [T-agent-icon] Same violet and glyph the agent block
-                            // and tool sheet use in chat, so the settings row reads
-                            // as the same feature. `glyph` is the bare figure pair
-                            // meant for a caller that already draws the disc — the
-                            // wider person.2.wave.2 reached the edge of the 21pt
-                            // circle at this section's icon size.
-                            Image(systemName: HelperAccent.glyph)
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(HelperAccent.color, in: Circle())
-                        }
-                    }
-                    NavigationLink {
-                        SkillsManagementView()
-                    } label: {
-                        Label {
-                            Text("Skills")
-                        } icon: {
-                            Image(systemName: "puzzlepiece.extension")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.blue, in: Circle())
-                        }
-                    }
-                    NavigationLink {
-                        SpeakModeSettingsView()
-                    } label: {
-                        Label {
-                            Text("语气")
-                        } icon: {
-                            Image(systemName: "speaker.wave.2")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.indigo, in: Circle())
-                        }
-                    }
-                    NavigationLink {
-                        SoulSettingsView()
-                    } label: {
-                        Label {
-                            Text("Soul")
-                        } icon: {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.pink, in: Circle())
-                        }
-                    }
-                    NavigationLink {
-                        MemoryManagementView()
-                    } label: {
-                        Label {
-                            Text("Memory")
-                        } icon: {
-                            Image(systemName: "brain.head.profile")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.purple, in: Circle())
-                        }
-                    }
-                    NavigationLink {
-                        MCPIntegrationsView()
-                    } label: {
-                        Label {
-                            Text("MCP Integrations")
-                        } icon: {
-                            Image(systemName: "square.stack.3d.up")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.teal, in: Circle())
-                        }
-                    }
-                    NavigationLink {
-                        EnvironmentVariablesView()
-                    } label: {
-                        Label {
-                            Text("Environment Variables")
-                        } icon: {
-                            Image(systemName: "terminal")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.green, in: Circle())
-                        }
-                    }
-                }
-
-                Section("Storage") {
-                    NavigationLink {
-                        StorageManagementView()
-                    } label: {
-                        Label {
-                            Text("Storage")
-                        } icon: {
-                            Image(systemName: "archivebox")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.blue, in: Circle())
-                        }
-                    }
-                    NavigationLink {
-                        SharedFoldersSettingsView()
-                    } label: {
-                        Label {
-                            Text("Shared Folders")
-                        } icon: {
-                            Image(systemName: "folder.fill.badge.person.crop")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.green, in: Circle())
-                        }
-                    }
-                    NavigationLink {
-                        MountedFoldersSettingsView()
-                    } label: {
-                        Label {
-                            Text("Mount External Folders")
-                        } icon: {
-                            Image(systemName: "externaldrive.badge.plus")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.orange, in: Circle())
-                        }
-                    }
-                    if #available(iOS 17.0, *) {
-                        NavigationLink {
-                            // v2 is the default sync engine; legacy v1
-                            // settings page is unreachable from here.
-                            CloudSyncSettingsV2View()
-                        } label: {
-                            Label {
-                                Text("iCloud Sync")
-                            } icon: {
-                                Image(systemName: "icloud")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 21, height: 21)
-                                    .background(.cyan, in: Circle())
-                            }
-                        }
-                    }
-                    NavigationLink {
-                        BackupAndRestoreView()
-                    } label: {
-                        Label {
-                            // Not just "Backup": this screen is both halves of
-                            // the feature, and on a new device restore is the
-                            // only one the user is looking for.
-                            Text("Backup & Restore")
-                        } icon: {
-                            // arrow.triangle.2.circlepath reads as a round trip
-                            // rather than a one-way export.
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.indigo, in: Circle())
-                        }
-                    }
-                    NavigationLink {
-                        GitHubAccountView()
-                    } label: {
-                        Label {
-                            Text("GitHub 账号")
-                        } icon: {
-                            Image(systemName: "person.crop.circle")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.green, in: Circle())
-                        }
-                    }
-                }
-
-                Section("Permissions") {
-                    NavigationLink {
-                        OffloadPermissionSettingsView()
-                    } label: {
-                        Label {
-                            Text("Permissions")
-                        } icon: {
-                            Image(systemName: "lock.shield")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.red, in: Circle())
-                        }
-                    }
-                    if BiometricAuth.isAvailable {
-                        NavigationLink {
-                            FaceIDProtectionSettingsView()
-                        } label: {
-                            Label {
-                                Text("\(BiometricAuth.biometryDisplayName) Protection")
-                            } icon: {
-                                // Match SF Symbol to the device's actual sensor — Touch ID
-                                // devices showed a Face ID glyph here before.
-                                Image(systemName: BiometricAuth.biometryIconName)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 21, height: 21)
-                                    .background(.teal, in: Circle())
-                            }
-                        }
-                    }
-                }
-
-                Section("Logs") {
-                    NavigationLink {
-                        LogManagementView()
-                    } label: {
-                        Label {
-                            Text("Logs")
-                        } icon: {
-                            Image(systemName: "doc.text")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.gray, in: Circle())
-                        }
-                    }
-                }
-
-                Section("About") {
-                    NavigationLink {
-                        AboutView()
-                    } label: {
-                        Label {
-                            Text("About Minis")
-                        } icon: {
-                            Image(systemName: "info")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.indigo, in: Circle())
-                        }
-                    }
-                    SelfUpdateSection()
-                    Link(destination: URL(string: "https://openminis.github.io/privacy-policy.html")!) {
-                        Label {
-                            Text("Privacy Policy")
-                        } icon: {
-                            Image(systemName: "hand.raised")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.teal, in: Circle())
-                        }
-                    }
-                    Button {
-                        showFeedbackDialog = true
-                    } label: {
-                        Label {
-                            Text("Feedback")
-                        } icon: {
-                            Image(systemName: "bubble.left.and.bubble.right.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.indigo, in: Circle())
-                        }
-                    }
-                    .foregroundStyle(.primary)
-                    .confirmationDialog("Feedback", isPresented: $showFeedbackDialog, titleVisibility: .visible) {
-                        Button("Report a Bug (GitHub)") {
-                            if let url = Self.makeBugReportURL() { UIApplication.shared.open(url) }
-                        }
-                        Button("Feedback (Telegram)") {
-                            if let url = URL(string: "https://t.me/+2NzhOJuzRyI1YmM1") { UIApplication.shared.open(url) }
-                        }
-                        Button("Feedback (Email)") {
-                            if let url = Self.makeFeedbackEmailURL() { UIApplication.shared.open(url) }
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    }
-                }
-
+                .padding(.bottom, SettingsDesign.listBottomPadding)
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -424,56 +82,7 @@ struct SettingsSheet: View {
                 }
             }
             .navigationDestination(for: SettingsDestination.self) { dest in
-                switch dest {
-                case .providers:
-                    ProviderInstancesView()
-                case .providerDetail(let id):
-                    ProviderInstanceDetailView(instanceId: id)
-                case .modelGroups:
-                    ModelGroupsView()
-                case .modelGroupDetail(let id):
-                    ModelGroupDetailView(groupId: id)
-                case .usage:
-                    UsageStatsView()
-                case .skills:
-                    SkillsManagementView()
-                case .soul:
-                    SoulSettingsView()
-                case .tools:
-                    ToolsSettingsView()
-                case .memory:
-                    MemoryManagementView()
-                case .storage:
-                    StorageManagementView()
-                case .mountedFolders:
-                    MountedFoldersSettingsView()
-                case .sharedFolders:
-                    SharedFoldersSettingsView()
-                case .logs:
-                    // Pull a one-shot tab hint from the deep link router
-                    // (e.g. `?tab=config-audit`). LogManagementView clears
-                    // its local state independently; the published value
-                    // here is consumed once and reset to nil.
-                    LogManagementView(initialTab: deepLink.pendingLogsTab ?? "logs")
-                        .onAppear { deepLink.pendingLogsTab = nil }
-                case .appearance:
-                    AppearanceSettingsView()
-                case .background:
-                    EnhancedBackgroundSettingsView()
-                case .about:
-                    AboutView()
-                case .environments:
-                    EnvironmentVariablesView()
-                case .permissions:
-                    OffloadPermissionSettingsView()
-                // [T-mcp-oauth-deeplink] Detail = the list view told to open
-                // the server's edit sheet on appear; a deleted/unknown server
-                // just lands on the list (no crash, sensible fallback).
-                case .mcpIntegrations:
-                    MCPIntegrationsView()
-                case .mcpServerDetail(let serverId):
-                    MCPIntegrationsView(initialEditServerId: serverId)
-                }
+                destinationView(for: dest)
             }
             .onAppear {
                 applyPendingDeepLink()
@@ -510,6 +119,521 @@ struct SettingsSheet: View {
         .preferredColorScheme(appearanceMode == 1 ? .light : appearanceMode == 2 ? .dark : nil)
         .appFontScale()
     }
+
+    // MARK: - [R42] 分组（外观照设计稿，功能照原版）
+
+    /// 一个分组的标题。设计稿 `#stBody .grp-head`：13pt/600、黑色、
+    /// 左缩进 34、上 22 下 8。
+    private func groupHeader(_ text: String) -> some View {
+        Text(text)
+            .font(SettingsDesign.sectionHeaderFont)
+            // 设计稿这里用的是 --label（黑），不是系统 List header 的灰色。
+            // 这是「一眼像设计稿」最明显的一处差别。
+            .foregroundStyle(Color(.label))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, SettingsDesign.sectionHeaderLeading)
+            .padding(.trailing, SettingsDesign.cardInset)
+            .padding(.top, SettingsDesign.sectionHeaderTop)
+            .padding(.bottom, SettingsDesign.sectionHeaderBottom)
+    }
+
+    /// 卡片容器。设计稿 `#stBody .card`：白底、左右 16、圆角 14、裁切。
+    private func card<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        VStack(spacing: 0) {
+            content()
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: SettingsDesign.cardRadius,
+                                    style: .continuous))
+        .padding(.horizontal, SettingsDesign.cardInset)
+    }
+
+    /// 行与行之间的分隔线。
+    ///
+    /// 设计稿是 `left:56px`（对齐到文字开头），原版 List 的默认 inset 是 16，
+    /// 会和图标根部交叉。这里自己画，缩进精确可控。
+    private func rowDivider() -> some View {
+        Rectangle()
+            .fill(Color(.separator))
+            .frame(height: 0.5)
+            .padding(.leading, SettingsDesign.separatorInset)
+    }
+
+    // MARK: LLM Providers
+
+    private var providersSection: some View {
+        VStack(spacing: 0) {
+            groupHeader(AppLocalized("LLM Providers"))
+
+            card {
+                NavigationLink {
+                    ProviderInstancesView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.providers,
+                                                        fallback: "Manage Providers")),
+                        symbol: "key.fill",
+                        iconTint: SettingsDesign.blue
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    ModelGroupsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.modelGroups,
+                                                        fallback: "Model Groups")),
+                        symbol: "gearshape.fill",
+                        iconTint: SettingsDesign.gray
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    UsageStatsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.tokenUsage,
+                                                        fallback: "Token Usage")),
+                        symbol: "chart.line.uptrend.xyaxis",
+                        iconTint: SettingsDesign.green
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: 设备管理
+
+    private var deviceSection: some View {
+        VStack(spacing: 0) {
+            groupHeader(AppLocalized("设备管理"))
+
+            card {
+                NavigationLink {
+                    RelayAdminView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.relayAdmin,
+                                                        fallback: "中转站后台")),
+                        symbol: "server.rack",
+                        iconTint: SettingsDesign.blue,
+                        // server.rack 在 17pt 下几乎看不见，单独放大。
+                        glyphScale: 1.25
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    RelayRouterView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.relayRouter,
+                                                        fallback: "路由器后台")),
+                        symbol: "wifi.router.fill",
+                        iconTint: SettingsDesign.green,
+                        glyphScale: 1.1
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: Appearance
+
+    private var appearanceSection: some View {
+        VStack(spacing: 0) {
+            groupHeader(AppLocalized("Appearance"))
+
+            card {
+                NavigationLink {
+                    AppearanceSettingsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.appearance,
+                                                        fallback: "Appearance")),
+                        symbol: "paintbrush.fill",
+                        iconTint: SettingsDesign.indigo
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: Agent Runtime
+
+    private var agentSection: some View {
+        VStack(spacing: 0) {
+            groupHeader(AppLocalized("Agent Runtime"))
+
+            card {
+                NavigationLink {
+                    ToolsSettingsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.agentTools,
+                                                        fallback: "Agent Tools")),
+                        symbol: "wrench.and.screwdriver.fill",
+                        iconTint: SettingsDesign.indigo
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    HelperSettingsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.subAgents,
+                                                        fallback: "Sub Agents")),
+                        symbol: HelperAccent.glyph,
+                        iconTint: SettingsDesign.purple
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    // [R61-技能直达管理] 这里原来进 SkillsCatalogView（20 个
+                    // 能力域的浏览页），用户点「技能」看到的是一屏介绍文字，
+                    // 找不到自己装了什么、也没法导入或删 —— 观感就是「技能页
+                    // 里面没有东西」。
+                    //
+                    // 改成直达 SkillsManagementView：已装技能列表、导入、删除、
+                    // 开关、同步都在这一页。能力域浏览页没有删掉，入口挪到
+                    // 管理页右上角（book 图标），浏览和自动路由试用照旧。
+                    SkillsManagementView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.skills,
+                                                        fallback: "Skills")),
+                        symbol: "puzzlepiece.extension.fill",
+                        iconTint: SettingsDesign.blue
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                // [R42] 说话模式。位置对齐设计稿：技能之后、Soul 之前。
+                //
+                // 默认是「自动」—— 用户不点它也一直按内容自动判，
+                // 技能和人格本来就是自动的，这一项跟着三元组走。
+                NavigationLink {
+                    SpeakModeSettingsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.modes,
+                                                        fallback: "语气")),
+                        symbol: "text.bubble.fill",
+                        iconTint: SettingsDesign.orange
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    SoulSettingsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.soul,
+                                                        fallback: "Soul")),
+                        symbol: "sparkles",
+                        iconTint: SettingsDesign.pink
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    MemoryManagementView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.memory,
+                                                        fallback: "Memory")),
+                        symbol: "brain.head.profile",
+                        iconTint: SettingsDesign.purple
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    MCPIntegrationsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.mcpIntegrations,
+                                                        fallback: "MCP Integrations")),
+                        symbol: "square.stack.3d.up.fill",
+                        iconTint: SettingsDesign.teal
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    EnvironmentVariablesView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.environmentVars,
+                                                        fallback: "Environment Variables")),
+                        symbol: "terminal.fill",
+                        iconTint: SettingsDesign.black
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: Storage
+
+    private var storageSection: some View {
+        VStack(spacing: 0) {
+            groupHeader(AppLocalized("Storage"))
+
+            card {
+                NavigationLink {
+                    StorageManagementView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.storage,
+                                                        fallback: "Storage")),
+                        symbol: "archivebox.fill",
+                        iconTint: SettingsDesign.blue
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    SharedFoldersSettingsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.sharedFolders,
+                                                        fallback: "Shared Folders")),
+                        symbol: "folder.fill",
+                        iconTint: SettingsDesign.green
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    MountedFoldersSettingsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.mountedFolders,
+                                                        fallback: "Mount External Folders")),
+                        symbol: "externaldrive.fill.badge.plus",
+                        iconTint: SettingsDesign.orange
+                    )
+                }
+                .buttonStyle(.plain)
+
+                if #available(iOS 17.0, *) {
+                    rowDivider()
+
+                    NavigationLink {
+                        // v2 is the default sync engine; legacy v1
+                        // settings page is unreachable from here.
+                        CloudSyncSettingsV2View()
+                    } label: {
+                        SettingsRowContent(
+                            title: AnyView(SettingsRowLabel(.iCloudSync,
+                                                            fallback: "iCloud Sync")),
+                            symbol: "icloud.fill",
+                            iconTint: SettingsDesign.cyan
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                rowDivider()
+
+                NavigationLink {
+                    BackupAndRestoreView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.backupRestore,
+                                                        fallback: "Backup & Restore")),
+                        symbol: "arrow.triangle.2.circlepath",
+                        iconTint: SettingsDesign.indigo
+                    )
+                }
+                .buttonStyle(.plain)
+
+                rowDivider()
+
+                NavigationLink {
+                    GitHubAccountView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.githubAccount,
+                                                        fallback: "GitHub 账号")),
+                        symbol: "chevron.left.forwardslash.chevron.right",
+                        iconTint: SettingsDesign.black
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: Permissions
+
+    private var permissionsSection: some View {
+        VStack(spacing: 0) {
+            groupHeader(AppLocalized("Permissions"))
+
+            card {
+                NavigationLink {
+                    OffloadPermissionSettingsView()
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.permissions,
+                                                        fallback: "Permissions")),
+                        symbol: "lock.shield.fill",
+                        iconTint: SettingsDesign.red
+                    )
+                }
+                .buttonStyle(.plain)
+
+                if BiometricAuth.isAvailable {
+                    rowDivider()
+
+                    NavigationLink {
+                        FaceIDProtectionSettingsView()
+                    } label: {
+                        SettingsRowContent(
+                            title: AnyView(SettingsRowLabel(
+                                .faceID,
+                                fallback: "\(BiometricAuth.biometryDisplayName) Protection")),
+                            // Match SF Symbol to the device's actual sensor — Touch ID
+                            // devices showed a Face ID glyph here before.
+                            symbol: BiometricAuth.biometryIconName,
+                            iconTint: SettingsDesign.teal
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    // MARK: Logs
+
+    private var logsSection: some View {
+        VStack(spacing: 0) {
+            groupHeader(AppLocalized("Logs"))
+
+            card {
+                NavigationLink {
+                    LogManagementView(initialTab: deepLink.pendingLogsTab ?? "logs")
+                        .onAppear { deepLink.pendingLogsTab = nil }
+                } label: {
+                    SettingsRowContent(
+                        title: AnyView(SettingsRowLabel(.logs,
+                                                        fallback: "Logs")),
+                        symbol: "doc.text.fill",
+                        iconTint: SettingsDesign.gray
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: 版本和更新
+
+    private var selfUpdateSection: some View {
+        VStack(spacing: 0) {
+            groupHeader(AppLocalized("版本和更新"))
+            card {
+                SelfUpdateSection()
+            }
+        }
+    }
+
+    // MARK: - 跳转目标（原样保留，一个没改）
+
+    @ViewBuilder
+    private func destinationView(for dest: SettingsDestination) -> some View {
+        switch dest {
+        case .providers:
+            ProviderInstancesView()
+        case .providerDetail(let id):
+            ProviderInstanceDetailView(instanceId: id)
+        case .modelGroups:
+            ModelGroupsView()
+        case .modelGroupDetail(let id):
+            ModelGroupDetailView(groupId: id)
+        case .usage:
+            UsageStatsView()
+        case .skills:
+            // 与设置首页那一行保持一致：直达管理页（见上面的说明）。
+            SkillsManagementView()
+        case .soul:
+            SoulSettingsView()
+        case .tools:
+            ToolsSettingsView()
+        case .memory:
+            MemoryManagementView()
+        case .storage:
+            StorageManagementView()
+        case .mountedFolders:
+            MountedFoldersSettingsView()
+        case .sharedFolders:
+            SharedFoldersSettingsView()
+        case .logs:
+            // Pull a one-shot tab hint from the deep link router
+            // (e.g. `?tab=config-audit`). LogManagementView clears
+            // its local state independently; the published value
+            // here is consumed once and reset to nil.
+            LogManagementView(initialTab: deepLink.pendingLogsTab ?? "logs")
+                .onAppear { deepLink.pendingLogsTab = nil }
+        case .relayAdmin:
+            RelayAdminView()
+        case .relayRouter:
+            RelayRouterView()
+        case .appearance:
+            AppearanceSettingsView()
+        case .background:
+            EnhancedBackgroundSettingsView()
+        case .about:
+            AboutView()
+        case .environments:
+            EnvironmentVariablesView()
+        case .permissions:
+            OffloadPermissionSettingsView()
+        // [T-mcp-oauth-deeplink] Detail = the list view told to open
+        // the server's edit sheet on appear; a deleted/unknown server
+        // just lands on the list (no crash, sensible fallback).
+        case .mcpIntegrations:
+            MCPIntegrationsView()
+        case .mcpServerDetail(let serverId):
+            MCPIntegrationsView(initialEditServerId: serverId)
+        }
+    }
+
 
     /// Translate `DeepLinkCoordinator.pendingSettingsTarget` into a
     /// NavigationStack push and clear the pending value. Called from
@@ -602,7 +726,7 @@ struct SettingsSheet: View {
         components.scheme = "mailto"
         components.path = "dev@openminis.app"
         components.queryItems = [
-            URLQueryItem(name: "subject", value: "Minis Feedback"),
+            URLQueryItem(name: "subject", value: "全能AI Feedback"),
             URLQueryItem(name: "body", value: body),
         ]
         return components.url
@@ -653,9 +777,15 @@ struct SettingsSheet: View {
 
         """
 
-        var components = URLComponents(string: "https://github.com/OpenMinis/OpenMinis/issues/new")
+        // 提 issue 的目标是**我们自己的**仓库，不是原版。
+        //
+        // 原来这里硬写 github.com/OpenMinis/OpenMinis/issues/new，
+        // 那是原版项目的 issue 页。发过去既没人管，也会让用户以为
+        // 问题出在原版身上 —— 我们是独立版本线，报告该落在自己的
+        // 更新源仓库。没配更新源时返回 nil，调用点会自动隐藏入口。
+        guard SelfUpdate.isConfigured else { return nil }
+        var components = URLComponents(string: "https://github.com/\(SelfUpdate.repo)/issues/new")
         components?.queryItems = [
-            URLQueryItem(name: "template", value: "bug_report.md"),
             URLQueryItem(name: "title", value: "[Bug] "),
             URLQueryItem(name: "body", value: body),
         ]

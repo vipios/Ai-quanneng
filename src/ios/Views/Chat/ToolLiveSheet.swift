@@ -1159,7 +1159,7 @@ struct ToolLiveSheet: View {
                 // out to the step pill's trailing column (under the
                 // elapsed-duration "5s" text) so it lives next to where the
                 // user is already scanning timing info.
-                Text("Minis Computer")
+                Text("全能AI 电脑")
                     .font(.system(size: 15, weight: .semibold))
 
                 Spacer()
@@ -2840,19 +2840,21 @@ struct ToolLiveSheet: View {
     }
 
     private var toolTitle: String {
+        // [R45-全中文化] 这里原来是英文「Minis/全能AI is using Shell」之类，
+        // 没走本地化，中文界面直接露英文。按用户要求全用中文。
         switch block.kind {
-        case .shellTool: return "Minis is using Shell"
-        case .fileReadTool: return "Minis is reading File"
-        case .fileWriteTool: return "Minis is using Editor"
-        case .fileEditTool: return "Minis is editing File"
-        case .browserTool: return "Minis is using Browser"
-        case .readImageTool: return "Minis is reading Image"
-        case .memoryTool: return "Minis is using Memory"
-        case .delegateTool: return "Minis is using an Agent"
-        case .userAskTool: return "Minis is asking you"
-        case .info: return "Minis"
-        case .text: return "Minis"
-        case .thinking: return "Minis"
+        case .shellTool: return "全能AI 正在使用终端"
+        case .fileReadTool: return "全能AI 正在读取文件"
+        case .fileWriteTool: return "全能AI 正在使用编辑器"
+        case .fileEditTool: return "全能AI 正在编辑文件"
+        case .browserTool: return "全能AI 正在使用浏览器"
+        case .readImageTool: return "全能AI 正在查看图片"
+        case .memoryTool: return "全能AI 正在使用记忆"
+        case .delegateTool: return "全能AI 正在使用智能体"
+        case .userAskTool: return "全能AI 正在向你提问"
+        case .info: return "全能AI"
+        case .text: return "全能AI"
+        case .thinking: return "全能AI"
         }
     }
 

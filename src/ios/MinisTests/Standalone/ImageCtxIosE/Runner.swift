@@ -17,7 +17,7 @@ import Foundation
 
 func placeholderPaths(_ text: String) -> [String] {
     var out: [String] = []
-    for pattern in [#"Original at (/var/minis/[^\s]+?) —"#, #"original: (/var/minis/[^\s,;]+)"#] {
+    for pattern in [#"Original at (/var/ai/[^\s]+?) —"#, #"original: (/var/ai/[^\s,;]+)"#] {
         let re = try! NSRegularExpression(pattern: pattern)
         for m in re.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
             if let r = Range(m.range(at: 1), in: text) { out.append(String(text[r])) }

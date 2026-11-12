@@ -84,7 +84,7 @@ final class OAuthHTTPClient: HTTPClient {
         config.timeoutIntervalForRequest = anthropicRequestIdleTimeout
         config.protocolClasses = [OAuthURLProtocol.self]
         config.httpAdditionalHeaders = (config.httpAdditionalHeaders ?? [:]).merging(
-            ["X-Minis-OAuth-UUID": rid]) { _, new in new }
+            ["X-全能AI-OAuth-UUID": rid]) { _, new in new }
         let session = URLSession(configuration: config)
         self.underlying = URLSessionHTTPClientAdapter(urlSession: session)
     }
@@ -658,8 +658,8 @@ private final class OAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
         logger.info("[URLProtocol] Intercepted: \(mutable.httpMethod ?? "?") \(mutable.url?.absoluteString ?? "?")")
 
         // Look up the correct TokenBox for this request via the UUID header
-        let oauthUUID = mutable.value(forHTTPHeaderField: "X-Minis-OAuth-UUID") ?? ""
-        mutable.setValue(nil, forHTTPHeaderField: "X-Minis-OAuth-UUID")  // strip before sending
+        let oauthUUID = mutable.value(forHTTPHeaderField: "X-全能AI-OAuth-UUID") ?? ""
+        mutable.setValue(nil, forHTTPHeaderField: "X-全能AI-OAuth-UUID")  // strip before sending
 
         guard let tokenBox = TokenBoxRegistry.shared.box(for: oauthUUID) else {
             logger.error("[URLProtocol] No TokenBox found for UUID \(oauthUUID)")
@@ -1120,7 +1120,7 @@ enum RequestBodyPatcher {
     /// [T-anthropic-toolimages-cross-request] Header the request token travels
     /// on. Stripped before the request leaves the device, the same way
     /// `X-Minis-OAuth-UUID` is.
-    static let requestTokenHeader = "X-Minis-Request-Token"
+    static let requestTokenHeader = "X-全能AI-Request-Token"
 
     private static let tokenLock = NSLock()
     private static var _pendingRequestToken: String?

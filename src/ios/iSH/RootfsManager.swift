@@ -200,8 +200,8 @@ class RootfsManager {
         // Write architecture tag so we detect mismatches on future launches
         try currentArch.write(to: archTagPath, atomically: true, encoding: .utf8)
 
-        // Pre-create /var/minis/ shared directory structure
-        let minisSubdirs = ["var/minis/attachments", "var/minis/offloads", "var/minis/workspace", "var/minis/skills", "var/minis/shared"]
+        // Pre-create /var/ai/ shared directory structure
+        let minisSubdirs = ["var/ai/attachments", "var/ai/offloads", "var/ai/workspace", "var/ai/skills", "var/ai/shared"]
         for subdir in minisSubdirs {
             let dirPath = dataPath.appendingPathComponent(subdir)
             try? FileManager.default.createDirectory(at: dirPath, withIntermediateDirectories: true)

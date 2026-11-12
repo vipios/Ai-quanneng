@@ -71,7 +71,7 @@ final class ToolResultImageWireTests: XCTestCase {
         [
             AgentMessage(role: .user, parts: [.text("what is in this image?")]),
             AgentMessage(role: .assistant, parts: [
-                .toolUse(id: Self.toolCallId, name: "read_image", input: ["path": "/var/minis/shared/x.png"]),
+                .toolUse(id: Self.toolCallId, name: "read_image", input: ["path": "/var/ai/shared/x.png"]),
             ]),
             AgentMessage(role: .user, parts: [
                 .toolResult(

@@ -50,7 +50,14 @@ struct GitHubAccountView: View {
         }
         .navigationTitle("GitHub 账号")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { store.reloadFromDisk() }
+        .onAppear {
+            store.reloadFromDisk()
+            // [T-gh-toolchain-never-probed] 顺手探一次本机工具链。
+            // 没登录就不探 —— 那一行在未登录时不显示，白起一次内核。
+            if store.signedIn {
+                store.probeToolchainIfNeeded()
+            }
+        }
         .sheet(isPresented: $showSecretSheet) {
             secretSheet
         }
@@ -58,7 +65,7 @@ struct GitHubAccountView: View {
             Button("取消", role: .cancel) {}
             Button("退出", role: .destructive) { store.signOut() }
         } message: {
-            Text("只会清掉这台手机上保存的令牌。GitHub 那边的授权还在，要在网页上撤销请去「设置 → 应用授权」。")
+            Text("只会清掉这台手机上保存的令牌。GitHub 那边的授权还在，要在网页上撤销请去 Settings → Applications。")
         }
     }
 
@@ -169,9 +176,17 @@ struct GitHubAccountView: View {
                 Text("云端编译兜底")
             }
             // 条件不齐时不许打开：打开了也只会让 AI 反复调一个必然失败的工具，
-            // 白烧一轮对话。置灰比事后报错诚实 —— 这也是唯一的状态提示，
-            // 不需要额外一行小字去解释「为什么拨不动」。
+            // 白烧一轮对话。
+            //
+            // [T-gh-switch-deadlock] 判据从「必须配好仓库」放宽到「登录 + 权限够」。
+            // 仓库可以留空（推的时候按项目名自动建仓），不该挡着开关。
             .disabled(!store.fallbackEnabled && !store.canToggleFallback)
+        } footer: {
+            // 置灰必须说明原因。之前只有置灰没有文字，用户看到的就是
+            // 「打不开、没反应」，完全无从下手。
+            if let why = store.fallbackBlockedReason {
+                Text(why).foregroundColor(.orange)
+            }
         }
     }
 
@@ -273,7 +288,7 @@ struct GitHubAccountView: View {
                     Text("用设备码登录")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text("需要客户端标识")
+                    Text("需要 Client ID")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -375,68 +390,55 @@ struct GitHubAccountView: View {
     }
 
     // MARK: - 二、权限
-
-    /// 云端编译必须的两项，固定排在前面；其余按令牌实际授予的 scope 全量列出。
-    private let requiredScopes = ["repo", "workflow"]
-
-    /// 要展示的 scope 顺序：必需项在前（缺了也列出来标未授权），其余按字母序。
-    private var orderedScopes: [String] {
-        let owned = Set(store.account?.scopes ?? [])
-        let head = requiredScopes
-        let rest = owned.subtracting(requiredScopes).sorted()
-        return head + rest
-    }
-
-    /// GitHub scope → 中文释义；没有收录的直接显示原始 scope 名。
-    private func scopeLabel(_ scope: String) -> String {
-        let map: [String: String] = [
-            "repo": "推代码到仓库",
-            "workflow": "触发 Actions 编译",
-            "read:user": "读取用户资料",
-            "user": "读取并写入用户资料",
-            "read:org": "读取组织信息",
-            "write:org": "写入组织信息",
-            "admin:org": "管理组织",
-            "gist": "读写 Gist 片段",
-            "notifications": "读取通知",
-            "read:repo_hook": "读取仓库钩子",
-            "write:repo_hook": "写入仓库钩子",
-            "admin:repo_hook": "管理仓库钩子",
-            "admin:org_hook": "管理组织钩子",
-            "delete_repo": "删除仓库",
-            "public_repo": "访问公开仓库",
-            "repo:status": "读取提交状态",
-            "repo_deployment": "读取部署信息",
-            "read:packages": "读取软件包",
-            "write:packages": "写入软件包",
-            "delete:packages": "删除软件包",
-            "read:project": "读取项目看板",
-            "write:project": "写入项目看板",
-            "admin:project": "管理项目看板",
-            "project": "访问项目看板",
-            "enterprise": "访问企业账户",
-            "follow": "关注用户",
-            "read:email": "读取邮箱地址",
-            "email": "读取邮箱地址",
-            "profile": "读取个人资料"
-        ]
-        return map[scope] ?? scope
-    }
+    //
+    // [R58-权限如实展示] 用户原话：「这个界面令牌开通什么权限就要展示什么权限」。
+    //
+    // 原来是写死两行（repo / workflow），令牌里还有什么都看不见 ——
+    // 用户没法核对「我在 GitHub 上到底给这个 App 开了多大的门」。
+    // 现在改成：令牌里有什么 scope 就列什么，一项不漏。
+    //
+    // 三项设计决定：
+    //   1. 本 App 会用的（repo / workflow / read:user）排在前面，其余排在后面，
+    //      并用「本 App 未使用」标出来 —— 让用户分得清哪些是必须的，
+    //      哪些是他自己顺手勾的。
+    //   2. 危险权限（删仓库、改组织、加 SSH 公钥…）单独标红并解释，
+    //      不因为是「他自己勾的」就不提。
+    //   3. 读不到 scope 时（细粒度令牌），**不显示任何一行**，
+    //      只给一句说明。绝不能把「读不到」画成「一个权限都没有」。
 
     private var scopeSection: some View {
         Section {
-            if store.account?.scopeUnknown == true {
-                // 细粒度令牌读不到响应头 scope：画成问号，不是未授权。
-                scopeRow(scope: "repo", granted: nil)
-                scopeRow(scope: "workflow", granted: nil)
-            } else if orderedScopes.isEmpty {
-                Text("未读取到权限范围")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            let unknown = store.account?.scopeUnknown == true
+            let granted = store.account?.grantedScopes ?? []
+            let missing = store.account?.missingRequiredScopes ?? []
+
+            if unknown {
+                // 细粒度令牌：GitHub 不在响应头里回 scopes，
+                // 本地无从得知。这时画任何一行都是编的。
+                HStack(spacing: 10) {
+                    Image(systemName: "questionmark.circle.fill")
+                        .foregroundColor(.secondary)
+                    Text("读不到这枚令牌的权限清单")
+                        .foregroundColor(.secondary)
+                }
+            } else if granted.isEmpty {
+                // 真的一项都没有：罕见但可能（只读 public 信息的令牌）
+                HStack(spacing: 10) {
+                    Image(systemName: "circle.dashed")
+                        .foregroundColor(.orange)
+                    Text("这枚令牌没有任何权限")
+                    Spacer()
+                    Text("0 项")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             } else {
-                ForEach(orderedScopes, id: \.self) { s in
-                    let owned = store.account?.scopes.contains(s) ?? false
-                    scopeRow(scope: s, granted: owned)
+                // 缺必需权限时，先把缺的摆在最上面 —— 那是用户要动手修的东西
+                ForEach(missing) { s in
+                    scopeRow(s, state: .missing)
+                }
+                ForEach(granted) { s in
+                    scopeRow(s, state: .granted)
                 }
             }
 
@@ -467,35 +469,81 @@ struct GitHubAccountView: View {
                 }
             }
         } header: {
-            Text("权限")
-        } footer: {
-            // [R40-密令登录] 权限读不到时不能显示成「缺 repo、workflow」。
-            // 细粒度令牌本来就不在响应头里回 scopes，照旧文案会让人
-            // 以为自己建错了令牌、跑去重建一个 —— 那是最浪费时间的误导。
-            if store.account?.scopeUnknown == true {
-                Text("这枚密令读不到权限范围（细粒度令牌就是这样）。能推不能推，等第一次推送时 GitHub 的回答为准 —— 被拒的话它会明确说缺哪一项。")
-            } else if let missing = store.account?.missingScopes, !missing.isEmpty {
-                Text("缺 \(missing.joined(separator: "、"))。少了这两项，推代码或触发编译会被 GitHub 拒绝。")
-                    .foregroundColor(.orange)
-            } else {
-                Text("云端编译必须 `repo`、`workflow` 两项；其余权限按这枚令牌实际授予的范围全部列出。权限的增减需要前往 GitHub 后台修改令牌。")
+            // 头部带数量，用户一眼知道这枚令牌一共开了几项
+            HStack {
+                Text("权限")
+                Spacer()
+                if store.account?.scopeUnknown != true {
+                    let n = store.account?.grantedScopes.count ?? 0
+                    Text("\(n) 项")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
+        } footer: {
+            scopeFooter
         }
     }
 
-    /// granted: true 已授权 / false 未授权 / nil 未知（问号）。
-    private func scopeRow(scope: String, granted: Bool?) -> some View {
-        HStack {
-            Image(systemName: granted == nil ? "questionmark.circle.fill"
-                                      : (granted == true ? "checkmark.circle.fill" : "circle.dashed"))
-                .foregroundColor(granted == nil ? .secondary : (granted == true ? .green : .orange))
-            Text(scopeLabel(scope))
-            Spacer()
-            Text(scope)
+    /// 权限区的脚注。四种情况各说各的话，不给一句通用废话。
+    @ViewBuilder
+    private var scopeFooter: some View {
+        if store.account?.scopeUnknown == true {
+            Text("这枚密令读不到权限范围（细粒度令牌就是这样）。能干什么不能干什么，以第一次实际操作时 GitHub 的回答为准 —— 被拒时它会明确说缺哪一项。")
+        } else if let missing = store.account?.missingRequiredScopes, !missing.isEmpty {
+            Text("缺：\(missing.map(\.title).joined(separator: "、"))。少了这些，推代码或触发编译会被 GitHub 拒绝。去 GitHub 重建一枚令牌、勾上对应项再来登录。")
+                .foregroundColor(.orange)
+        } else if let sens = store.account?.grantedScopes.filter(\.isSensitive), !sens.isEmpty {
+            // 有危险权限就点名说 —— 这是用户可能不知道自己在哪勾的
+            Text("其中有 \(sens.count) 项超出本 App 的用途（\(sens.map(\.title).joined(separator: "、"))）。这些是本 App 用不到的权限，如果不想给，去 GitHub 重建令牌时不要勾。")
+                .foregroundColor(.orange)
+        } else {
+            Text("云端编译只需要「读写代码仓库」和「管理 Actions 工作流」两项。上面列出的就是这枚令牌的实际权限，没有隐藏项。")
+        }
+    }
+
+    /// 权限状态。三态：有、缺、不该有（危险）。
+    private enum ScopeState {
+        case granted
+        case missing
+    }
+
+    private func scopeRow(_ s: GitHubScopeInfo, state: ScopeState) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: state == .missing ? "circle.dashed" : "checkmark.circle.fill")
+                .foregroundColor(state == .missing ? .orange : .green)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(s.title)
+                    // 本 App 用不到的权限：加个灰标，免得用户以为是必需的
+                    if state == .granted && !s.usedByApp {
+                        Text("本 App 未使用")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color(.tertiarySystemFill))
+                            .clipShape(Capsule())
+                    }
+                }
+                // 危险权限单独说一句为什么危险
+                if state == .granted && s.isSensitive {
+                    Text(s.detail)
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Text(s.scope)
                 .font(.caption)
                 .monospaced()
                 .foregroundColor(.secondary)
         }
+        .padding(.vertical, 1)
     }
 
     // MARK: - 三、仓库配置
@@ -581,6 +629,14 @@ struct GitHubAccountView: View {
                     Text("未检测").font(.caption).foregroundColor(.secondary)
                 }
             }
+            // [T-gh-toolchain-never-probed] 这一行原来纯只读，用户看到
+            // 「未检测」既不知道什么意思，也没有任何办法触发检测。
+            // 现在点一下重测（force 绕过 5 分钟的缓存）。
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard !store.probingToolchain else { return }
+                store.probeToolchainIfNeeded(force: true)
+            }
 
             if let d = store.lastDecision {
                 VStack(alignment: .leading, spacing: 4) {
@@ -602,6 +658,10 @@ struct GitHubAccountView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("**顺序**：本机能编就本机编 → 本机失败且是偶发问题就重试一次 → 还是不行才推到 GitHub。")
                 Text("**不会**把源码本身有错的活推上云 —— 那只会花额度换一个一模一样的报错。")
+                // 探测会起一次 iSH 内核，第一次进这个页面会慢一两秒。
+                // 说清楚，免得用户以为卡住了。
+                Text("点「本机工具链」那一行可以重新检测（第一次检测要启动 Linux 环境，会等一两秒）。")
+                    .foregroundColor(.secondary)
             }
         }
     }

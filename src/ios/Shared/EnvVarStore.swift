@@ -507,7 +507,7 @@ final class EnvVarStore: ObservableObject {
                 return String(format: AppLocalized("The text is too long to save (%lld KB). The limit is 32 KB."),
                               Int64((bytes + 1023) / 1024))
             case .storageFailed:
-                return AppLocalized("Minis could not save the variable to the Keychain. Try again after unlocking your device.")
+                return AppLocalized("全能AI could not save the variable to the Keychain. Try again after unlocking your device.")
             }
         }
     }

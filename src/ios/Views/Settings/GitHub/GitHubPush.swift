@@ -138,10 +138,14 @@ final class GitHubPush {
     private let kRepoKey     = "minis.gh.repo"
     private let kBranchKey   = "minis.gh.branch"
     private let kWorkflowKey = "minis.gh.workflow"
+    /// [T-gh-project-param] 自动建仓时用的项目名。记住它有两个用处：
+    ///   1. 同一个项目第二次推送时用同一个名字 → 撞 422 → 沿用旧仓库（升级）
+    ///   2. 换了个项目名 → 明确走新建仓，而不是把新项目塞进上一个项目的仓库
+    private let kProjectKey  = "minis.gh.project"
 
     /// 目标仓库，形如 `vipios/OpenMinis-build`
     var repo: String {
-        get { UserDefaults.standard.string(forKey: kRepoKey) ?? "vipios/Ai-quanneng" }
+        get { UserDefaults.standard.string(forKey: kRepoKey) ?? "" }
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespaces), forKey: kRepoKey) }
     }
 
@@ -163,7 +167,10 @@ final class GitHubPush {
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespaces), forKey: kWorkflowKey) }
     }
 
-    /// 三样都齐了才算能用
+    /// 三样都齐了才算能用：登录 + 权限够 + **仓库已配**。
+    ///
+    /// 这个判据适合「显示配置状态」，不能用来决定「能不能上云」——
+    /// 新用户没配仓库是正常的，见下面的 `canUseCloud`。
     var isReady: Bool {
         guard GitHubAuth.shared.hasToken else { return false }
         guard !repo.isEmpty,
@@ -176,6 +183,21 @@ final class GitHubPush {
         return false
     }
 
+    /// 能不能上云 —— **不要求仓库已配置**。
+    ///
+    /// [T-gh-switch-deadlock] `isReady` 有一项是「repo 必须是两段」，
+    /// 但仓库本来就可以留空（推送时按项目名自动建仓，见 `ensureTarget`）。
+    /// 拿 `isReady` 去把「工具注册」「系统提示词」「总开关」全卡住，
+    /// 结果就是：不填仓库 → 开关灰、工具不注册 → 自动建仓那段代码
+    /// 永远执行不到 → 用户只能手填仓库。设计上允许的路径被自己堵死了。
+    ///
+    /// 这个属性只校验真正必需的两项：token 在、repo/workflow 两个 scope 在。
+    var canUseCloud: Bool {
+        guard GitHubAuth.shared.hasToken else { return false }
+        guard let a = GitHubAuth.shared.account else { return false }
+        return a.canPushCode && a.canTriggerWorkflow
+    }
+
     // MARK: - [R53-自动推送目标] 已配置沿用，没配置自动建仓
 
     /// 推送前确保目标仓库就绪。用户原话：
@@ -184,33 +206,60 @@ final class GitHubPush {
     ///   使用的同一个仓库；新的项目就要用新的项目去命名仓库名」。
     ///
     /// 逻辑：
-    ///   1. 已配置合法仓库 → 直接沿用（老项目升级，不动配置）
-    ///   2. 没配置 → 用 projectName 自动创建新仓库
+    ///   1. 已配置合法仓库、且项目名对得上（或没给项目名）→ 直接沿用
+    ///      （老项目升级，不动配置）
+    ///   2. 没配置，或项目名变了 → 用 projectName 自动创建新仓库
     ///      （POST /user/repos，token 的 repo scope 就够），
     ///      名字归一化成 GitHub 规则（空格→-、非法字符剔除），
     ///      撞名时 GitHub 会 422，此时说明仓库已存在，直接沿用。
     ///   3. 新建好的仓库里没有任何 workflow，触发编译必然 404 ——
     ///      所以建仓后立刻把最小可用的编译工作流推进去。
     ///
-    /// - Parameter projectName: 项目名（用作仓库名）。空时回落「App-Projects」。
+    /// [T-gh-project-param] 「项目名变了」这一条是后补的，原来只看
+    /// 「配过没有」。没有它做不成「新项目开新仓、老项目沿用原仓」——
+    /// 配过一次之后永远走 1，第二个项目直接进了第一个的仓库。
+    ///
+    /// - Parameter projectName: 项目名（用作仓库名）。空时按「沿用现有仓库」
+    ///   处理；若连仓库都没有，则生成带时间戳的 `project-<日期时间>`。
     /// - Returns: 实际使用的仓库（owner/name），新建时也有值。
     func ensureTarget(projectName: String) async throws -> String {
-        // 1. 已配置：老项目升级，直接用。
+        let wanted = Self.repoName(from: projectName)
+        let lastName = UserDefaults.standard.string(forKey: kProjectKey) ?? ""
+
+        // 1. 已配置且是同一个项目：老项目升级，直接用，不碰仓库。
+        //
+        // [T-gh-project-param] 这里原来只判 `!repo.isEmpty` 就 return，
+        // 于是「配过一次」等于「永远用这个仓」—— 第二个项目会被推送到
+        // 第一个项目的仓库里。现在要求项目名也对得上才算「老项目」。
+        //
+        // 项目名为空（老版本工具没这个参数、或模型没给）时按「沿用」处理：
+        // 那种情况下我们没有依据判断换项目了，沿用比乱建新仓安全。
         if !repo.isEmpty, repo.split(separator: "/").count == 2 {
-            return repo
+            if projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || wanted == lastName {
+                return repo
+            }
+            // 项目名变了 —— 落到下面去按新项目建仓
+            //
+            // 但有一种情况必须例外：用户**手填**了仓库。手填的优先级最高，
+            // 说明他要的就是「所有东西都推这个仓」，不能因为模型换了个
+            // 项目名就给他另建一个。判断依据是项目名从未被自动写过
+            // （lastName 为空 = 这个 repo 是手填的）。
+            if lastName.isEmpty {
+                return repo
+            }
         }
 
-        // 2. 没配置：自动建仓。
         guard let token = GitHubAuth.shared.token() else { throw GitHubPushError.notSignedIn }
         guard let owner = GitHubAuth.shared.account?.login else {
             throw GitHubPushError.notSignedIn
         }
 
-        let name = Self.repoName(from: projectName)
-        let created = try await createRepo(token: token, name: name)
+        let created = try await createRepo(token: token, name: wanted)
 
-        // 3. 配置写进 UserDefaults —— 下次推送直接沿用同一个仓库。
+        // 3. 配置写进 UserDefaults —— 下次同项目推送直接沿用同一个仓库。
         repo = "\(owner)/\(created)"
+        UserDefaults.standard.set(wanted, forKey: kProjectKey)
         // 分支/workflow 保持默认（main / build.yml）。
 
         // 4. 新仓库是空的，Actions 没有工作流就没法触发。
@@ -221,9 +270,26 @@ final class GitHubPush {
     }
 
     /// 项目名 → 合法仓库名。GitHub 规则：字母/数字/-/_/.，不能以 - 开头。
+    ///
+    /// [T-gh-project-param] 空名回落到 `project-<日期>` 而不是固定的
+    /// "App-Projects"。原来那个固定名有个很坏的后果：所有没传项目名的
+    /// 活都会撞进同一个仓库 —— 第一次建出 App-Projects，之后每一次
+    /// `createRepo` 都拿到 422「已存在」，然后被当成「老项目，沿用」，
+    /// 于是两个毫不相干的工程被混在同一个仓库里互相覆盖。
+    /// 带上时间戳至少能保证它们分开，且不会因为 422 被误判成老项目。
     static func repoName(from projectName: String) -> String {
         let trimmed = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = trimmed.isEmpty ? "App-Projects" : trimmed
+        let base: String
+        if trimmed.isEmpty {
+            // 没给项目名 —— 用一个带日期的兜底名，保证每次都是新仓库
+            // 而不是所有人共用的 App-Projects。
+            let df = DateFormatter()
+            df.dateFormat = "yyyyMMdd-HHmmss"
+            df.locale = Locale(identifier: "en_US_POSIX")
+            base = "project-\(df.string(from: Date()))"
+        } else {
+            base = trimmed
+        }
         // 空格转 -，其余非法字符剔除
         var out = ""
         for ch in base {
@@ -336,7 +402,13 @@ final class GitHubPush {
         }
         // 权限读不到（细粒度令牌）时不拦路 —— 能不能推，让第一次推送的
         // 403 来说，比在这里预言一个未知结论诚实。
-        if repo.isEmpty { return "还没填目标仓库（用户名/仓库名）" }
+        //
+        // [T-gh-switch-deadlock] 仓库留空**不是**异常状态：推送时会按项目名
+        // 自动建仓。原来这里回「还没填目标仓库」，用户看到会以为必须先填，
+        // 于是又回到那个「不填就拨不动开关」的死循环里。这里如实说清可选。
+        if repo.isEmpty {
+            return "可以推送了（仓库留空，首次推送会按项目名自动建仓）"
+        }
         if repo.split(separator: "/").count != 2 { return "仓库要写成 用户名/仓库名" }
         if GitHubAuth.shared.account == nil { return "账号信息没拉到，下拉刷新一次" }
         return "可以推送了"

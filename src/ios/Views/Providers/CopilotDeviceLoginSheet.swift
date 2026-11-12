@@ -139,22 +139,22 @@ struct CopilotDeviceLoginSheet: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     disclaimerPoint(AppLocalized(
-                        "This sign-in method is not officially authorized. Minis is not affiliated with, endorsed by, or supported by GitHub, and this integration has not been reviewed or approved by GitHub.",
+                        "This sign-in method is not officially authorized. 全能AI is not affiliated with, endorsed by, or supported by GitHub, and this integration has not been reviewed or approved by GitHub.",
                         comment: "Copilot disclaimer: unofficial status"))
                     disclaimerPoint(AppLocalized(
-                        "Authorization is performed using a client identity issued to a third-party developer tool rather than to Minis, and it relies on service interfaces that are not published for this purpose.",
+                        "Authorization is performed using a client identity issued to a third-party developer tool rather than to 全能AI, and it relies on service interfaces that are not published for this purpose.",
                         comment: "Copilot disclaimer: borrowed client identity and unpublished interfaces"))
                     disclaimerPoint(AppLocalized(
                         "Access may be withdrawn without notice. The provider may change or discontinue these interfaces at any time, which can cause requests to fail or this feature to stop working entirely.",
                         comment: "Copilot disclaimer: requests may fail or stop working"))
                     disclaimerPoint(AppLocalized(
-                        "Use may violate the provider's terms of service and may result in rate limiting, suspension, or permanent termination of your Copilot entitlement or your GitHub account. Any such consequence applies to your account and cannot be reversed by Minis.",
+                        "Use may violate the provider's terms of service and may result in rate limiting, suspension, or permanent termination of your Copilot entitlement or your GitHub account. Any such consequence applies to your account and cannot be reversed by 全能AI.",
                         comment: "Copilot disclaimer: account suspension or termination risk"))
                     disclaimerPoint(AppLocalized(
                         "Use of an organization, enterprise, or production account is strongly discouraged. Please sign in with a personal account whose loss you are prepared to accept.",
                         comment: "Copilot disclaimer: not for org/enterprise/production accounts"))
                     disclaimerPoint(AppLocalized(
-                        "Your access token is held in the iOS Keychain on this device and is transmitted only to the provider. Minis does not collect it and does not route it through any server operated by us. A backup you export yourself may contain it.",
+                        "Your access token is held in the iOS Keychain on this device and is transmitted only to the provider. 全能AI does not collect it and does not route it through any server operated by us. A backup you export yourself may contain it.",
                         comment: "Copilot disclaimer: where the token goes"))
                     disclaimerPoint(AppLocalized(
                         "This feature is provided on an “as is” basis, without warranty of any kind. By continuing you confirm that you have read this notice and accept these risks entirely at your own discretion.",
@@ -193,7 +193,7 @@ struct CopilotDeviceLoginSheet: View {
         // [T-copilot-copy-on-open] The wording no longer tells the user to tap
         // the code: opening the page copies it, so "paste" is the accurate
         // instruction. Tapping the code still works for anyone who wants it.
-        Text(AppLocalized("1. Open the verification page — this copies the code\n2. Paste it to authorize Minis"))
+        Text(AppLocalized("1. Open the verification page — this copies the code\n2. Paste it to authorize 全能AI"))
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)

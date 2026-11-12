@@ -58,7 +58,7 @@ enum BackupDelivery {
     ///
     /// **Why a sibling of `shared/` and not inside it.** An earlier version of
     /// this used `shared/Backups/`, which was wrong in three ways:
-    ///   1. `shared/` is bind-mounted into the guest at `/var/minis/shared`
+    ///   1. `shared/` is bind-mounted into the guest at `/var/ai/shared`
     ///      (`ISHExecutionCoordinator.swift:498-503`), so every delivered
     ///      package — including one holding API keys — was readable and
     ///      deletable by the agent from a shell command. A backup is an app

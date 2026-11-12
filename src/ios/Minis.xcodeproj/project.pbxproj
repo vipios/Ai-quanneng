@@ -438,6 +438,9 @@
 		E5SOUL001 /* SoulStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SOUL101 /* SoulStore.swift */; };
 		E5SOUL002 /* SoulSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SOUL102 /* SoulSettingsView.swift */; };
 		E5SIC001 /* SoulIdentityCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SIC100 /* SoulIdentityCard.swift */; };
+		E5DRW001 /* EdgeDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5DRW101 /* EdgeDrawer.swift */; };
+		E5DRW002 /* SessionDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5DRW102 /* SessionDrawer.swift */; };
+		E5DRW003 /* ContentView+Drawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5DRW103 /* ContentView+Drawer.swift */; };
 		E5SPDT0001 /* SpeedTier.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SPDT0011 /* SpeedTier.swift */; };
 		E5SPT0001 /* ScheduledPresetToolCall.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SPT0011 /* ScheduledPresetToolCall.swift */; };
 		E5SRS0001 /* SessionRefreshScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SRS0011 /* SessionRefreshScheduler.swift */; };
@@ -1289,6 +1292,9 @@
 		E5SOUL101 /* SoulStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoulStore.swift; sourceTree = "<group>"; };
 		E5SOUL102 /* SoulSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoulSettingsView.swift; sourceTree = "<group>"; };
 		E5SIC100 /* SoulIdentityCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoulIdentityCard.swift; sourceTree = "<group>"; };
+		E5DRW101 /* EdgeDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EdgeDrawer.swift; sourceTree = "<group>"; };
+		E5DRW102 /* SessionDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDrawer.swift; sourceTree = "<group>"; };
+		E5DRW103 /* ContentView+Drawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+Drawer.swift"; sourceTree = "<group>"; };
 		E5SPDT0011 /* SpeedTier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeedTier.swift; sourceTree = "<group>"; };
 		E5SPT0011 /* ScheduledPresetToolCall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledPresetToolCall.swift; sourceTree = "<group>"; };
 		E5SRS0011 /* SessionRefreshScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRefreshScheduler.swift; sourceTree = "<group>"; };
@@ -2060,6 +2066,7 @@
 			children = (
 			F3FC498A0C4FA0C1FDBAE7AE /* Artifacts */,
 				E5CVSYNC00000000000000A1 /* ContentView */,
+				E5DRW000 /* Drawer */,
 				E5SRS0011 /* SessionRefreshScheduler.swift */,
 				F1V00014 /* Alarms */,
 				F1V00015 /* Backup */,
@@ -2072,6 +2079,16 @@
 				EAB000060 /* Sync */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		E5DRW000 /* Drawer */ = {
+			isa = PBXGroup;
+			children = (
+				E5DRW101 /* EdgeDrawer.swift */,
+				E5DRW102 /* SessionDrawer.swift */,
+				E5DRW103 /* ContentView+Drawer.swift */,
+			);
+			path = Drawer;
 			sourceTree = "<group>";
 		};
 		F3FC498A0C4FA0C1FDBAE7AE /* Artifacts */ = {
@@ -3638,6 +3655,9 @@
 				E5SOUL001 /* SoulStore.swift in Sources */,
 				E5SOUL002 /* SoulSettingsView.swift in Sources */,
 				E5SIC001 /* SoulIdentityCard.swift in Sources */,
+				E5DRW001 /* EdgeDrawer.swift in Sources */,
+				E5DRW002 /* SessionDrawer.swift in Sources */,
+				E5DRW003 /* ContentView+Drawer.swift in Sources */,
 				E5CVSET0000000000000A001 /* SettingsSheet.swift in Sources */,
 				E5CVSET0000000000000A002 /* AppearanceSettingsView.swift in Sources */,
 				E5LOCK002 /* FaceIDProtectionSettingsView.swift in Sources */,
@@ -4168,6 +4188,7 @@
 					"$(SRCROOT)/Vendor/cppjieba/include",
 				);
 				INFOPLIST_FILE = "$(SRCROOT)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "全能AI";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "VM requires network access for SLIRP networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -4227,6 +4248,7 @@
 					"$(SRCROOT)/Vendor/cppjieba/include",
 				);
 				INFOPLIST_FILE = "$(SRCROOT)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "全能AI";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "VM requires network access for SLIRP networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -4269,7 +4291,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ShareExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Share to Minis";
+				INFOPLIST_KEY_CFBundleDisplayName = "分享到全能AI";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -4296,7 +4318,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ShareExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Share to Minis";
+				INFOPLIST_KEY_CFBundleDisplayName = "分享到全能AI";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -4323,7 +4345,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FileProvider/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Minis Files";
+				INFOPLIST_KEY_CFBundleDisplayName = "全能AI 文件";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -4350,7 +4372,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FileProvider/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Minis Files";
+				INFOPLIST_KEY_CFBundleDisplayName = "全能AI 文件";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (

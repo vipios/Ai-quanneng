@@ -636,7 +636,7 @@ extension ContentView {
         // Not yet persisted — show a "New Chat" placeholder
         let placeholder = ChatSession(
             id: selId,
-            title: "New Chat",
+            title: "新对话",
             category: nil,
             modelId: "",
             createdAt: Date(),

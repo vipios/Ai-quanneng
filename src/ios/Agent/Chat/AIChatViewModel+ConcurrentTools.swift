@@ -177,7 +177,7 @@ extension AIChatViewModel {
         // tapped Stop short-circuits with a synthetic cancellation result
         // so history stays paired.
         if Task.isCancelled || self.userDidCancel {
-            let cancelContent = "<system-reminder>The user cancelled this operation. The returned result may be incomplete.</system-reminder>"
+            let cancelContent = "<system-reminder>用户已取消此操作，返回的结果可能不完整。</system-reminder>"
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].toolStatus = .cancelled
                 messages[msgIdx].blocks[blockIdx].content = cancelContent
@@ -629,14 +629,14 @@ extension AIChatViewModel {
                 // concurrent execution — sibling shell tasks still need
                 // the signal to abort their own delay loops. The outer
                 // dispatcher resets it once per batch.
-                toolOutput = "<system-reminder>The user cancelled this operation. The returned result may be incomplete.</system-reminder>\n" + result.output
+                toolOutput = "<system-reminder>用户已取消此操作，返回的结果可能不完整。</system-reminder>\n" + result.output
                 cancelledHere = true
             } else {
                 toolOutput = result.output
             }
             toolSuccess = result.exitCode == 0
 
-            // Scan for new/modified files under /var/minis/
+            // Scan for new/modified files under /var/ai/
             let postSnapshot = snapshotMinisFiles()
             let newOrModified = postSnapshot.filter { key, date in
                 preSnapshot[key] == nil || preSnapshot[key]! < date
@@ -808,7 +808,7 @@ extension AIChatViewModel {
                     downloadReport = BrowserDownloadCenter.shared.agentReport(for: sid)
                         ?? "[browser_downloads] This action triggered a native browser file "
                          + "download that is still starting (filename not yet resolved). It will "
-                         + "be saved into /var/minis/workspace/ — do NOT re-download it with "
+                         + "be saved into /var/ai/workspace/ — do NOT re-download it with "
                          + "curl/wget; check the workspace or the next browser_use result instead."
                 }
                 if let downloadReport {
@@ -837,12 +837,12 @@ extension AIChatViewModel {
                 let resizedW = inference.resizedW
                 let resizedH = inference.resizedH
 
-                if pathArg.hasPrefix("/var/minis/") {
+                if pathArg.hasPrefix("/var/ai/") {
                     toolImageLinuxPath = pathArg
                 } else if pathArg.hasPrefix("minis://") {
                     let tail = String(pathArg.dropFirst("minis://".count))
                     if !tail.isEmpty {
-                        toolImageLinuxPath = "/var/minis/\(tail)"
+                        toolImageLinuxPath = "/var/ai/\(tail)"
                     }
                 }
 
@@ -1050,8 +1050,15 @@ extension AIChatViewModel {
             }
 
         case GitHubCloudBuildTool.name:
-            // [T-minis-gh-fallback-switch] 第三道门：请求发出后用户中途关开关，
-            // 排队到这次调用时必须失败。execute() 内部会再判一次同一开关。
+            // [T-minis-gh-fallback-switch] 第三道门。
+            //
+            // 前两道（schema 不注册、提示词不出现）管的是「让模型不知道」。
+            // 这一道管的是另一种情况：请求发出时开关是开的，工具调用已经
+            // 排队，用户在轮到它之前把开关关了 —— 那这次必须失败。
+            // 工具列表每轮重算，执行队列不是，所以这层不能省。
+            //
+            // execute() 内部会再判一次同一开关（防御的是本 case 之外的
+            // 调用路径），两处都判不会互相干扰，代价是一次 UserDefaults 读。
             let ghResult = await GitHubCloudBuildTool.execute(args: toolArgs)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = ghResult.output
@@ -1064,7 +1071,7 @@ extension AIChatViewModel {
             toolSuccess = false
         }
         } catch is CancellationError {
-            let cancelContent = "<system-reminder>The user cancelled this operation. The returned result may be incomplete.</system-reminder>"
+            let cancelContent = "<system-reminder>用户已取消此操作，返回的结果可能不完整。</system-reminder>"
             let existing = (msgIdx < messages.count && blockIdx < messages[msgIdx].blocks.count)
                 ? messages[msgIdx].blocks[blockIdx].content : ""
             toolOutput = existing.isEmpty ? cancelContent : existing + "\n" + cancelContent
@@ -1082,7 +1089,7 @@ extension AIChatViewModel {
         // Tail cancel-detection: if Task got cancelled mid-execution.
         if !cancelledHere && Task.isCancelled && self.userDidCancel {
             cancelledHere = true
-            toolOutput += "\n<system-reminder>The user cancelled this operation. The returned result may be incomplete.</system-reminder>"
+            toolOutput += "\n<system-reminder>用户已取消此操作，返回的结果可能不完整。</system-reminder>"
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = toolOutput
                 messages[msgIdx].blocks[blockIdx].toolStatus = .cancelled
@@ -1419,7 +1426,7 @@ extension AIChatViewModel {
     /// nothing exists there.
     nonisolated static func readImageFailureText(pathArg: String, resolved: Bool, fileSize: Int?) -> String {
         guard resolved else {
-            return "Error: '\(pathArg)' is not a readable Minis path. Use a path under /var/minis/ (e.g. /var/minis/workspace/chart.png) or a minis:// URL."
+            return "Error: '\(pathArg)' is not a readable Minis path. Use a path under /var/ai/ (e.g. /var/ai/workspace/chart.png) or a minis:// URL."
         }
         guard let size = fileSize else {
             return "Error: No file at '\(pathArg)'. If a command in this same turn creates it, read it in the next turn after that command has finished."

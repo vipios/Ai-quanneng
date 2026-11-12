@@ -4,7 +4,7 @@ import Foundation
 /// file_edit, kept off the main thread.
 ///
 /// Background: on 2026-10-02 at 14:23:48 a file_edit on
-/// /var/minis/mounts/nssurge/Mobile.conf (a mounted folder inside Surge's
+/// /var/ai/mounts/nssurge/Mobile.conf (a mounted folder inside Surge's
 /// iCloud container, .../Library/Mobile Documents/iCloud~com~nssurge~inc/...)
 /// called `String(contentsOf:)` on the main actor. read() did not return for
 /// 75s, so the whole app froze until FrontBoard's scene-update watchdog killed

@@ -217,7 +217,7 @@ struct FileBrowserView: View {
             }
         }
         .sheet(item: $moveOrCopyItem) { item in
-            let minisPath = viewModel.rootPath.appendingPathComponent("var/minis")
+            let minisPath = viewModel.rootPath.appendingPathComponent("var/ai")
             let initial = FileManager.default.fileExists(atPath: minisPath.path) ? minisPath : nil
             NavigationStack {
                 DirectoryPickerView(
@@ -754,7 +754,7 @@ private struct FileBrowserRow: View {
             .contextMenu {
                 Button {
                     // [T-ios-file-context-copy-abs-path] Copy the file's guest
-                    // absolute path (e.g. /var/minis/workspace/.../L3_0001.png)
+                    // absolute path (e.g. /var/ai/workspace/.../L3_0001.png)
                     // to the system clipboard. displayPath() is the same
                     // host-URL → guest-path mapping the breadcrumb uses, so we
                     // reuse it instead of reconstructing the path by hand.
@@ -954,7 +954,7 @@ class FileBrowserViewModel: ObservableObject {
 
             do {
                 // Resolve symlinks so contentsOfDirectory works on bind-mounted dirs
-                // (e.g. /var/minis/attachments -> Library/MinisChat/...)
+                // (e.g. /var/ai/attachments -> Library/MinisChat/...)
                 let resolvedPath = self.currentPath.resolvingSymlinksInPath()
                 // Note: we deliberately do NOT bulk-prefetch iCloud placeholder
                 // files here. A large iCloud folder could contain thousands of
@@ -1061,7 +1061,7 @@ class FileBrowserViewModel: ObservableObject {
             if let linux = linuxPath(for: removedURL) {
                 RootfsManager.shared.removeFakefsPath(linux)
                 // If the deleted file lived under one of the FileProvider-exposed
-                // trees (/var/minis/{shared,skills,memory}/...), the Files app has
+                // trees (/var/ai/{shared,skills,memory}/...), the Files app has
                 // a cached enumeration of the parent folder that is now stale.
                 // The underlying storage is a bind mount into the App Group
                 // container, so the file is already gone from disk — we just need
@@ -1079,15 +1079,15 @@ class FileBrowserViewModel: ObservableObject {
         }
     }
 
-    /// Maps a Linux path under `/var/minis/{shared,skills,memory}/...` to the
+    /// Maps a Linux path under `/var/ai/{shared,skills,memory}/...` to the
     /// parent-folder identifier used by the FileProvider extension, and asks the
     /// system to re-enumerate that folder so the Files app drops the stale entry.
     /// Linux paths outside those three trees are not exposed by the FileProvider
     /// and are skipped.
     private static let fileProviderExposedRoots: [String: NSFileProviderItemIdentifier] = [
-        "/var/minis/shared":  NSFileProviderItemIdentifier("shared"),
-        "/var/minis/skills":  NSFileProviderItemIdentifier("skills"),
-        "/var/minis/memory":  NSFileProviderItemIdentifier("memory"),
+        "/var/ai/shared":  NSFileProviderItemIdentifier("shared"),
+        "/var/ai/skills":  NSFileProviderItemIdentifier("skills"),
+        "/var/ai/memory":  NSFileProviderItemIdentifier("memory"),
     ]
 
     private static func signalFileProviderParent(forLinuxPath linux: String) {
@@ -1251,24 +1251,24 @@ class FileBrowserViewModel: ObservableObject {
     func displayPath(for url: URL) -> String {
         // [T-ios-copy-abs-path-varminis-rooted] Primary path: reconstruct the
         // guest path from `currentPath` (the LOGICAL, un-symlink-resolved
-        // directory we're browsing, e.g. `.../data/var/minis/browser`) + the
+        // directory we're browsing, e.g. `.../data/var/ai/browser`) + the
         // item's filename, relative to `rootPath`.
         //
         // Why this is the reliable source: `loadItems()` lists
         // `currentPath.resolvingSymlinksInPath()`, so each `item.url` is already
-        // symlink-RESOLVED. For a bind-mounted subdir like `/var/minis/browser`
+        // symlink-RESOLVED. For a bind-mounted subdir like `/var/ai/browser`
         // (an APFS symlink → `.../Library/MinisChat/minis/<sid>/browser`) the
         // resolved item URL lands OUTSIDE the rootfs `data/` tree, so BOTH the
         // resolved-prefix and raw-prefix checks below miss and the function fell
         // through to `url.lastPathComponent` — copying just the filename
-        // (`0419….jpg`) instead of `/var/minis/browser/0419….jpg`.
+        // (`0419….jpg`) instead of `/var/ai/browser/0419….jpg`.
         // `currentPath` is never symlink-resolved (init standardizes; navigateTo
         // appends names), so `currentPath` relative to `rootPath` is always the
         // true guest directory regardless of bind mounts.
         let rawRootEarly = rootPath.standardized.path
         let curStd = currentPath.standardized.path
         if curStd == rawRootEarly || curStd.hasPrefix(rawRootEarly + "/") {
-            let relDir = String(curStd.dropFirst(rawRootEarly.count))   // "" or "/var/minis/browser"
+            let relDir = String(curStd.dropFirst(rawRootEarly.count))   // "" or "/var/ai/browser"
             let full = join(rootLabel, relDir)
             return join(full, url.lastPathComponent)
         }
@@ -1283,7 +1283,7 @@ class FileBrowserViewModel: ObservableObject {
         // [T-ios-copy-abs-path-fullpath] Bind-mounted subtrees (attachments →
         // MinisChat container) resolve OUTSIDE the rootfs `data/` tree, so the
         // resolved prefix check above won't match them. Fall back to the
-        // UN-resolved namespace: the listing keeps the logical `/var/minis/…`
+        // UN-resolved namespace: the listing keeps the logical `/var/ai/…`
         // path on the URL before symlink resolution would diverge.
         let rawRoot = rootPath.standardized.path
         let rawURL = url.standardized.path
@@ -1297,7 +1297,7 @@ class FileBrowserViewModel: ObservableObject {
 
     /// [T-ios-copy-abs-path-fullpath] Join the guest `rootLabel` with a
     /// relative remainder, collapsing the slash seam so a `rootLabel` of "/"
-    /// plus a rel of "/var/minis/x" yields "/var/minis/x" (not "//var/minis/x")
+    /// plus a rel of "/var/ai/x" yields "/var/ai/x" (not "//var/ai/x")
     /// — important now that the result is copied to the clipboard as a real
     /// path, not just shown as a cosmetic breadcrumb.
     private func join(_ label: String, _ rel: String) -> String {

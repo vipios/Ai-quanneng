@@ -355,7 +355,8 @@ private struct AgentBrowsingOverlay: View {
                     .opacity(breathing ? 1.0 : 0.3)
                     .shadow(color: Color.accentColor.opacity(breathing ? 0.8 : 0), radius: breathing ? 8 : 0)
 
-                Text("Minis is browsing")
+                // [R45-全中文化] 原来是英文「全能AI is browsing」，没走翻译表
+                Text("全能AI 正在浏览网页")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
 

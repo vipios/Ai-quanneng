@@ -1029,7 +1029,8 @@ struct InlineVoiceInputView: View {
                 runManualCorrection()
             }
         } message: {
-            Text("Minis can store your transcript fixes (original → corrected pairs) and accepted AI corrections in a local on-device database to make future voice corrections smarter. Nothing is uploaded. You can change this or clear the data anytime in Settings → Permissions.",
+            // [R45-全中文化] 原来是英文长句，直接给中文（Text 查不到 key 就原样显示）
+            Text("全能AI 可以把你修正过的语音转写结果（原文 → 修正后）和采纳的 AI 修正保存在本机数据库里，让以后的语音修正更聪明。所有数据只存在手机上，不会上传。你可以随时在 设置 → 权限 里更改或清空。",
                  comment: "One-time prompt body: correction data collection")
         }
     }

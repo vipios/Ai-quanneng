@@ -339,7 +339,7 @@ extension AIChatViewModel {
                     continue
                 }
                 try? fm.setAttributes([.creationDate: fileDate, .modificationDate: fileDate], ofItemAtPath: destURL.path)
-                let linuxPath = "/var/minis/attachments/uploads/\(safeName)"
+                let linuxPath = "/var/ai/attachments/uploads/\(safeName)"
                 let meta = AttachmentMeta(path: linuxPath, size: fileSize, modified: fileDate)
                 attachmentMetas.append(meta)
                 logger.info("📎[SEND-ASYNC]   saved \(safeName): \(fileSize) bytes → \(linuxPath)")

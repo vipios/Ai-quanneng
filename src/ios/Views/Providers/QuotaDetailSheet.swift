@@ -50,7 +50,7 @@ struct QuotaDetailSheet: View {
                         Section {
                             EmptyView()
                         } footer: {
-                            Text("Figures come from the provider. Minis's own token counts are not included.")
+                            Text("Figures come from the provider. 全能AI's own token counts are not included.")
                         }
                     case .loading:
                         Section {

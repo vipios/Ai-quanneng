@@ -15,10 +15,11 @@ struct AppLockOverlay: View {
                         .font(.system(size: 48))
                         .foregroundStyle(.secondary)
 
-                    Text("Minis is Locked")
+                    // [R45-全中文化] 原来是英文「全能AI is Locked」
+                    Text("全能AI 已锁定")
                         .font(.title2.bold())
 
-                    Text("Tap to unlock with \(BiometricAuth.biometryDisplayName)")
+                    Text(String(format: AppLocalized("Tap to unlock with %@"), BiometricAuth.biometryDisplayName))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
@@ -49,7 +50,7 @@ struct AppLockOverlay: View {
         guard !isAuthenticating else { return }
         isAuthenticating = true
         Task { @MainActor in
-            let reason = AppLocalized("Unlock Minis")
+            let reason = AppLocalized("Unlock 全能AI")
             let ok = await BiometricAuth.authenticate(reason: reason)
             if ok {
                 withAnimation(.easeOut(duration: 0.25)) {

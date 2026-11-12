@@ -43,8 +43,15 @@ enum LLMProviderFactory {
         guard let instance = store.instance(for: entry.providerInstanceId) else {
             throw FactoryError.noInstance
         }
-        // [R45-直连/在外模型] 中转站按线路覆盖模型：只改发给 API 的模型名，
-        // 保留 catalog 的 contextWindow / reasoning 等元数据（见 LLMModel.withId）。
+        // [R45-直连/在外模型] 中转站按线路覆盖模型。
+        //
+        // 用户在中转站表单里给「直连线路」「在外线路」各指了一个模型，
+        // 发消息时按当前线路把请求体的 model 换成那个字符串。这里在构造
+        // provider 前算一次 effectiveModel，下面所有 make* 分支统一用它 ——
+        // 避免每个分支各写一份覆盖逻辑、迟早分叉。
+        //
+        // 只改 id（发给 API 的模型名），保留 catalog 的 contextWindow /
+        // reasoning 等元数据 —— 见 LLMModel.withId 的注释。
         let effectiveModel: LLMModel
         if let overrideId = RelayProfileStore.shared.overrideModelId(for: entry.providerInstanceId) {
             effectiveModel = entry.model.withId(overrideId)
@@ -199,7 +206,8 @@ enum LLMProviderFactory {
     // MARK: - Per-Provider Builders
 
     static func makeAnthropicProvider(instance: ProviderInstance, model: LLMModel) -> AnthropicProvider {
-        // [T-minis-relay-dual-base] requestBaseURL: 中继实例双地址按当前网络解析。
+        // [T-minis-relay-dual-base] requestBaseURL: a relay instance stores two
+        // addresses and this resolves the one for the current network.
         let customBase = instance.requestBaseURL
         let appendV1 = instance.appendV1Suffix
         // Only custom-base Anthropic-compat (proxy/relay) instances get a custom UA.
@@ -307,7 +315,7 @@ enum LLMProviderFactory {
         let provider = OpenAIProvider(apiKey: key, model: model, customBaseURL: customBase ?? "https://openrouter.ai/api", appendV1Suffix: customBase == nil)
         provider.extraHeaders = [
             "HTTP-Referer": "https://github.com/OpenMinis/OpenMinis",
-            "X-Title": "Minis App",
+            "X-Title": "全能AI App",
         ]
         provider.useOpenRouterCompat = true
         return applyCustomUserAgent(provider, instance: instance)

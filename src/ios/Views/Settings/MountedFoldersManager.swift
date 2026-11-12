@@ -3,14 +3,14 @@
 //  MinisApp
 //
 //  Manages user-picked external folders (e.g. Obsidian vaults in iCloud Drive)
-//  mounted into /var/minis/mounts/<name> via security-scoped bookmarks.
+//  mounted into /var/ai/mounts/<name> via security-scoped bookmarks.
 //
 //  Lifecycle:
 //  - User picks a folder via UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
 //  - We create a persistent bookmark and remember (id, name, bookmark, sourceDisplay)
 //  - On app launch, activateAll() resolves bookmarks and holds security scopes
 //    for the entire app lifetime
-//  - ensureMinisSymlinks() creates /var/minis/mounts/<name> symlinks in fakefs
+//  - ensureMinisSymlinks() creates /var/ai/mounts/<name> symlinks in fakefs
 //
 //  Note: iSH shell cannot follow these symlinks (no scope in kernel thread).
 //  Only FileBrowserView and the Swift app process can read/write through them.
@@ -25,7 +25,7 @@ private let mountLog = AppLogger(category: "MountedFolders")
 struct MountedFolderEntry: Codable, Identifiable, Equatable {
     /// Stable identifier (used as the key in persistence).
     let id: UUID
-    /// User-chosen name; becomes the folder name under /var/minis/mounts/<name>.
+    /// User-chosen name; becomes the folder name under /var/ai/mounts/<name>.
     /// Must match `isValidMountName`.
     var name: String
     /// Original folder name at pick time (for display only).
@@ -446,7 +446,7 @@ final class MountedFoldersManager {
     /// no security scope was acquired, `activeURLs` stayed empty, and
     /// `pushExternalMountSnapshot` therefore dropped every entry through its
     /// `compactMap`. The agent then started against an empty external-mount
-    /// snapshot and `/var/minis/mounts/<name>` was missing — while the
+    /// snapshot and `/var/ai/mounts/<name>` was missing — while the
     /// bookmarks themselves were on disk the whole time, which is why opening
     /// the app once "fixed" it.
     ///
@@ -979,7 +979,7 @@ final class MountedFoldersManager {
         return activeURLs[entry.id]
     }
 
-    /// Returns the entry matching a fakefs symlink path (`/var/minis/mounts/<name>/...`).
+    /// Returns the entry matching a fakefs symlink path (`/var/ai/mounts/<name>/...`).
     /// Useful for FileBrowserView to decide whether to use NSFileCoordinator.
     func entryForLinuxPath(_ linuxPath: String) -> MountedFolderEntry? {
         let prefix = AIChatViewModel.minisMountsLinuxDir + "/"
@@ -1050,7 +1050,7 @@ final class MountedFoldersManager {
     private func removeMountSymlink(name: String) {
         let dataPath = RootfsManager.shared.dataPath
         let linkPath = dataPath
-            .appendingPathComponent("var/minis/mounts", isDirectory: true)
+            .appendingPathComponent("var/ai/mounts", isDirectory: true)
             .appendingPathComponent(name)
         var lstatBuf = stat()
         if lstat(linkPath.path, &lstatBuf) == 0 {

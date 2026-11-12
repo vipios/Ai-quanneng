@@ -12,7 +12,7 @@
 //     get a <system-reminder> naming the repair;
 //   * only the `truncation+` strategy gates this; type coercion and fuzzy
 //     field-name repairs are not data-loss signals;
-//   * content fetched back from /var/minis/offloads is never offloaded again;
+//   * content fetched back from /var/ai/offloads is never offloaded again;
 //   * the byte count reported for a write is the byte count written.
 //
 // Ports:
@@ -146,7 +146,7 @@ let tools = [ToolDef(name: "file_write", required: ["path", "content"]),
 
 func isOffloadStorePath(_ path: String) -> Bool {
     let p = path.trimmingCharacters(in: .whitespacesAndNewlines)
-    return p.hasPrefix("/var/minis/offloads/") || p.hasPrefix("minis://offloads/")
+    return p.hasPrefix("/var/ai/offloads/") || p.hasPrefix("minis://offloads/")
 }
 struct Part { var content: String; var isOffloadReadback = false }
 func offloadCandidates(_ parts: [Part]) -> [Int] {
@@ -165,13 +165,13 @@ let bigContent = String(repeating: "line of a large file\n", count: 400)
 print("▶️  1. a truncated file_write is refused — nothing written")
 do {
     // The stream died inside `content`; the strict parser yielded {}.
-    let raw = "{\"path\": \"/var/minis/workspace/app.py\", \"content\": \"import os\\nimport sys\\n"
+    let raw = "{\"path\": \"/var/ai/workspace/app.py\", \"content\": \"import os\\nimport sys\\n"
     let r = executeToolCall(name: "file_write", parsedArgs: [:], raw: raw, tools: tools)
     guard case .refused(let msg, let ui) = r else { check("refused", false); exit(1) }
     check("refused, not executed", true)
     check("model is told the call did NOT run", msg.hasPrefix("Error: This call was NOT executed"))
     check("…names the repair strategy", msg.contains("repair strategy: truncation+\"}"))
-    check("…names the target path", msg.contains("to /var/minis/workspace/app.py"))
+    check("…names the target path", msg.contains("to /var/ai/workspace/app.py"))
     check("…and says the file is unchanged", msg.contains("Nothing was written to disk"))
     checkEq("UI shows a blocked status", ui, "failed: Blocked: arguments were truncated in transit")
     // Same for file_edit.
@@ -184,10 +184,10 @@ do {
 
 print("▶️  2. read/shell tools run repaired, but the model is told")
 do {
-    let rawRead = "{\"path\": \"/var/minis/workspace/app.py"
+    let rawRead = "{\"path\": \"/var/ai/workspace/app.py"
     let r = executeToolCall(name: "file_read", parsedArgs: [:], raw: rawRead, tools: tools)
     guard case .ran(let args, let reminder, let ui) = r else { check("file_read ran", false); exit(1) }
-    checkEq("repaired path is used", args["path"], "/var/minis/workspace/app.py")
+    checkEq("repaired path is used", args["path"], "/var/ai/workspace/app.py")
     check("a <system-reminder> is appended to the result", reminder)
     checkEq("UI does not render a clean success", ui, "failed: Arguments truncated in transit — result may be incomplete")
     let rawShell = "{\"tool_title\": \"ls\", \"command\": \"ls -la"
@@ -241,17 +241,17 @@ do {
 
 print("▶️  5. reading an offload-store file never re-offloads")
 do {
-    check("file_read of the store is tagged", isOffloadStorePath("/var/minis/offloads/tools/file_write_c1.txt"))
-    let parts = [Part(content: "[CONTEXT OFFLOADED] Content saved to: /var/minis/offloads/tools/a.txt"),
-                 Part(content: "[/var/minis/offloads/tools/a.txt | …]\n" + bigContent, isOffloadReadback: true),
+    check("file_read of the store is tagged", isOffloadStorePath("/var/ai/offloads/tools/file_write_c1.txt"))
+    let parts = [Part(content: "[CONTEXT OFFLOADED] Content saved to: /var/ai/offloads/tools/a.txt"),
+                 Part(content: "[/var/ai/offloads/tools/a.txt | …]\n" + bigContent, isOffloadReadback: true),
                  Part(content: bigContent)]
     checkEq("stub and read-back are both inert; only genuine content is a candidate", offloadCandidates(parts), [2])
     // Loop model: reading the newest stub back each lap must not grow the store.
     var store = 0; var hist = [Part(content: bigContent)]
     for _ in 0..<5 {
         let c = offloadCandidates(hist); store += c.count
-        hist = c.map { _ in Part(content: "[CONTEXT OFFLOADED] Content saved to: /var/minis/offloads/tools/x.txt") } + hist.filter { $0.isOffloadReadback || $0.content.count <= 500 }
-        hist.append(Part(content: "[/var/minis/offloads/tools/x.txt | …]\n" + bigContent, isOffloadReadback: true))
+        hist = c.map { _ in Part(content: "[CONTEXT OFFLOADED] Content saved to: /var/ai/offloads/tools/x.txt") } + hist.filter { $0.isOffloadReadback || $0.content.count <= 500 }
+        hist.append(Part(content: "[/var/ai/offloads/tools/x.txt | …]\n" + bigContent, isOffloadReadback: true))
     }
     checkEq("only the original is ever written", store, 1)
 }
@@ -269,12 +269,12 @@ do {
     let envelope = "<system-reminder>"
     // LEGACY format — still in every session persisted before the format change
     // and in history synced from a peer on an older build.
-    let stub = "\(stubPrefix) Content (~4406 tokens, 15220 bytes) saved to: /var/minis/offloads/tools/file_write_c1.txt\nUse file_read tool to retrieve if needed."
+    let stub = "\(stubPrefix) Content (~4406 tokens, 15220 bytes) saved to: /var/ai/offloads/tools/file_write_c1.txt\nUse file_read tool to retrieve if needed."
     // CURRENT format — verbatim port of `offloadedStubNotice`.
     let notice = """
     \(envelope)
     \(noticeTag) The original content (~4406 tokens, 15220 bytes) of this tool argument \
-    has been pruned to save context and offloaded to: /var/minis/offloads/tools/file_write_c1.txt
+    has been pruned to save context and offloaded to: /var/ai/offloads/tools/file_write_c1.txt
 
     CRITICAL: This is a placeholder notice, NOT actual file content. NEVER pass this \
     placeholder or reuse it in subsequent file_write or file_edit calls. If you need the \

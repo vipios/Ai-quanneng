@@ -305,7 +305,7 @@ let scenarios: [Scenario] = [
         c.current("classified .video by extension", String(describing: s.vm.attachments.first?.kind) == "Optional(Minis.InputAttachment.Kind.video)"
                   || String(describing: s.vm.attachments.first?.kind).hasSuffix("video)"))
         c.current("no image, no video bytes in any request; only the <user-attached-files> path line",
-                  c.all.allSatisfy { c.inv("live", $0).imageCount == 0 } && t.contains("/var/minis/attachments/uploads/clip.mp4") && t.contains("size=\"32\""))
+                  c.all.allSatisfy { c.inv("live", $0).imageCount == 0 } && t.contains("/var/ai/attachments/uploads/clip.mp4") && t.contains("size=\"32\""))
         c.current("the file is copied into the session's uploads", s.fileCount("attachments/uploads") == 1)
         c.current("restart sends the same text", c.texts("restart", .anthropic) == t)
         c.note("No video code path: not decoded, not resized, no frame sampling, no size cap; the model only sees the path and byte size.")
@@ -347,8 +347,8 @@ let scenarios: [Scenario] = [
         c.current("huge file: copied, size reported in full, no content read", t.contains("size=\"2684354560\""))
         c.current("same name twice: notes.txt and notes_1.txt, both kept", names.contains("notes.txt") && names.contains("notes_1.txt")
                   && (try? String(contentsOf: uploads.appendingPathComponent("notes_1.txt"), encoding: .utf8)) == "second")
-        c.current("CJK + space name kept verbatim in the path", t.contains("/var/minis/attachments/uploads/我的 文件.txt"))
-        c.current("no-extension text file classified .document", t.contains("/var/minis/attachments/uploads/README\""))
+        c.current("CJK + space name kept verbatim in the path", t.contains("/var/ai/attachments/uploads/我的 文件.txt"))
+        c.current("no-extension text file classified .document", t.contains("/var/ai/attachments/uploads/README\""))
         c.desired("nothing lost or overwritten (5 files, 5 lines)", names.count == 5 && t.components(separatedBy: "<file path=").count - 1 == 5)
     },
 
@@ -532,7 +532,7 @@ let scenarios: [Scenario] = [
         // are now positions in the request's image list.
         c.current("planner reports one drop", plan?.droppedCount == 1)
         c.current("the rewrite drops only the oldest image (noise0.jpg); its placeholder names its own file",
-                  inv.placeholders.count == 1 && inv.placeholders[0].contains("Original at /var/minis/attachments/uploads/noise0.jpg "))
+                  inv.placeholders.count == 1 && inv.placeholders[0].contains("Original at /var/ai/attachments/uploads/noise0.jpg "))
         for phase in ["live", "restart"] {
             c.current("\(phase): only planned images dropped, each placeholder names its own file",
                       c.inv(phase, .chat).imageCount == 5 && c.inv(phase, .chat).placeholders.count == 1)
@@ -708,7 +708,7 @@ let scenarios: [Scenario] = [
         await c.liveAndRestart(s)
         for p in c.all { c.current("(a) \(p): image survives the rename (it is served from the media copy)", c.inv("restart", p).imageCount == 1) }
         c.current("(a) the [attached image: ...] text still names the old path",
-                  c.texts("restart", .chat).contains("[attached image: /var/minis/attachments/uploads/IMG_9.jpg]"))
+                  c.texts("restart", .chat).contains("[attached image: /var/ai/attachments/uploads/IMG_9.jpg]"))
         // (b) SessionForkManager.duplicateSession copies parts verbatim: the
         // mediaRef keeps the SOURCE session's relativePath.
         let fork = c.newSession("-fork")

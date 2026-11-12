@@ -124,6 +124,9 @@ enum SelfUpdate {
     ///
     /// 换仓库只改这一行。原型里对应 `BUILTIN_REPO`（联动模板-完整.html），
     /// 两处必须一致 —— 否则原型演示的版本和真机查的版本会对不上。
+    ///
+    /// ⚠️ 这个仓是**隔离仓**（Ai-quanneng），不是定制仓（quanneng-ai）。
+    /// 两仓各自出包、各自有滚动 tag `latest`，指错了就会装到另一条线的包。
     static let builtinRepo = "vipios/Ai-quanneng"
 
     /// 供界面显示（关于页的仓库链接）。恒等于内置值。
@@ -259,15 +262,33 @@ enum SelfUpdate {
                            win: nil)
         }
 
-        let remote = win.assetUpdatedAt
-        let anchor = lastAssetUpdatedAt
+        // [R60-按版本号判断] 三档，优先级从上到下：
+        //
+        //   1. 远端版本号 vs **本机版本号** —— 最可靠。
+        //      2026-11-12 实测的 bug：本地 1.70、远端 v1.73，界面却显示
+        //      「已是最新」。根因就是原来只有第 3 档（时间戳比较），
+        //      而滚动 tag `latest` 的发布方式下时间戳判据会失真。
+        //
+        //   2. 远端版本号 vs **上次下载的版本号** —— 本机版本号读不到时用
+        //      （理论上不会发生，Bundle 里一定有 CFBundleShortVersionString，
+        //      留着是为了不因为一个字段缺失就退化成第 3 档）。
+        //
+        //   3. 时间戳兜底 —— 远端版本号解析不出来时（tag 是 `latest`、
+        //      release name 里没数字）才用。
+        let local = currentVersion
+        let remoteVer = win.remoteVersion
+        let downloaded = downloadedVersion
 
-        // 没锚点 = 第一次检查，视为有新版本（让用户能更新到当前包）。
         let hasUpdate: Bool
-        if anchor.isEmpty {
-            hasUpdate = true
+        if !remoteVer.isEmpty && !local.isEmpty {
+            hasUpdate = SelfUpdate.compare(remoteVer, local) > 0
+        } else if !remoteVer.isEmpty && !downloaded.isEmpty {
+            hasUpdate = SelfUpdate.compare(remoteVer, downloaded) > 0
         } else {
-            hasUpdate = remote > anchor
+            // 兜底：远端拿不到版本号，只能看上传时间有没有变新。
+            let remote = win.assetUpdatedAt
+            let anchor = lastAssetUpdatedAt
+            hasUpdate = anchor.isEmpty ? true : (remote > anchor)
         }
 
         let r: SelfUpdateResult = hasUpdate
@@ -287,9 +308,48 @@ enum SelfUpdate {
         set { UserDefaults.standard.set(newValue, forKey: "minis.selfupdate.lastAssetUpdatedAt") }
     }
 
-    /// 下载成功后，把这次包的 asset.updated_at 记成锚点。
-    static func markInstalled(_ win: Win) {
+    /// 上次**下载完成**那个包的版本号，如 `[1, 73]`。
+    ///
+    /// [R60-按版本号判断] 这是 `markInstalled` 那套锚点的补充。
+    ///
+    /// 为什么需要单独一份：`markInstalled` 写的是时间戳，而时间戳有两个毛病 ——
+    ///   · 滚动 tag 下不同版本的更新时间可能相同（同一秒覆盖上传）
+    ///   · 用户换设备后锚点丢失，只能退回「没锚点 = 有新版本」
+    /// 版本号没有这两个问题，能直接跟远端比大小。
+    ///
+    /// 存成 `"1.73"` 这样的字符串而不是数组（UserDefaults 存不了数组的
+    /// 类型安全版本，存 [Int] 要额外编码，得不偿失）。
+    static var downloadedVersion: [Int] {
+        get {
+            let raw = UserDefaults.standard.string(forKey: "minis.selfupdate.downloadedVersion") ?? ""
+            return parseVersionNumbers(raw)
+        }
+        set {
+            let s = newValue.map(String.init).joined(separator: ".")
+            UserDefaults.standard.set(s, forKey: "minis.selfupdate.downloadedVersion")
+        }
+    }
+
+    /// 下载成功后调这个。
+    ///
+    /// [R60-下载锚点污染] **不要再叫它 markInstalled。**
+    ///
+    /// 原来这里叫 `markInstalled`，在 `savedFile = file` 之后立刻调用 ——
+    /// 也就是「文件下到本地」那一刻，而用户还得在共享面板里走系统的安装
+    /// 流程，那一步成功了没有 App 完全拿不到回调。
+    ///
+    /// 后果（2026-11-12 用户实测）：第一次下载失败 → 第二次下载成功、
+    /// 弹出共享面板 → 安装报 301 没装上 → 第三次检查时锚点已经被写成
+    /// 「已装这个版本」，界面显示「已是最新」，用户就再也升不上去了。
+    ///
+    /// 改名成 `markDownloaded` 是为了让语义诚实：我们只知道「下过了」，
+    /// 不知道「装上了」。判断更新时拿它当第二档依据（见 `check()`），
+    /// 而不是当成「已装」的绝对真相。
+    static func markDownloaded(_ win: Win) {
         lastAssetUpdatedAt = win.assetUpdatedAt
+        if !win.remoteVersion.isEmpty {
+            downloadedVersion = win.remoteVersion
+        }
     }
 
     // MARK: 线路竞速
@@ -308,6 +368,21 @@ enum SelfUpdate {
         let assetUpdatedAt: String
         /// [R50] 给界面显示的一行版本标识，如「build 58」。
         let buildLabel: String
+        /// [R60-按版本号判断] 远端版本号的数字形式，如 `[1, 73]`。
+        ///
+        /// 为什么需要它：`buildLabel` 只是给眼睛看的字符串，之前真正用于
+        /// 「有没有新版本」比较的是 `assetUpdatedAt` 时间戳。那套判据在
+        /// 滚动 tag 的发布方式下会出错 —— 2026-11-12 实测：本地 1.70、
+        /// 远端 v1.73，界面却显示「已是最新」。原因是锚点比的是上传时间，
+        /// 而用户那次下载之后 asset 没有再被覆盖上传过（或者锚点被写脏了），
+        /// 时间戳相等，于是判成最新。
+        ///
+        /// 版本号一直就在 `release.name`（「全能AI 1.73」）里，只是以前
+        /// 解析出来仅用于显示。现在把它也拿去比大小。
+        ///
+        /// 拿不到（如 tag 就是 `latest`、name 里没数字）时为**空数组**，
+        /// 调用方据此退回时间戳判断。
+        var remoteVersion: [Int] = []
         /// [R59] 这条线路实测下载速度（B/s）。0 表示没测出/测不通。
         ///
         /// 有默认值：`probe` 里构造只带版本事实、不测速，`race` 最后
@@ -398,9 +473,14 @@ enum SelfUpdate {
         // 把「版本事实」和「下载线路」重新组合成一个 Win：
         // tag / 资产 / 大小 / updated_at 都来自 fact，
         // line 换成实测最快的那条（下载地址由 downloadURL 用它拼）。
+        //
+        // ⚠️ `remoteVersion` 必须显式带上。它在 `Win` 里有默认值 `[]`，
+        // 漏传**编译器不会报错**，但会让 `check()` 永远拿到空数组、
+        // 静默退回时间戳判断 —— 整个「按版本号比较」的修复就白做了。
         return Win(tag: fact.tag, line: bestLine, ms: fact.ms,
                    ipaName: fact.ipaName, ipaURL: fact.ipaURL, ipaSize: fact.ipaSize,
                    assetUpdatedAt: fact.assetUpdatedAt, buildLabel: fact.buildLabel,
+                   remoteVersion: fact.remoteVersion,
                    measuredSpeed: bestSpeed)
     }
 
@@ -461,19 +541,30 @@ enum SelfUpdate {
 
             // [R55] release 的 title 形如「全能AI 1.65」（版本号 = run_number）。
             // 直接把 title 里的版本段给界面显示。拿不到就回落 tag。
+            //
+            // [R60-按版本号判断] 同一段文字顺便解析成 `[1, 65]` 存进
+            // `remoteVersion`，`check()` 拿它跟本地比大小。以前这里解析完
+            // 只用于显示，比较还在用时间戳，于是「本地 1.70 / 远端 1.73」
+            // 会显示「已是最新」。
             let name = obj["name"] as? String ?? ""
             let buildLabel: String
+            var remoteVersion: [Int] = []
             if let m = name.range(of: "全能AI", options: []) {
                 let tail = name[m.upperBound...].trimmingCharacters(in: .whitespaces)
                 // tail 形如 "1.65"，去掉可能的 "· " 前缀
                 let cleaned = tail.hasPrefix("·") ? String(tail.dropFirst()).trimmingCharacters(in: .whitespaces) : tail
                 buildLabel = cleaned.isEmpty ? "v\(tag)" : "v\(cleaned)"
+                remoteVersion = parseVersionNumbers(cleaned)
             } else if let m = name.range(of: "build", options: .caseInsensitive) {
                 let tail = name[m.upperBound...].trimmingCharacters(in: .whitespaces)
                 let num = tail.prefix(while: { $0.isNumber })
                 buildLabel = num.isEmpty ? "v\(tag)" : "build \(num)"
+                remoteVersion = parseVersionNumbers(String(num))
             } else {
                 buildLabel = "v\(tag)"
+                // tag 本身可能是版本号（如 1.73），也可能是滚动名（如 latest）。
+                // 后者解析不出数字，返回空数组，`check()` 会退回时间戳判断。
+                remoteVersion = parseVersionNumbers(tag)
             }
 
             // 找出可安装的包。找 .ipa / .tipa，没有就留 nil ——
@@ -497,7 +588,8 @@ enum SelfUpdate {
 
             return Win(tag: tag, line: line, ms: ms,
                        ipaName: ipaName, ipaURL: ipaURL, ipaSize: ipaSize,
-                       assetUpdatedAt: assetUpdatedAt, buildLabel: buildLabel)
+                       assetUpdatedAt: assetUpdatedAt, buildLabel: buildLabel,
+                       remoteVersion: remoteVersion)
         } catch {
             return nil
         }
@@ -606,6 +698,43 @@ enum SelfUpdate {
             throw SelfUpdateError.http((resp as? HTTPURLResponse)?.statusCode ?? 0)
         }
 
+        // [R60-下载结果校验] 校验拿到的**真的是那个 ipa**，不是一张 HTML。
+        //
+        // 这条是给 2026-11-12 那次「安装报 301」兜底的。
+        //
+        // 现场：用户第一次下载失败 → 第二次「像下载成功一样」弹出共享面板
+        // → 在共享面板里点安装报 301 → 文件装不上。App 侧日志显示下载
+        // 是成功的（HTTP 2xx、文件也确实落在 Documents/Updates/ 下）。
+        //
+        // 最合理的解释：加速前缀（ghfast / gh-proxy 这类）在某些情况下
+        // 对 `releases/download/...` 这条路径返回的是一次**重定向响应体**
+        // 或者一个 HTML 错误页，而不是二进制本体。URLSession 跟随重定向后
+        // 拿到 200，于是我们以为下成功了；但落盘的那个文件根本不是 zip/ipa，
+        // 系统安装器一读就报 301（它自己的错误码，跟 HTTP 301 无关）。
+        //
+        // 以前完全不校验大小，所以这种文件能一路走到共享面板。
+        // 现在用 release 里记录的 asset.size 比对：偏差超过 1% 就判定
+        // 「下的不是那个包」，直接报错，不弹共享面板 —— 让用户在 App 里
+        // 就看到失败，而不是装的时候才遇到一个莫名其妙的 301。
+        //
+        // 为什么容差 1%：极少数代理会做 gzip 传输，落盘大小与 asset.size
+        // 可能有细微差别；但这个包是 ipa（zip 容器，本身已压缩），
+        // 代理再压也压不动，1% 足够宽松，同时又能挡住「几 KB 的 HTML 页」。
+        if win.ipaSize > 0 {
+            // 用 resourceValues 而不是 attributesOfItem[.size]：后者返回
+            // `Any`，实际是 NSNumber，`as? Int64` 桥接不一定成立（会静默
+            // 得到 0，等于校验被跳过）。`fileSize` 是明确的 Int?。
+            let actual = (try? tmp.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            if actual > 0 {
+                let diff = abs(Int64(actual) - win.ipaSize)
+                let tolerance = max(Int64(64 * 1024), win.ipaSize / 100)
+                if diff > tolerance {
+                    try? FileManager.default.removeItem(at: tmp)
+                    throw SelfUpdateError.badPayload(got: Int64(actual), expected: win.ipaSize)
+                }
+            }
+        }
+
         // 挪到 Documents/Updates/ 下，文件名保持 release 里的原样。
         // 放 tmp 里会被系统随时清掉，用户还没点安装就没了。
         let dir = try updatesDir()
@@ -631,6 +760,48 @@ enum SelfUpdate {
 
     // MARK: 版本比较
 
+    /// 把任意版本文本解析成数字数组。
+    ///
+    /// 要能吃下这些形态（都来自真实 release 名）：
+    ///   `1.73`         → [1, 73]
+    ///   `v1.73`        → [1, 73]     （前导 v 被跳过）
+    ///   `全能AI 1.73`  → [1, 73]     （中文被跳过，只在数字段取数）
+    ///   `build 58`     → [58]
+    ///   `1.73-beta`    → [1, 73]     （后缀不参与）
+    ///   `latest`       → []          （纯字母，拿不到版本）
+    ///   `""`           → []
+    ///
+    /// 为什么按「点分段、段内取前导数字」而不是正则抓全部数字：
+    /// `1.73-beta2` 这种如果抓全部数字会得到 `[1,73,2]`，比 `[1,73]` 大，
+    /// 于是「1.73 的预发布版」被判成比 1.73 新。按段取前导数字则得到
+    /// `[1,73]`，与正式版相等，符合直觉。
+    ///
+    /// 注意 `任意非数字段会被整段跳过`，所以 `latest` 得到空数组 ——
+    /// 调用方拿到空数组必须退回时间戳判断，不能当成 0。
+    static func parseVersionNumbers(_ raw: String) -> [Int] {
+        var out: [Int] = []
+        for part in raw.split(separator: ".") {
+            // 段内取前导数字（"73-beta" → 73）
+            let digits = part.prefix(while: { $0.isNumber })
+            if !digits.isEmpty {
+                out.append(Int(digits) ?? 0)
+                continue
+            }
+            // 该段不以数字开头（"v1" 的 v、"beta" 等）。可能是整串就一个
+            // 词、数字在后面（"build58"），试着找段内第一段数字。
+            let inner = part.drop(while: { !$0.isNumber })
+            let num = inner.prefix(while: { $0.isNumber })
+            if num.isEmpty {
+                // 这一段完全没有数字。若已经解析出东西就停（"1.73-beta" 的
+                // beta 段），否则继续看后面（"latest" 没有后继，结果是空）。
+                if !out.isEmpty { break }
+                continue
+            }
+            out.append(Int(num) ?? 0)
+        }
+        return out
+    }
+
     /// 逐段比大小。缺的段当 0 处理，所以 `1.0` 与 `1.0.0` 相等。
     /// 返回 1 = a 大，-1 = b 大，0 = 相等。
     static func compare(_ a: [Int], _ b: [Int]) -> Int {
@@ -650,6 +821,9 @@ enum SelfUpdateError: LocalizedError {
     case noAsset
     case http(Int)
     case cancelled
+    /// [R60-下载结果校验] 下回来的东西大小对不上，多半是代理返回了
+    /// 重定向页 / 错误页而不是 ipa 本体。见 `download` 里那段注释。
+    case badPayload(got: Int64, expected: Int64)
 
     var errorDescription: String? {
         switch self {
@@ -659,6 +833,12 @@ enum SelfUpdateError: LocalizedError {
             return "下载失败，HTTP \(c)"
         case .cancelled:
             return "下载已取消"
+        case .badPayload(let got, let expected):
+            // 说得具体一点：用户看到「大小不对」比看到「301」有用得多，
+            // 也让他知道该换个网络/线路再试，而不是怀疑包本身坏了。
+            let g = ByteCountFormatter.string(fromByteCount: got, countStyle: .file)
+            let e = ByteCountFormatter.string(fromByteCount: expected, countStyle: .file)
+            return "下载到的文件不完整（\(g) / 应为 \(e)），像是代理返回了错误页。换个网络再试一次"
         }
     }
 }

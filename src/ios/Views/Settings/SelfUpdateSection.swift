@@ -298,9 +298,15 @@ struct SelfUpdateSection: View {
                 }
             }
             savedFile = file
-            // [R50] 下载成功，把这次包的 asset.updated_at 记成锚点，
-            // 下次检查就以此为基准判断有没有更新。
-            SelfUpdate.markInstalled(win)
+            // [R60-下载锚点污染] 记「下过这个版本」，**不是**「已安装」。
+            //
+            // 原来是 `markInstalled`，紧跟在 `savedFile = file` 之后执行。
+            // 可这个位置只是「文件落在本地」，用户还得在共享面板里走系统
+            // 安装流程，那一步成败 App 拿不到回调。写成「已安装」的后果
+            // 用户实测过：第一次下载失败 → 第二次下载成功、弹共享面板 →
+            // 安装报 301 没装上 → 第三次检查时锚点已写好，界面显示
+            // 「已是最新」，再也升不上去。
+            SelfUpdate.markDownloaded(win)
             // [R44] 下完立刻弹共享面板。用户原话「下载完更新文件后要出来
             // 弹窗，弹窗里面有苹果共享的那个界面」—— 不是「在列表里多一行」。
             shareItem = ShareItem(url: file)

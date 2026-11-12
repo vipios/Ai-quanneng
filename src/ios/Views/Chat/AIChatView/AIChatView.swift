@@ -492,7 +492,7 @@ struct AIChatView: View {
     /// Default chat title for sessions without a generated title. Sourced
     /// from SOUL.md (`name`), falls back to "Minis". Refreshed on .soulMdChanged.
     @State var soulName: String = SoulStore.cachedMetadata.name.isEmpty
-        ? "Minis" : SoulStore.cachedMetadata.name
+        ? "全能AI" : SoulStore.cachedMetadata.name
 
     /// True when any sheet or fullScreenCover is presented (suppress auto-focus to avoid keyboard bugs).
     var hasOverlayPresented: Bool {
@@ -803,7 +803,9 @@ struct AIChatView: View {
         // .background position — the gate silently never engaged. EquatableView
         // wrapping is the only guaranteed path to ==.
         .background(
-            ChatToolbarHost(key: chatToolbarKey, showsTrailing: !ChatNavMenuBarItem.isEnabled, title: {
+            ChatToolbarHost(key: chatToolbarKey,
+                            showsTrailing: !ChatNavMenuBarItem.isEnabled,
+                            title: {
                 chatNavPrincipalContent
             }, trailing: {
                 trailingMenu
@@ -872,7 +874,7 @@ struct AIChatView: View {
                 NavigationStack {
                     FileBrowserView(
                         rootPath: AIChatViewModel.minisWorkspacePersistentDir(for: sid),
-                        rootLabel: "/var/minis/workspace",
+                        rootLabel: "/var/ai/workspace",
                         highlightFileName: target.filename
                     )
                 }
@@ -1099,7 +1101,7 @@ struct AIChatView: View {
         .sheet(isPresented: $showFileBrowser) {
             NavigationStack {
                 let base = RootfsManager.shared.dataPath
-                FileBrowserView(rootPath: base, initialPath: base.appendingPathComponent("var/minis"), rootLabel: "/")
+                FileBrowserView(rootPath: base, initialPath: base.appendingPathComponent("var/ai"), rootLabel: "/")
             }
         }
         .sheet(isPresented: $showBrowserSheet) {
@@ -1344,140 +1346,7 @@ struct AIChatView: View {
             }
         }
         .onAppear {
-            wireComposerActions()
-            // [OpenMinis#433] Back on screen with a page popped off it: this
-            // new chat is in use again, so no other new chat may take it.
-            ViewModelCache.shared.unparkNewChat(vm)
-            // [T-always-on] This is the chat on screen now.
-            AlwaysOnController.shared.chatAppeared(key: vm.sessionId ?? vm.draftId)
-            let sinceInit = (CFAbsoluteTimeGetCurrent() - AIChatViewModel.onAppearTimestamp) * 1000
-            minisLogger.info("[SessionLoad] onAppear T+\(String(format: "%.0f", sinceInit))ms isNew=\(cached.isNew) msgs=\(vm.messages.count)")
-            // [T-inputbar-stale-across-reentry] Re-arm the leading-edge seed on
-            // EVERY appear. AIChatView is keyed `.id(sessionId)` in ContentView,
-            // so re-entering the SAME session reuses the same SwiftUI identity
-            // and its @State survives — `inputBarHeight` keeps whatever (possibly
-            // wrong) value it last held, and because `didSeedInputBarHeight` is
-            // still true the synchronous seed never re-fires. If the composer's
-            // geometry doesn't change on re-entry, onGeometryChange emits no new
-            // callback either, so nothing ever reconciles it: a too-tall height
-            // survives indefinitely across re-renders. Clearing the flag makes
-            // the next (guaranteed) geometry callback re-seed authoritatively.
-            didSeedInputBarHeight = false
-            inputBarHeightDebounce?.cancel()
-            inputBarHeightDebounce = nil
-            AppLogger(category: "InputBarLayout").info("inputBarHeight re-arm seed on appear (was \(inputBarHeight))")
-            vm.sessionId = sessionId
-            vm.draftId = draftId
-            vm.remoteDeviceId = remoteDeviceId
-            vm.initialGroupId = initialGroupId
-            // Snapshot total session count once so the New-Chat onboarding
-            // grid only appears for first-time users (no prior sessions).
-            // [T-ios-session-coldload-listsessions-block] Use the bare
-            // COUNT(*) query, NOT listSessions().count — the latter ran 4
-            // un-indexable parts_json LIKE subqueries per session (~0.5s cold
-            // on a 100k-message DB) and, on the serialized ChatStore actor,
-            // head-of-line-blocked the loadSession() dispatched below, which
-            // was the reported ~3s cold-open stall. The comment used to claim
-            // "single SQLite COUNT" — now the code actually does one.
-            if totalSessionCount == nil {
-                Task.detached(priority: .utility) {
-                    let count = await ChatStore.shared.sessionCount()
-                    await MainActor.run { totalSessionCount = count }
-                }
-            }
-            // [T-minisurl-wrong-active-session] This view (plus the onChange
-            // below) is the ONLY writer of activeSessionId: the global means
-            // "session whose chat UI is frontmost", and relative minis://
-            // resolution depends on it. Background flows (RPC, share, sync)
-            // used to write it from loadSession()/ensureSessionReturningId()
-            // and steal resolution out from under the visible session.
-            if let sessionId { AIChatViewModel.activeSessionId = sessionId }
-            vm.ensureKernelBooted()
-            if let sessionId {
-                if cached.isNew || (vm.messages.isEmpty && !vm.isLoadingSession) {
-                    // Load session if: (a) VM is freshly created, or (b) cache hit but messages
-                    // are empty — this can happen on iOS 16 where NavigationStack may recreate
-                    // @StateObject unexpectedly, causing isNew=false but an empty VM.
-                    minisLogger.info("🔄SESSION AIChatView.onAppear loading session \(sessionId) isNew=\(cached.isNew) msgs=\(vm.messages.count)")
-                    // [T-ios-session-coldload-listsessions-block] .userInitiated
-                    // so the actual session-open work wins the serialized
-                    // ChatStore actor queue over background sidebar-refresh
-                    // listSessions() scans that would otherwise starve it.
-                    Task(priority: .userInitiated) {
-                        // Phase A: auto-repair any sortOrder / legacy marker anomalies
-                        // before loading. Cheap no-op if the session is healthy.
-                        _ = await ChatStore.shared.repairSessionIfNeeded(sessionId: sessionId)
-                        await vm.loadSession()
-                    }
-                } else if vm.messages.isEmpty && vm.isLoadingSession {
-                    // iOS 16 edge case: a previous view instance started loadSession()
-                    // but this view appeared before it completed. Wait for it to finish,
-                    // then reload if messages are still empty (objectWillChange may have
-                    // fired between old and new CachedViewModel subscriptions).
-                    minisLogger.info("🔄SESSION AIChatView.onAppear WAITING for in-flight load session=\(sessionId)")
-                    Task {
-                        // Wait for the in-flight load to complete (poll at short intervals)
-                        for _ in 0..<20 {
-                            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                            if !vm.isLoadingSession { break }
-                        }
-                        // If messages are still empty after the load completed, retry
-                        if vm.messages.isEmpty && !vm.isLoadingSession {
-                            minisLogger.warning("🔄SESSION AIChatView.onAppear RETRY load — messages still empty after in-flight load for \(sessionId)")
-                            await vm.loadSession()
-                        }
-                    }
-                } else {
-                    let reuseStart = CFAbsoluteTimeGetCurrent()
-                    minisLogger.info("🔄SESSION AIChatView.onAppear REUSING cached vm for \(sessionId) isProcessing=\(vm.isProcessing) msgs=\(vm.messages.count)")
-                    // Remount minis for this session (in case another session took over)
-                    vm.mountMinis(for: sessionId)
-                    // While the user was off this view, an iCloud / LAN
-                    // sync may have landed new messages (or applied a
-                    // tombstone). reloadMessagesFromDB internally compares
-                    // SQLite count + max(sort_order) + (id, sort_order)
-                    // hash against the VM's last-known baseline and only
-                    // re-renders on diff. Skip when isProcessing — the
-                    // active stream owns messages right now and a reload
-                    // would clobber the in-flight assistant turn.
-                    if !vm.isProcessing && !vm.isCompacting {
-                        Task { @MainActor in await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse") }
-                    }
-                    vm.consumeDeferredSnapshotIfNeeded()
-                    let mountElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
-                    // Cached VM already has messages — trigger scroll-to-bottom
-                    // since isLoadingSession won't transition and its onChange won't fire.
-                    if !vm.messages.isEmpty {
-                        vm.forceScrollToBottom.send()
-                    }
-                    let totalElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
-                    minisLogger.info("[SessionLoad] \(sessionId) — REUSE: \(String(format: "%.1f", totalElapsed))ms [mount: \(String(format: "%.1f", mountElapsed)) | msgs: \(vm.messages.count)]")
-                }
-            } else {
-                minisLogger.info("🔄SESSION AIChatView.onAppear nil sessionId — draft mode")
-                // Draft session — auto-focus input for immediate typing
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    guard !hasOverlayPresented, canRunDelayedComposerFocus("draft") else { return }
-                    inputFocused = true
-                }
-            }
-            minisLogger.info("[Share] AIChatView.onAppear: sessionId=\(sessionId ?? "nil") bufferVersion=\(shareCoordinator.bufferVersion) hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
-            injectPendingShareIfNeeded()
-            injectPendingTransferIfNeeded()
-            isChatViewVisible = true
-            pageLeaveLatch.markAppeared()
-            // [T-crash-breadcrumbs] Which page is on screen - a hash, never the title.
-            let crumbChat = "chat:" + CrashBreadcrumbs.hash8(vm.sessionId ?? vm.draftId ?? "draft")
-            CrashBreadcrumbs.record("page.show", detail: crumbChat)
-            CrashBreadcrumbs.setSlot("page", value: crumbChat)
-            refreshTitlePillSession()
-            // Notify workflow that THIS view is mounted + visible. If
-            // the workflow is waiting for our session id, it will
-            // transition to chatReady — our state observer below picks
-            // that up and flips `showCamera`. Transient draft views
-            // (sessionId=nil) won't match the workflow's target and
-            // are correctly skipped.
-            tryMarkWorkflowChatReady(reason: "onAppear")
+            handleAppear()
         }
         .observingQuickActions(modifier: quickActionObserver)
         .onChange(of: vm.sessionId) { _ in
@@ -1490,9 +1359,7 @@ struct AIChatView: View {
             refreshTitlePillSession()
         }
         .onChange(of: shareCoordinator.bufferVersion) { newVersion in
-            // Warm start: user is already in a session when share arrives
-            minisLogger.info("[Share] AIChatView.onChange(bufferVersion)=\(newVersion) sessionId=\(sessionId ?? "nil") draftId=\(draftId ?? "nil") hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
-            injectPendingShareIfNeeded()
+            handleShareBufferChange(newVersion: newVersion)
         }
         // [T-pop-keyboard-flash-home] Release the keyboard when the pop starts
         // (back button) or commits (swipe released) — see ViewWillDisappearHook.
@@ -1526,57 +1393,7 @@ struct AIChatView: View {
             pageLeaveLatch.markAppeared()
         }))
         .onDisappear {
-            isChatViewVisible = false
-            CrashBreadcrumbs.record("page.hide",
-                                    detail: "chat:" + CrashBreadcrumbs.hash8(vm.sessionId ?? vm.draftId ?? "draft"))
-            AlwaysOnController.shared.chatDisappeared(key: vm.sessionId ?? vm.draftId)
-            // [T-voice-inputbar-collapse-selfheal] The health probe must not
-            // outlive the view — its report would describe a composer that no
-            // longer exists.
-            inputBarHealthProbe?.cancel()
-            inputBarHealthProbe = nil
-            // [T-voice-send-lock] A send still waiting for recognition does
-            // not go out behind the user's back once they have left the page;
-            // the transcript stays, and they send it when they return.
-            voiceVM.abandonFinishForSend(.chatLeft)
-            if speechManager.state == .recording {
-                speechManager.stopRecording()
-            }
-            // [T-inputbar-keyboard-leaks-to-home] Cut the ONLY channel by which
-            // chat composer geometry can reach the HOME screen.
-            //
-            // `inputBarHeight` is per-view @State and only feeds the message
-            // list's bottom inset — it cannot touch home. What CAN is a stranded
-            // first responder: leaving the chat while the composer (or the voice
-            // transcript editor) still holds focus leaves the keyboard's inset
-            // reserved on the WINDOW, and SwiftUI's automatic keyboard avoidance
-            // applies that window-wide. The home screen's New/Search FAB row is a
-            // `.safeAreaInset(edge: .bottom)` (ContentView 1213/1326) with no
-            // `.ignoresSafeArea(.keyboard)` opt-out, so it reads that inflated
-            // bottom safe area and floats upward — the reported symptom. Same
-            // failure class as the offscreen-WebView phantom keyboard (8232308a)
-            // and the voice-editor stranded responder (4c530bf4); this closes the
-            // remaining door, the chat→home transition itself.
-            //
-            // Blanket-disabling keyboard avoidance on the home FAB row would be
-            // the wrong fix — its inline search field legitimately needs to rise
-            // with the keyboard. Releasing the responder at the source is correct
-            // and is a no-op when nothing is focused.
-            inputFocused = false
-            let keyWindow = UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap(\.windows)
-                .first(where: \.isKeyWindow)
-            if let keyWindow, keyWindow.endEditing(true) {
-                AppLogger(category: "InputBarLayout").info("chat onDisappear — released a lingering first responder (would have left a phantom keyboard inset on the window)")
-            }
-            // [OpenMinis#433] A new chat left with unsent text keeps it, like
-            // an existing session does: the next new chat for the same group
-            // resumes this VM. No-op once the chat has a session id. Runs after
-            // the voice cleanup above so a transcript kept there counts.
-            ViewModelCache.shared.parkNewChatIfUnsent(vm, groupId: initialGroupId)
-            // Capsule auto-shows whenever audio is loaded — no manual activation needed.
-            minisLogger.info("🔑DRAFT AIChatView.onDisappear vm=\(vm.vmInstanceId) sessionId=\(sessionId ?? "nil") draftId=\(draftId ?? "nil") vm.sessionId=\(vm.sessionId ?? "nil") vm.isProcessing=\(vm.isProcessing)")
+            handleDisappear()
         }
         // [T-voice-bg-fg-gap] Structural immunity: while the voice panel is up
         // and the transcript editor is NOT open, there is no legitimate keyboard
@@ -1613,7 +1430,11 @@ struct AIChatView: View {
             let undocked = KeyboardDockRules.isUndocked(keyboardFrame: frame, screenBounds: bounds)
             if undocked != keyboardUndocked {
                 keyboardUndocked = undocked
-                AppLogger(category: "InputBarLayout").info("[FloatingKeyboard] keyboard \(undocked ? "undocked/floating — composer stays put" : "docked or hidden — normal avoidance") frame=\(frame) screen=\(bounds)")
+                // [R44-编译超时] 三元 + 两段插值拆出来。
+                let kbMode = undocked
+                    ? "undocked/floating — composer stays put"
+                    : "docked or hidden — normal avoidance"
+                AppLogger(category: "InputBarLayout").info("[FloatingKeyboard] keyboard \(kbMode) frame=\(frame) screen=\(bounds)")
             }
         }
         // No keyboardWillHide reset on purpose: iPadOS posts a "hide" when the
@@ -1676,7 +1497,11 @@ struct AIChatView: View {
                 if didSeedInputBarHeight,
                    latestH <= 0 || abs(latestH - committedH) > 0.5 {
                     didSeedInputBarHeight = false
-                    AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene active — composer geometry stale (committed=\(committedH) latest=\(latestH) lastReport=\(String(format: "%.1f", sinceReport))s ago); re-arming seed so the next callback re-measures")
+                    // [R44-编译超时] String(format:) 嵌在插值里，拆出来。
+                    let committedText = committedH
+                    let latestText = latestH
+                    let sinceText = String(format: "%.1f", sinceReport)
+                    AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene active — composer geometry stale (committed=\(committedText) latest=\(latestText) lastReport=\(sinceText)s ago); re-arming seed so the next callback re-measures")
                 }
 
                 // [T-voice-inputbar-collapse-selfheal] Re-arming only makes the
@@ -1695,9 +1520,25 @@ struct AIChatView: View {
                     let ticked = inputBarGeometryTick != probeBaseline
                     let age = inputBarLastGeometryAt.map { CFAbsoluteTimeGetCurrent() - $0 } ?? -1
                     if ticked {
-                        AppLogger(category: "InputBarLayout").info("[InputBarHealth] OK after foreground — composer re-reported geometry (h=\(latestInputBarFrameH) committed=\(inputBarHeight))")
+                        let h = latestInputBarFrameH
+                        let committed = inputBarHeight
+                        AppLogger(category: "InputBarLayout").info("[InputBarHealth] OK after foreground — composer re-reported geometry (h=\(h) committed=\(committed))")
                     } else {
-                        AppLogger(category: "InputBarLayout").error("[InputBarHealth] STALLED — no geometry callback 900ms after foreground. committed=\(inputBarHeight) latest=\(latestInputBarFrameH) lastReport=\(String(format: "%.1f", age))s ago voice=\(voiceInputActive) editing=\(voiceVM.isEditingTranscript) seeded=\(didSeedInputBarHeight). The composer host is not laying out; expect a blank bottom area. Leaving and re-entering the session rebuilds it.")
+                        // [R44-编译超时] 原来是 6 段插值 + 一个 String(format:)
+                        // 挤在一条 error(...) 里，是整份文件里最重的一处。
+                        // 先全部落成局部常量，再拼一条普通字符串。输出不变。
+                        let committed = inputBarHeight
+                        let latest = latestInputBarFrameH
+                        let ageText = String(format: "%.1f", age)
+                        let voiceOn = voiceInputActive
+                        let editing = voiceVM.isEditingTranscript
+                        let seeded = didSeedInputBarHeight
+                        let stalled = "[InputBarHealth] STALLED — no geometry callback 900ms after foreground. "
+                            + "committed=\(committed) latest=\(latest) lastReport=\(ageText)s ago "
+                            + "voice=\(voiceOn) editing=\(editing) seeded=\(seeded). "
+                            + "The composer host is not laying out; expect a blank bottom area. "
+                            + "Leaving and re-entering the session rebuilds it."
+                        AppLogger(category: "InputBarLayout").error(stalled)
                     }
                 }
                 // [T-voice-bg-fg-gap] Foreground reseal: if we return to a
@@ -1733,7 +1574,12 @@ struct AIChatView: View {
                 if let keyWindow {
                     let hadResponder = keyWindow.endEditing(true)
                     UIView.performWithoutAnimation { keyWindow.layoutIfNeeded() }
-                    AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene \(phase == .inactive ? "inactive" : "background") — forced keyboard-dismiss completion (hadResponder=\(hadResponder)) voice=\(voiceInputActive) editing=\(voiceVM.isEditingTranscript)")
+                    // [R44-编译超时] 三元 + 4 段插值拆出来。
+                    let sceneText = phase == .inactive ? "inactive" : "background"
+                    let hadResp = hadResponder
+                    let voiceOn = voiceInputActive
+                    let editing = voiceVM.isEditingTranscript
+                    AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene \(sceneText) — forced keyboard-dismiss completion (hadResponder=\(hadResp)) voice=\(voiceOn) editing=\(editing)")
                 }
             }
             if phase != .active, speechManager.state == .recording {
@@ -1831,5 +1677,220 @@ struct AIChatView: View {
         // descendants (e.g. ToolCapsuleView's long-press menu) can react to
         // `vm.isProcessing` without threading the vm through every level.
         .environmentObject(vm)
+    }
+
+    // [R44-编译超时] 这个 .onAppear 的闭包体原来有 160 行，直接写在
+    // ViewBuilder 表达式里。wholemodule + -O 下 swift-frontend 对这么大
+    // 的闭包做类型检查会超预算，报
+    //   error: the compiler is unable to type-check this expression
+    //          in reasonable time
+    // 且报错行号会游走（1410 → 1470 → 1510）—— 预算按整棵表达式树算，
+    // 单独拆哪一行都只是把下一行顶上来。
+    //
+    // 抽成独立方法后闭包只剩一行调用。方法体原样搬过来，逻辑没改。
+    // [R45-编译超时] 这个 .onChange(bufferVersion) 闭包和 handleAppear /
+    // handleDisappear 是同一类问题：多语句闭包直接写在 body 的 ViewBuilder
+    // 链上，巨型 struct 的类型推断预算在整条链上展开，超了就报
+    // "unable to type-check in reasonable time"，行号随机游走
+    // （1398→1401→1413）。抽成独立方法后闭包只剩一行调用。
+    private func handleShareBufferChange(newVersion: Int) {
+        // Warm start: user is already in a session when share arrives
+        let shareSid = sessionId ?? "nil"
+        let shareDraft = draftId ?? "nil"
+        let shareHasBuffer = shareCoordinator.pendingShareBuffer != nil
+        minisLogger.info("[Share] AIChatView.onChange(bufferVersion)=\(newVersion) sessionId=\(shareSid) draftId=\(shareDraft) hasBuffer=\(shareHasBuffer)")
+        injectPendingShareIfNeeded()
+    }
+
+    private func handleAppear() {
+        wireComposerActions()
+        // [OpenMinis#433] Back on screen with a page popped off it: this
+        // new chat is in use again, so no other new chat may take it.
+        ViewModelCache.shared.unparkNewChat(vm)
+        // [T-always-on] This is the chat on screen now.
+        AlwaysOnController.shared.chatAppeared(key: vm.sessionId ?? vm.draftId)
+        let sinceInit = (CFAbsoluteTimeGetCurrent() - AIChatViewModel.onAppearTimestamp) * 1000
+        // [R44-编译超时] 原来是**一整行嵌套插值**：
+        //   minisLogger.info("[SessionLoad] onAppear T+\(String(format: "%.0f", sinceInit))ms isNew=\(cached.isNew) msgs=\(vm.messages.count)")
+        // 在 -O 全模块优化下，swift-frontend 对这条表达式做类型检查会
+        // 耗尽预算，直接报：
+        //   error: the compiler is unable to type-check this expression
+        //          in reasonable time
+        // 这一行本身没变过（和远端逐字节一致），但周边代码一多就会被拖垮 ——
+        // 类型检查的预算按整个表达式树算，不是按这一行算。
+        //
+        // 拆成「先算字符串、再打日志」两步：插值只做一次，类型检查的
+        // 候选集合小一个数量级。行为完全一样，输出的日志一字不差。
+        let sinceInitMs = String(format: "%.0f", sinceInit)
+        let msgCount = vm.messages.count
+        minisLogger.info("[SessionLoad] onAppear T+\(sinceInitMs)ms isNew=\(cached.isNew) msgs=\(msgCount)")
+        // [T-inputbar-stale-across-reentry] Re-arm the leading-edge seed on
+        // EVERY appear. AIChatView is keyed `.id(sessionId)` in ContentView,
+        // so re-entering the SAME session reuses the same SwiftUI identity
+        // and its @State survives — `inputBarHeight` keeps whatever (possibly
+        // wrong) value it last held, and because `didSeedInputBarHeight` is
+        // still true the synchronous seed never re-fires. If the composer's
+        // geometry doesn't change on re-entry, onGeometryChange emits no new
+        // callback either, so nothing ever reconciles it: a too-tall height
+        // survives indefinitely across re-renders. Clearing the flag makes
+        // the next (guaranteed) geometry callback re-seed authoritatively.
+        didSeedInputBarHeight = false
+        inputBarHeightDebounce?.cancel()
+        inputBarHeightDebounce = nil
+        AppLogger(category: "InputBarLayout").info("inputBarHeight re-arm seed on appear (was \(inputBarHeight))")
+        vm.sessionId = sessionId
+        vm.draftId = draftId
+        vm.remoteDeviceId = remoteDeviceId
+        vm.initialGroupId = initialGroupId
+        // Snapshot total session count once so the New-Chat onboarding
+        // grid only appears for first-time users (no prior sessions).
+        // [T-ios-session-coldload-listsessions-block] Use the bare
+        // COUNT(*) query, NOT listSessions().count — the latter ran 4
+        // un-indexable parts_json LIKE subqueries per session (~0.5s cold
+        // on a 100k-message DB) and, on the serialized ChatStore actor,
+        // head-of-line-blocked the loadSession() dispatched below, which
+        // was the reported ~3s cold-open stall. The comment used to claim
+        // "single SQLite COUNT" — now the code actually does one.
+        if totalSessionCount == nil {
+            Task.detached(priority: .utility) {
+                let count = await ChatStore.shared.sessionCount()
+                await MainActor.run { totalSessionCount = count }
+            }
+        }
+        // [T-minisurl-wrong-active-session] This view (plus the onChange
+        // below) is the ONLY writer of activeSessionId: the global means
+        // "session whose chat UI is frontmost", and relative minis://
+        // resolution depends on it. Background flows (RPC, share, sync)
+        // used to write it from loadSession()/ensureSessionReturningId()
+        // and steal resolution out from under the visible session.
+        if let sessionId { AIChatViewModel.activeSessionId = sessionId }
+        vm.ensureKernelBooted()
+        if let sessionId {
+            if cached.isNew || (vm.messages.isEmpty && !vm.isLoadingSession) {
+                // Load session if: (a) VM is freshly created, or (b) cache hit but messages
+                // are empty — this can happen on iOS 16 where NavigationStack may recreate
+                // @StateObject unexpectedly, causing isNew=false but an empty VM.
+                // [R44-编译超时] 拆开写。这一行原来是一整条多段插值，
+                // 在 wholemodule + -O 下 swift-frontend 类型检查耗尽预算：
+                //   error: the compiler is unable to type-check this
+                //          expression in reasonable time
+                // 类型检查预算按**整个表达式树**算，同一函数里插值越多越容易炸，
+                // 所以看到报错行号在 1410 / 1470 之间游走 —— 是同一个病因。
+                // 先算成局部常量再拼，输出与原来逐字一致。
+                let msgsForLog = vm.messages.count
+                let isNewForLog = cached.isNew
+                minisLogger.info("🔄SESSION AIChatView.onAppear loading session \(sessionId) isNew=\(isNewForLog) msgs=\(msgsForLog)")
+                // [T-ios-session-coldload-listsessions-block] .userInitiated
+                // so the actual session-open work wins the serialized
+                // ChatStore actor queue over background sidebar-refresh
+                // listSessions() scans that would otherwise starve it.
+                Task(priority: .userInitiated) {
+                    // Phase A: auto-repair any sortOrder / legacy marker anomalies
+                    // before loading. Cheap no-op if the session is healthy.
+                    _ = await ChatStore.shared.repairSessionIfNeeded(sessionId: sessionId)
+                    await vm.loadSession()
+                }
+            } else if vm.messages.isEmpty && vm.isLoadingSession {
+                // iOS 16 edge case: a previous view instance started loadSession()
+                // but this view appeared before it completed. Wait for it to finish,
+                // then reload if messages are still empty (objectWillChange may have
+                // fired between old and new CachedViewModel subscriptions).
+                minisLogger.info("🔄SESSION AIChatView.onAppear WAITING for in-flight load session=\(sessionId)")
+                Task {
+                    // Wait for the in-flight load to complete (poll at short intervals)
+                    for _ in 0..<20 {
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        if !vm.isLoadingSession { break }
+                    }
+                    // If messages are still empty after the load completed, retry
+                    if vm.messages.isEmpty && !vm.isLoadingSession {
+                        minisLogger.warning("🔄SESSION AIChatView.onAppear RETRY load — messages still empty after in-flight load for \(sessionId)")
+                        await vm.loadSession()
+                    }
+                }
+            } else {
+                let reuseStart = CFAbsoluteTimeGetCurrent()
+                minisLogger.info("🔄SESSION AIChatView.onAppear REUSING cached vm for \(sessionId) isProcessing=\(vm.isProcessing) msgs=\(vm.messages.count)")
+                // Remount minis for this session (in case another session took over)
+                vm.mountMinis(for: sessionId)
+                // While the user was off this view, an iCloud / LAN
+                // sync may have landed new messages (or applied a
+                // tombstone). reloadMessagesFromDB internally compares
+                // SQLite count + max(sort_order) + (id, sort_order)
+                // hash against the VM's last-known baseline and only
+                // re-renders on diff. Skip when isProcessing — the
+                // active stream owns messages right now and a reload
+                // would clobber the in-flight assistant turn.
+                if !vm.isProcessing && !vm.isCompacting {
+                    Task { @MainActor in await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse") }
+                }
+                vm.consumeDeferredSnapshotIfNeeded()
+                let mountElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
+                // Cached VM already has messages — trigger scroll-to-bottom
+                // since isLoadingSession won't transition and its onChange won't fire.
+                if !vm.messages.isEmpty {
+                    vm.forceScrollToBottom.send()
+                }
+                let totalElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
+                // [R44-编译超时] 两处 String(format:) 嵌在插值里，拆出来。
+                let totalText = String(format: "%.1f", totalElapsed)
+                let mountText = String(format: "%.1f", mountElapsed)
+                let reuseMsgs = vm.messages.count
+                minisLogger.info("[SessionLoad] \(sessionId) — REUSE: \(totalText)ms [mount: \(mountText) | msgs: \(reuseMsgs)]")
+            }
+        } else {
+            minisLogger.info("🔄SESSION AIChatView.onAppear nil sessionId — draft mode")
+            // Draft session — auto-focus input for immediate typing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                guard !hasOverlayPresented, canRunDelayedComposerFocus("draft") else { return }
+                inputFocused = true
+            }
+        }
+        minisLogger.info("[Share] AIChatView.onAppear: sessionId=\(sessionId ?? "nil") bufferVersion=\(shareCoordinator.bufferVersion) hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
+        injectPendingShareIfNeeded()
+        injectPendingTransferIfNeeded()
+        isChatViewVisible = true
+        pageLeaveLatch.markAppeared()
+        // [T-crash-breadcrumbs] Which page is on screen - a hash, never the title.
+        let crumbChat = "chat:" + CrashBreadcrumbs.hash8(vm.sessionId ?? vm.draftId ?? "draft")
+        CrashBreadcrumbs.record("page.show", detail: crumbChat)
+        CrashBreadcrumbs.setSlot("page", value: crumbChat)
+        refreshTitlePillSession()
+        // Notify workflow that THIS view is mounted + visible. If
+        // the workflow is waiting for our session id, it will
+        // transition to chatReady — our state observer below picks
+        // that up and flips `showCamera`. Transient draft views
+        // (sessionId=nil) won't match the workflow's target and
+        // are correctly skipped.
+        tryMarkWorkflowChatReady(reason: "onAppear")
+    }
+
+    /// [R44-编译超时] 原 onDisappear 闭包 59 行，抽成方法给类型检查减负。
+    private func handleDisappear() {
+        isChatViewVisible = false
+        CrashBreadcrumbs.record("page.hide",
+                                detail: "chat:" + CrashBreadcrumbs.hash8(vm.sessionId ?? vm.draftId ?? "draft"))
+        AlwaysOnController.shared.chatDisappeared(key: vm.sessionId ?? vm.draftId)
+        inputBarHealthProbe?.cancel()
+        inputBarHealthProbe = nil
+        voiceVM.abandonFinishForSend(.chatLeft)
+        if speechManager.state == .recording {
+            speechManager.stopRecording()
+        }
+        inputFocused = false
+        let keyWindow = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+        if let keyWindow, keyWindow.endEditing(true) {
+            AppLogger(category: "InputBarLayout").info("chat onDisappear — released a lingering first responder (would have left a phantom keyboard inset on the window)")
+        }
+        ViewModelCache.shared.parkNewChatIfUnsent(vm, groupId: initialGroupId)
+        let vmId = vm.vmInstanceId
+        let sidText = sessionId ?? "nil"
+        let draftText = draftId ?? "nil"
+        let vmSidText = vm.sessionId ?? "nil"
+        let processing = vm.isProcessing
+        minisLogger.info("🔑DRAFT AIChatView.onDisappear vm=\(vmId) sessionId=\(sidText) draftId=\(draftText) vm.sessionId=\(vmSidText) vm.isProcessing=\(processing)")
     }
 }

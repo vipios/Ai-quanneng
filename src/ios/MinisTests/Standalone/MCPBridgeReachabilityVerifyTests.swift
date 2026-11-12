@@ -1,7 +1,7 @@
 // Tests for [T-mcp-bridge-unreachable] (commit f7b43fe2c, issue #380) — what
 // the new bridge-file "read-back verification" can and cannot detect.
 //
-// #380: a guest-created real directory at the fakefs `var/minis/mcp-servers`
+// #380: a guest-created real directory at the fakefs `var/ai/mcp-servers`
 // path shadows the symlink into the App Group, so the host writes the OAuth
 // bridge file where the sandbox never looks. f7b43fe2c made
 // `MCPOAuthController.materializeBridge` throw unless the file "can be read
@@ -45,7 +45,7 @@ func source(_ rel: String) -> String {
 let fm = FileManager.default
 let tmp = fm.temporaryDirectory.appendingPathComponent("mcp-bridge-\(UUID().uuidString)")
 let persistent = tmp.appendingPathComponent("AppGroup/MinisConfig/mcp-servers", isDirectory: true)
-let guestLink = tmp.appendingPathComponent("fakefs/data/var/minis/mcp-servers", isDirectory: true)
+let guestLink = tmp.appendingPathComponent("fakefs/data/var/ai/mcp-servers", isDirectory: true)
 try! fm.createDirectory(at: persistent, withIntermediateDirectories: true)
 try! fm.createDirectory(at: guestLink.deletingLastPathComponent(), withIntermediateDirectories: true)
 defer { try? fm.removeItem(at: tmp) }

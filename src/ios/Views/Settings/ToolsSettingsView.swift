@@ -37,10 +37,17 @@ enum AgentToolSwitch: String, CaseIterable {
     case userAsk = "agent.tools.userAsk.enabled"
     /// [T-minis-gh-fallback-switch] 云端编译兜底。Default OFF.
     ///
-    /// 用户主动授权才存在：默认开着等于把代码往用户的 GitHub 仓库推
-    /// 变成默认行为，那是错的。挂在这个 enum 里白拿现成三道门：
+    /// 用户原话：「要有开关选项，我打开了才有兜底方案，我不开他就没有这个
+    /// 选择项，AI 就不知道有这个功能了。」
+    ///
+    /// 所以这里的 defaultValue 只能是 false —— 这个开关的语义就是
+    /// 「用户主动授权才存在」。默认开着等于把代码往用户的 GitHub 仓库推
+    /// 这件事变成默认行为，那是错的。
+    ///
+    /// 挂在这个 enum 里而不是自带一套，是为了白拿现成三道门：
     /// makeAgentTools() 不 append、system prompt 不出那几句、
-    /// ConcurrentTools 派发器对残留调用兜底拒绝。三处都读 isEnabled。
+    /// ConcurrentTools 派发器对残留调用兜底拒绝。三处都读 isEnabled，
+    /// 一处改规则三处同步，不会漏。
     case githubBuild = "agent.tools.githubBuild.enabled"
 
     var key: String { rawValue }
@@ -67,7 +74,7 @@ enum AgentToolSwitch: String, CaseIterable {
         case .browser: return true
         case .agents: return true
         case .userAsk: return UserAskSettings.defaultEnabled
-        // [T-minis-gh-fallback-switch] 默认必须是 false。
+        // [T-minis-gh-fallback-switch] 见上面该 case 的注释：默认必须是 false。
         case .githubBuild: return false
         }
     }
@@ -165,6 +172,10 @@ struct ToolsSettingsView: View {
     // MARK: - [T-minis-gh-fallback-switch] 云端编译兜底
 
     /// 与 GitHub 账号页里的那个开关是同一个存储键，两处拨都一样。
+    ///
+    /// 为什么在两处都放：设置 › 工具是用户找「AI 能用什么」的地方，
+    /// GitHub 账号页是用户找「云端编译怎么配」的地方。只放一处，
+    /// 另一处的人就找不到，最后会以为功能不存在。
     @ViewBuilder
     private var githubBuildSection: some View {
         Section {
@@ -175,7 +186,13 @@ struct ToolsSettingsView: View {
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(AppLocalized("Lets the assistant push code to your own GitHub repository and build it on a macOS runner — but only as a fallback, after building locally has failed. When off, the tool is removed from every conversation: the assistant does not know it exists."))
-                if githubBuildEnabled && !GitHubPush.shared.isReady {
+                // 打开但没登录/没权限 = 打开了也白搭。这里直接说出门槛在哪，
+                // 不然用户会以为开关坏了。
+                //
+                // [T-gh-switch-deadlock] 判据用 `canUseCloud` 而不是 `isReady`：
+                // 仓库可以留空（首次推送自动建仓），留空不算「没配置好」，
+                // 否则每台新设备都会顶着一条橙色告警。
+                if githubBuildEnabled && !GitHubPush.shared.canUseCloud {
                     Text(AppLocalized("Not configured yet: \(GitHubPush.shared.readinessHint). Open Settings › Storage › GitHub Account to finish setting it up."))
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -210,7 +227,7 @@ struct ToolsSettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(AppLocalized("Lets the assistant ask you to choose between options, or to confirm a risky action before doing it, on a card in the chat. Only in chats you are in — never for sub agents, Shortcuts or scheduled tasks. When off, the assistant decides for itself and does not take risky actions without your go-ahead."))
                 if userAskEnabled && userAskNotify && notificationsDenied {
-                    Text(AppLocalized("Notifications are off for Minis in iOS Settings — questions will only show when you open the app."))
+                    Text(AppLocalized("Notifications are off for 全能AI in iOS Settings — questions will only show when you open the app."))
                         .foregroundStyle(.orange)
                 }
             }

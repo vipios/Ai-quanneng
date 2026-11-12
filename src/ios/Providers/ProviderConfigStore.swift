@@ -1211,6 +1211,10 @@ final class ProviderConfigStore: ObservableObject {
             g.memberEntryIds.allSatisfy { removedEntryIds.contains($0) }
         }.map(\.id))
         config.instances.removeAll { $0.id == instanceId }
+        // [T-minis-relay-dual-base] Drop the relay profile too, otherwise a
+        // deleted relay leaves an orphan entry in relay-profiles.json and the
+        // side table keeps answering requestBaseURL for a dead instance id.
+        RelayProfileStore.shared.remove(instanceId: instanceId)
         // Remove associated model entries
         config.modelEntries.removeAll { $0.providerInstanceId == instanceId }
         // Remove from groups — stamp member-removal tombstones so the removal
@@ -3169,7 +3173,10 @@ final class ProviderConfigStore: ObservableObject {
 
     /// Fetch the model list from a provider's API for the given instance.
     static func fetchModelsForInstance(_ instance: ProviderInstance, forceRefresh: Bool = false) async throws -> [LLMModel] {
-        let customBase = instance.effectiveCustomBaseURL
+        // [T-minis-relay-dual-base] requestBaseURL: relay instances resolve their
+        // LAN/WAN address here too, otherwise "refresh models" would always hit
+        // the stored (LAN) address even when the user is away.
+        let customBase = instance.requestBaseURL
         let appendV1 = instance.appendV1Suffix
         // Custom UA only for custom-base OpenAI/Anthropic-compat instances (proxy/relay);
         // OAuth-login paths keep their required client UA, so we never pass it there.

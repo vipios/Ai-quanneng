@@ -217,7 +217,7 @@ let minisDocumentExtensions: Set<String> = [
 
 /// [T-minis-folder-link] Where the in-app file browser should be rooted for a
 /// resolved minis:// folder, and how to label that root: the namespace
-/// directory (`/var/minis/<host>`, or `/var/minis/mounts/<name>` for a user
+/// directory (`/var/ai/<host>`, or `/var/ai/mounts/<name>` for a user
 /// mount), so the breadcrumb reads like the path the agent wrote and the user
 /// can walk up to the namespace but not out of it. Mirrors the bases
 /// `resolveMinisFileURL` resolves against; when the folder is somehow not
@@ -226,7 +226,7 @@ let minisDocumentExtensions: Set<String> = [
 func minisFolderBrowseRoot(url: URL, resolved: URL, sessionId: String?) -> (root: URL, label: String) {
     let host = url.host ?? ""
     let components = url.path.split(separator: "/").map(String.init)
-    var label = "/var/minis/\(host)"
+    var label = "/var/ai/\(host)"
     let base: URL?
     switch host {
     case "skills": base = AIChatViewModel.minisSkillsPersistentDir

@@ -337,13 +337,21 @@ extension ContentView {
                 .frame(maxWidth: .infinity, alignment: .center)
             }
         }
+        // [R28-设置入口右下角] iPhone 窄屏上，设置入口从左上角齿轮挪到了
+        // 抽屉右下角的悬浮齿轮（见 SessionDrawer 的 settingsGear）。
+        // 多选态仍然保留「取消」—— 那一项跟设置无关，是退出多选的唯一出口。
+        //
+        // ⚠️ 必须带 `isWideLayout` 判断，不能像定制仓那样无条件删掉齿轮。
+        // 这段 toolbar 被 stackList（iPhone）和 splitList（iPad）共用，
+        // 而抽屉只包在 iPhone 那条分支上 —— 无条件删，iPad 的侧栏
+        // 就再没有任何设置入口，而且宽屏没有抽屉可以替代它。
         ToolbarItem(placement: .topBarLeading) {
             if isSelecting {
                 Button("Cancel") {
                     isSelecting = false
                     selectedIds.removeAll()
                 }
-            } else {
+            } else if isWideLayout {
                 Button {
                     activeToolSheet = .settings
                 } label: {

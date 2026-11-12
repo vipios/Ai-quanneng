@@ -2,8 +2,8 @@
 // [T-minis-symlink-placeholder-dir] issue #380 — MCP OAuth appeared to succeed
 // on the host while every guest call reported "not authorized".
 //
-// `/var/minis/mcp-servers` is a SYMLINK the host maintains into its App Group.
-// The guest CLI used to run `mkdir -p /var/minis/mcp-servers` unconditionally,
+// `/var/ai/mcp-servers` is a SYMLINK the host maintains into its App Group.
+// The guest CLI used to run `mkdir -p /var/ai/mcp-servers` unconditionally,
 // so whenever it ran before the host had (re)created the link it won the race and
 // left a real local directory shadowing the mount. From then on the host wrote
 // OAuth bridge files into the App Group that the sandbox could never read —
@@ -109,7 +109,7 @@ do {
     let d = makeDir("empty")
     check("precondition: it is a real directory", isDir(d))
     let spy = LogSpy()
-    check("recovery reports success", forceRemovePlaceholderDirectory(at: d, logger: spy, label: "/var/minis/mcp-servers"))
+    check("recovery reports success", forceRemovePlaceholderDirectory(at: d, logger: spy, label: "/var/ai/mcp-servers"))
     check("…and the path is gone", !isDir(d))
     check("no error was logged", spy.errors.isEmpty)
 }
@@ -120,7 +120,7 @@ do {
     // created in the shadowing directory immediately.
     let d = makeDir("with-log", files: ["mcp-cli.log", "servers.json"])
     let spy = LogSpy()
-    check("recovery succeeds", forceRemovePlaceholderDirectory(at: d, logger: spy, label: "/var/minis/mcp-servers"))
+    check("recovery succeeds", forceRemovePlaceholderDirectory(at: d, logger: spy, label: "/var/ai/mcp-servers"))
     check("…and the path is gone", !isDir(d))
 }
 
@@ -133,7 +133,7 @@ do {
     fm.createFile(atPath: link.appendingPathComponent("stale.log").path, contents: Data("x".utf8))
 
     let spy = LogSpy()
-    check("placeholder cleared", forceRemovePlaceholderDirectory(at: link, logger: spy, label: "/var/minis/mcp-servers"))
+    check("placeholder cleared", forceRemovePlaceholderDirectory(at: link, logger: spy, label: "/var/ai/mcp-servers"))
     var created = true
     do { try fm.createSymbolicLink(at: link, withDestinationURL: target) } catch { created = false }
     check("symlink now creates cleanly", created)
@@ -163,7 +163,7 @@ do {
     let parentAttrs = try? fm.attributesOfItem(atPath: root.path)
     try? fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: root.path)
     let spy = LogSpy()
-    let ok = forceRemovePlaceholderDirectory(at: d, logger: spy, label: "/var/minis/mcp-servers")
+    let ok = forceRemovePlaceholderDirectory(at: d, logger: spy, label: "/var/ai/mcp-servers")
     // Restore immediately so the fixture can be cleaned up.
     if let p = parentAttrs?[.posixPermissions] {
         try? fm.setAttributes([.posixPermissions: p], ofItemAtPath: root.path)
@@ -210,7 +210,7 @@ do {
         // The guest must never pre-create the mount point.
         let liveMkdir = cli.components(separatedBy: "\n")
             .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
-            .contains { $0.contains("mkdir") && $0.contains("/var/minis/mcp-servers") }
+            .contains { $0.contains("mkdir") && $0.contains("/var/ai/mcp-servers") }
         check("the guest CLI no longer mkdir's the mount point", !liveMkdir)
         check("the guest distinguishes missing from unreadable",
               http.contains("except FileNotFoundError:") && http.contains("except OSError as exc:"))

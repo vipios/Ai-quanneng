@@ -22,13 +22,13 @@ import Foundation
 /// user's own Shortcuts, found under the app's actions, with no Siri phrase
 /// of its own.
 struct SaveEnvVarIntent: AppIntent {
-    static var title: LocalizedStringResource = "Save Environment Variable to Minis"
+    static var title: LocalizedStringResource = "Save Environment Variable to 全能AI"
     static var description = IntentDescription("Saves text from Shortcuts, such as a received message, as the environment variable MINIS_SHORTCUT_OPT_ followed by the name suffix. Every Minis session can read it in the shell, saving the same name again updates it, and it can be deleted under Settings → Environment Variables.")
     static var openAppWhenRun = false
 
     @Parameter(title: "Text",
                description: "The text to store, for example the content of a message. Up to 32 KB.",
-               requestValueDialog: "What text should Minis store?",
+               requestValueDialog: "What text should 全能AI store?",
                inputConnectionBehavior: .connectToPreviousIntentResult)
     var text: String
 
@@ -61,12 +61,12 @@ struct SaveEnvVarIntent: AppIntent {
                 && !EnvVarStore.isKeyEnabledSync(key)
         }
         if disabled {
-            let message = AppLocalized("Updated \(key). It is disabled, so Minis cannot read it until you enable it in Minis → Settings → Environment Variables.")
+            let message = AppLocalized("Updated \(key). It is disabled, so 全能AI cannot read it until you enable it in 全能AI → Settings → Environment Variables.")
             return .result(value: key, dialog: IntentDialog(stringLiteral: message))
         }
         let message = saved.created
-            ? AppLocalized("Saved as \(key).\nTo use it, ask Minis in any chat to read $\(key).\nTo view, edit or delete it, open Minis → Settings → Environment Variables.")
-            : AppLocalized("Updated \(key).\nTo use it, ask Minis in any chat to read $\(key).\nTo view, edit or delete it, open Minis → Settings → Environment Variables.")
+            ? AppLocalized("Saved as \(key).\nTo use it, ask 全能AI in any chat to read $\(key).\nTo view, edit or delete it, open 全能AI → Settings → Environment Variables.")
+            : AppLocalized("Updated \(key).\nTo use it, ask 全能AI in any chat to read $\(key).\nTo view, edit or delete it, open 全能AI → Settings → Environment Variables.")
         return .result(value: key, dialog: IntentDialog(stringLiteral: message))
     }
 }

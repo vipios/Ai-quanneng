@@ -190,8 +190,8 @@ do {
 
 print("\n[3] non-vision model, no Vision Group")
 do {
-    let p = attachmentPlaceholder(linuxPath: "/var/minis/attachments/uploads/photo.jpg", configured: false)
-    check("placeholder contains the linux path", p.contains("/var/minis/attachments/uploads/photo.jpg"))
+    let p = attachmentPlaceholder(linuxPath: "/var/ai/attachments/uploads/photo.jpg", configured: false)
+    check("placeholder contains the linux path", p.contains("/var/ai/attachments/uploads/photo.jpg"))
     check("…points at shell_execute in the sandbox", p.contains("shell_execute"))
     check("…does NOT name read_image (the tool is not registered for this model)", !p.contains("read_image"))
     let noPath = attachmentPlaceholder(linuxPath: nil, configured: false)
@@ -206,9 +206,9 @@ do {
 
 print("\n[4] non-vision model, Vision Group configured")
 do {
-    let p = attachmentPlaceholder(linuxPath: "/var/minis/attachments/uploads/photo.jpg", configured: true)
+    let p = attachmentPlaceholder(linuxPath: "/var/ai/attachments/uploads/photo.jpg", configured: true)
     check("placeholder names read_image", p.contains("read_image"))
-    check("…with the path", p.contains("/var/minis/attachments/uploads/photo.jpg"))
+    check("…with the path", p.contains("/var/ai/attachments/uploads/photo.jpg"))
     check("…and mentions the prompt argument", p.contains("`prompt`"))
     let noPath = attachmentPlaceholder(linuxPath: nil, configured: true)
     check("no path but configured → still names read_image", noPath.contains("read_image"))

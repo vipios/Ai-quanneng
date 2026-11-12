@@ -2,11 +2,17 @@ import SwiftUI
 import UIKit
 
 struct AboutView: View {
-    private let appVersion: String = {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
-        return "\(version) (\(build))"
-    }()
+    /// 版本号走 `SelfUpdate`，不读 Bundle。
+    ///
+    /// 原因：这个 App 的版本线是自有的（1.0.0 起步），跟原版 1.15.x
+    /// 没有大小关系。读 Bundle 会拿到 pbxproj 里的值，两处不一致时
+    /// 「关于页显示 1.0、检查更新却按别的数比」—— 这种 bug 查起来很费劲。
+    /// `SelfUpdate` 是唯一真源，这里只做展示。
+    private let appVersion: String = SelfUpdate.displayVersion
+
+    /// 更新源。`SelfUpdate` 没有 @Published，所以得自己订阅变更，
+    /// 否则用户在设置里改完更新源回到这一页，链接还指着旧仓库。
+    @State private var updateRepo: String = SelfUpdate.repo
 
     /// When this binary was built, from the executable's modification date.
     ///
@@ -83,7 +89,7 @@ struct AboutView: View {
                                     .stroke(Color(UIColor.separator), lineWidth: 0.5)
                             )
                     }
-                    Text("Minis")
+                    Text("全能AI · 改造版")
                         .font(.title2.bold())
                     Text("Version \(appVersion)")
                         .font(.subheadline)
@@ -100,9 +106,10 @@ struct AboutView: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .textSelection(.enabled)
-                    Text("Minis is Your Fully Local, Fully Private On-Device Agent.")
+                    Text("本地运行、不上传的端上 Agent。这一版是自建版本线，更新只走你自己指定的仓库。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
@@ -110,38 +117,52 @@ struct AboutView: View {
             }
 
             // MARK: - Links
+            //
+            // 这里刻意**不再链到原版仓库和原版 issue 页**。
+            // 我们是独立版本线：往原版报 bug 既是噪声，也会把用户
+            // 引到「去装原版」的路上。链接只留我们自己的更新源。
             Section("Links") {
-                Link(destination: URL(string: "https://github.com/OpenMinis")!) {
-                    Label {
-                        HStack {
-                            Text("GitHub Repository")
-                                .foregroundStyle(Color(UIColor.label))
-                            Spacer()
-                            Image(systemName: "arrow.up.right.square")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                if !updateRepo.isEmpty {
+                    Link(destination: URL(string: "https://github.com/\(updateRepo)")!) {
+                        Label {
+                            HStack {
+                                Text("更新源仓库")
+                                    .foregroundStyle(Color(UIColor.label))
+                                Spacer()
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "link.circle.fill")
                         }
-                    } icon: {
-                        Image(systemName: "link.circle.fill")
                     }
                 }
-                Link(destination: URL(string: "https://github.com/OpenMinis/OpenMinis/issues")!) {
-                    Label {
-                        HStack {
-                            Text("Report an Issue")
-                                .foregroundStyle(Color(UIColor.label))
-                            Spacer()
-                            Image(systemName: "arrow.up.right.square")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                // 没配更新源时不给「去提 issue」的链接。
+                // 指向原版 issue 页会把人引到原版项目去，那既解决不了
+                // 我们的问题，也暗示「该去装原版」。宁可少一个链接。
+                if !updateRepo.isEmpty {
+                    Link(destination: URL(string: "https://github.com/\(updateRepo)/issues")!) {
+                        Label {
+                            HStack {
+                                Text("给更新源提 Issue")
+                                    .foregroundStyle(Color(UIColor.label))
+                                Spacer()
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "exclamationmark.circle.fill")
                         }
-                    } icon: {
-                        Image(systemName: "exclamationmark.circle.fill")
                     }
                 }
             }
         }
-        .navigationTitle("About")
+        .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)
+        .onReceive(NotificationCenter.default.publisher(for: .selfUpdateSourceChanged)) { _ in
+            updateRepo = SelfUpdate.repo
+        }
     }
 }

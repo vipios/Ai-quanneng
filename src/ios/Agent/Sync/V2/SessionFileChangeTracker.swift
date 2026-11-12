@@ -211,7 +211,7 @@ actor SessionFileChangeTracker {
     /// realfs may surface either of two path shapes for the same logical
     /// file:
     ///
-    ///   • Guest path:  `/var/minis/<subdir>/<rel>` (fakefs path-normalize
+    ///   • Guest path:  `/var/ai/<subdir>/<rel>` (fakefs path-normalize
     ///     left the bind-mount symlink alone, e.g. unlink/rename)
     ///   • Host path:   `<minisBaseURL>/<sid>/<subdir>/<rel>` (path-normalize
     ///     dereferenced the symlink — common for open() of a regular file
@@ -225,7 +225,7 @@ actor SessionFileChangeTracker {
         rawPath: String, sessionId: String, minisBaseURL: URL
     ) -> String? {
         // Guest-shape: trivial prefix strip.
-        let guestPrefix = "/var/minis/"
+        let guestPrefix = "/var/ai/"
         if rawPath.hasPrefix(guestPrefix) {
             let after = String(rawPath.dropFirst(guestPrefix.count))
             return validateAndReturnSubpath(after)
@@ -275,11 +275,11 @@ actor SessionFileChangeTracker {
 ///
 /// iSH stays agnostic about Minis sessions — this Swift bridge knows the
 /// per-session host directory layout (`<minisBaseURL>/<sid>/<subdir>/...`)
-/// and the bind-mount guest layout (`/var/minis/<subdir>/...`), and resolves
+/// and the bind-mount guest layout (`/var/ai/<subdir>/...`), and resolves
 /// either shape to a SessionFile recordId on the consumer (actor) side.
 func installSessionFileChangeTracker(kernel: ISHKernel) {
     let installLogger = AppLogger(category: "SessionFileTracker")
-    installLogger.info("[SessionFileTracker] installing fakefs change handler — iSH realfs writes/unlinks/renames under /var/minis/{workspace,attachments,browser,offloads} (or the equivalent host APFS path) will be queued for iCloud SessionFile sync")
+    installLogger.info("[SessionFileTracker] installing fakefs change handler — iSH realfs writes/unlinks/renames under /var/ai/{workspace,attachments,browser,offloads} (or the equivalent host APFS path) will be queued for iCloud SessionFile sync")
     // Captured at install time; minisBaseURL doesn't change for the
     // lifetime of the app process.
     let minisBaseURL = ChatStore.shared.minisBaseURL
@@ -312,7 +312,7 @@ func installSessionFileChangeTracker(kernel: ISHKernel) {
         }
 
         // Skills side-channel: if any event in this batch touched a
-        // path under `/var/minis/skills/` (or the equivalent host APFS
+        // path under `/var/ai/skills/` (or the equivalent host APFS
         // path), kick the debounced skill reload. SkillStore owns the
         // truth — we just nudge it to re-scan disk + markDirty any
         // newly-discovered / modified / deleted skills it spots.
@@ -328,7 +328,7 @@ func installSessionFileChangeTracker(kernel: ISHKernel) {
 /// non-isolated installFakefsChangeHandler block.
 fileprivate enum FakefsSkillPathCheck {
     static func batchTouchesSkills(events: [ISHFakefsChangeEvent], minisBaseURL: URL) -> Bool {
-        let guestPrefix = "/var/minis/skills"
+        let guestPrefix = "/var/ai/skills"
         // host APFS path looks like ".../MinisChat/minis/skills/..."
         // — minisBaseURL = "<lib>/MinisChat/minis", so the host prefix
         //   to check is "<minisBaseURL>/skills".
@@ -365,7 +365,7 @@ final class SkillFilesystemNotifier {
     static let shared = SkillFilesystemNotifier()
     private init() {}
 
-    /// True when at least one fakefs event touching /var/minis/skills/
+    /// True when at least one fakefs event touching /var/ai/skills/
     /// has landed since the last successful drain. Caller-side drain
     /// triggers check this; rescan only runs when this is true.
     private var pendingRescan: Bool = false

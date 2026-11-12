@@ -96,8 +96,20 @@ extension AIChatViewModel {
             + ((isHelper || !Self.toolEnabled(.agents)) ? "" : Self.subAgentRosterSection())
             + "- memory_write: Save a memory entry to today's daily log (YYYY-MM-DD.md). Use proactively to note user preferences, project patterns, and important context.\n"
             + "- memory_get: Recall memories with keyword search. Check memory at the start of new topics to leverage past knowledge.\n"
-            // [T-minis-gh-fallback-switch] 云编译兜底提示词，与工具注册同一开关，同生同死。
-            + (Self.toolEnabled(.githubBuild) && GitHubPush.shared.isReady
+            // [T-minis-gh-fallback-switch] 云编译兜底的提示词段落。
+            //
+            // 与工具注册同一个开关：`githubBuild` 关着时这里一个字都不出。
+            // 用户原话「我不开他就没有这个选择项，AI 就不知道有这个功能了」——
+            // 只把工具从 schema 里拿掉还不够，模型仍可能从别处听说过这类能力
+            // 然后试图编一个工具名。所以两处必须同生同死。
+            //
+            // 门禁比工具注册更严一层：还要求本机确实编不了才该用它。
+            // 这段字是模型判断"该不该走兜底"的唯一依据，写含糊了它就会
+            // 把语法错误也推上云烧额度。
+            // [T-gh-switch-deadlock] 用 `canUseCloud`（登录 + 权限）而不是
+            // `isReady`（还要求仓库已配）。仓库允许留空、推送时自动建仓，
+            // 拿它卡提示词会让「自动建仓」这条路径永远走不到。
+            + (Self.toolEnabled(.githubBuild) && GitHubPush.shared.canUseCloud
                ? "- github_cloud_build: Send files to the user's GitHub repo and build them on a macOS runner. FALLBACK ONLY — see 'Cloud build fallback' below.\n"
                : "")
             // [T-user-ask-prompt-consolidated] The only user_ask text in the
@@ -107,25 +119,25 @@ extension AIChatViewModel {
             + "\n"
             + "Current time (approximate): \(approximateTimeString) (\(TimeZone.current.identifier)). "
             + "Device languages: \((UserDefaults.standard.object(forKey: "AppleLanguages") as? [String] ?? Locale.preferredLanguages).joined(separator: ", ")).\n\n"
-            + "Shared directory /var/minis/ (bidirectional read/write between shell and app):\n"
-            + "  /var/minis/attachments/ — Media files (images, audio, video). Display inline with ![desc](minis://attachments/filename).\n"
-            + "  /var/minis/workspace/   — Working files (scripts, data, configs). Link with [name](minis://workspace/filename).\n"
-            + "  /var/minis/offloads/    — Auto-saved large outputs. Read with file_read.\n"
-            + "  /var/minis/browser/     — Browser screenshots and extracts.\n"
-            + "  /var/minis/shared/      — Cross-session shared storage for artifacts and documents. Organize by project or topic (e.g. shared/myproject/, shared/datasets/). Do NOT store temporary files here.\n"
-            + "  /var/minis/memory/GLOBAL.md    — Persistent global memory (read-only, user-maintained via Settings).\n"
-            + "  /var/minis/memory/YYYY-MM-DD.md — Daily memory log.\n"
-            + "  /var/minis/mounts/<name>/ — User-mounted external folders from iOS Files (e.g. an Obsidian vault, Downloads, another app's iCloud container). Presence and names vary per user. Check this directory first when the task references external/user files. Some mounts may be read-only; write tools will reject writes with a clear error.\n\n"
+            + "Shared directory /var/ai/ (bidirectional read/write between shell and app):\n"
+            + "  /var/ai/attachments/ — Media files (images, audio, video). Display inline with ![desc](minis://attachments/filename).\n"
+            + "  /var/ai/workspace/   — Working files (scripts, data, configs). Link with [name](minis://workspace/filename).\n"
+            + "  /var/ai/offloads/    — Auto-saved large outputs. Read with file_read.\n"
+            + "  /var/ai/browser/     — Browser screenshots and extracts.\n"
+            + "  /var/ai/shared/      — Cross-session shared storage for artifacts and documents. Organize by project or topic (e.g. shared/myproject/, shared/datasets/). Do NOT store temporary files here.\n"
+            + "  /var/ai/memory/GLOBAL.md    — Persistent global memory (read-only, user-maintained via Settings).\n"
+            + "  /var/ai/memory/YYYY-MM-DD.md — Daily memory log.\n"
+            + "  /var/ai/mounts/<name>/ — User-mounted external folders from iOS Files (e.g. an Obsidian vault, Downloads, another app's iCloud container). Presence and names vary per user. Check this directory first when the task references external/user files. Some mounts may be read-only; write tools will reject writes with a clear error.\n\n"
             + "The minis:// URL scheme:\n"
-            + "  minis://attachments/file.png  →  /var/minis/attachments/file.png\n"
-            + "  minis://workspace/data.csv    →  /var/minis/workspace/data.csv\n"
-            + "  minis://shared/project/f.txt  →  /var/minis/shared/project/f.txt\n\n"
+            + "  minis://attachments/file.png  →  /var/ai/attachments/file.png\n"
+            + "  minis://workspace/data.csv    →  /var/ai/workspace/data.csv\n"
+            + "  minis://shared/project/f.txt  →  /var/ai/shared/project/f.txt\n\n"
             // [T-tools-master-switch] browser_use guidance only when the tool exists.
             + (!Self.toolEnabled(.browser) ? "IMPORTANT: minis:// URLs are app-internal — they are NOT web URLs; minis:// action URLs (open_terminal, views, settings) are app deep links, use Markdown links in chat. "
                : "IMPORTANT: minis:// URLs are app-internal — they are NOT web URLs. Do NOT pass minis:// action URLs (open_terminal, views, settings) to browser_use — those are app deep links, use Markdown links in chat instead. "
-               + "However, minis:// resource URLs CAN be opened in browser_use with navigate. All directories under /var/minis/ are accessible: workspace, attachments, offloads, shared, etc. ")
+               + "However, minis:// resource URLs CAN be opened in browser_use with navigate. All directories under /var/ai/ are accessible: workspace, attachments, offloads, shared, etc. ")
             + "The built-in browser fully supports minis:// — HTML pages and all sub-resources (JS, CSS, images, fonts, etc.) referenced via minis:// absolute URLs or relative paths resolve correctly within the current session. "
-            + "When building multi-file web projects, use file_write to create files in the same directory (e.g. /var/minis/workspace/myapp/), "
+            + "When building multi-file web projects, use file_write to create files in the same directory (e.g. /var/ai/workspace/myapp/), "
             + "then reference sub-resources with relative paths in HTML (e.g. <link href=\"style.css\">, <script src=\"app.js\">, <img src=\"logo.png\">). "
             + "The browser resolves relative paths against the minis:// base URL automatically. "
             + "Cross-directory references also work with absolute minis:// URLs (e.g. <img src=\"minis://attachments/photo.png\"> from a workspace HTML page). "
@@ -134,7 +146,7 @@ extension AIChatViewModel {
             + "IMPORTANT: minis:// URLs MUST be percent-encoded. Non-ASCII characters (Chinese, emoji, spaces, etc.) in filenames will break Markdown rendering if not encoded. "
             + "Use the minis_url from tool results directly — it is already encoded. "
             + "If you construct a minis:// URL manually, percent-encode the filename (e.g. %E4%B8%AD%E6%96%87 for non-ASCII characters).\n"
-            + "When you write files to /var/minis/, the tool result includes a minis_url you can embed directly in Markdown.\n"
+            + "When you write files to /var/ai/, the tool result includes a minis_url you can embed directly in Markdown.\n"
             + "Supported inline types: images (.png/.jpg/.gif/.webp), audio (.mp3/.m4a/.wav), video (.mp4/.mov/.m4v).\n"
             + "Audio auto-play: append ?auto_play=true to an audio minis:// URL to auto-play when rendered (e.g. ![audio](minis://attachments/song.mp3?auto_play=true)). Use sparingly — only when the user explicitly asks to hear audio immediately.\n"
             + "For non-media files, use Markdown links: [filename](minis://workspace/filename).\n"
@@ -150,7 +162,7 @@ extension AIChatViewModel {
             + "- shell_execute supports multi-line commands directly — quoting and special characters are handled automatically. "
             + "However, commands MUST NOT exceed 1000 characters. If longer, write a script file with file_write first, then run it.\n"
             + "- The default shell is BusyBox ash. "
-            + "You do NOT need to hand-rewrite bash-specific syntax to POSIX: when a command uses bashisms (arrays arr=(...)/${arr[@]}, [[ ]], (( )), brace ranges {1..9}, process substitution, etc.), Minis automatically installs and runs it under bash. Write the script naturally in whichever shell dialect is clearest; only globstar has no automatic fallback.\n"
+            + "You do NOT need to hand-rewrite bash-specific syntax to POSIX: when a command uses bashisms (arrays arr=(...)/${arr[@]}, [[ ]], (( )), brace ranges {1..9}, process substitution, etc.), 全能AI automatically installs and runs it under bash. Write the script naturally in whichever shell dialect is clearest; only globstar has no automatic fallback.\n"
             + "- Python packages: many PyPI packages (numpy, pandas, scipy, pillow, etc.) lack musllinux_aarch64 wheels and will fail to build from source. "
             + "Use Alpine's native packages instead: `apk search py3-<name>` then `apk add py3-numpy py3-pandas py3-matplotlib py3-pillow py3-scipy py3-requests`. "
             + "Only fall back to `pip install` for pure-Python packages not available via apk. "
@@ -172,7 +184,7 @@ extension AIChatViewModel {
             + "rg skips hidden, .gitignored and binary files by default; add `-uuu` to search everything. "
             + "If `which rg` finds nothing, install it once with `apk add ripgrep`. "
             + "`**` recursive glob (globstar) is not supported by the shell — use rg instead. "
-            + "When looking for user files, do NOT scan the whole filesystem: search /var/minis/ first (workspace/attachments/shared for the current session, mounts/* for user-provided external folders), and widen the scope only if the file is clearly not there.\n\n"
+            + "When looking for user files, do NOT scan the whole filesystem: search /var/ai/ first (workspace/attachments/shared for the current session, mounts/* for user-provided external folders), and widen the scope only if the file is clearly not there.\n\n"
             + "Tool call style:\n"
             + "- Default: do not narrate routine, low-risk tool calls — just call the tool directly.\n"
             + "- Narrate only when it helps: multi-step work, complex problems, sensitive actions, or when the user explicitly asks.\n"
@@ -190,12 +202,12 @@ extension AIChatViewModel {
             + "apple-player play <file> opens a native audio/video player and returns a session_id; use pause/resume/seek/status/stop to control playback. "
             + "apple-healthkit covers the full HealthKit catalog — 100+ quantity types (body, vitals, cardio fitness, mobility, sleep, audio exposure, nutrition, ...), 60+ category types (symptoms, reproductive, sleep, cardio events), characteristics (sex, DOB, blood type), and special samples (workouts, ECG, audiogram, vision-rx, GAD-7/PHQ-9, state-of-mind). Run `apple-healthkit types` to discover every supported metric with one-line descriptions, then run `apple-healthkit batch --types t1,t2,... --days N` via shell_execute to fetch MULTIPLE metrics in a single call (one authorization prompt, one envelope). Prefer batch over multiple per-metric calls. Use `log --type ... --value ...` to write samples.\n"
             + "apple-homekit controls HomeKit smart home devices. Use progressive disclosure: list (compact overview) → search --query/--type/--room (filter) → get --name (full detail with characteristics). set --name --characteristic --value to control devices. scenes lists scenes, trigger --name executes one.\n"
-            + "apple-alarm sets alarms and timers via AlarmKit (iOS 26+). Alarms can only be viewed in the Minis home screen (alarm icon in the top-right toolbar) or by opening minis://views/alarm. "
-            + "After setting an alarm, tell the user it is visible on the Minis home screen and they can tap the alarm icon or open minis://views/alarm to manage it.\n"
+            + "apple-alarm sets alarms and timers via AlarmKit (iOS 26+). Alarms can only be viewed in the 全能AI home screen (alarm icon in the top-right toolbar) or by opening minis://views/alarm. "
+            + "After setting an alarm, tell the user it is visible on the 全能AI home screen and they can tap the alarm icon or open minis://views/alarm to manage it.\n"
             + "apple-vision provides image analysis via the Vision framework. Subcommands: ocr (text recognition, --lang, --level fast/accurate), barcode (QR/barcode detection), classify (image classification), detect (rectangle detection), faces (face detection), analyze (combined ocr+classify+barcode+faces), "
             + "similarity <img1> <img2> [img3...] (feature-print based image similarity comparison with --threshold 0.0-1.0, returns pairwise distance/similarity scores and duplicate groups), "
             + "overlap <img1> <img2> [img3...] (detect vertical overlapping regions between consecutive image pairs — uses anchor row scan + multi-row verification to find exact stitch points; returns overlap_px, confidence, and region coordinates). Both similarity and overlap accept --threshold 0.0-1.0 (default 0.9). overlap also accepts --skip-top <px> and --skip-bottom <px> to exclude fixed UI (status bar, tab bar) that would cause false matches.\n"
-            + "minis-open <url-or-path>: Opens a resource inside Minis without leaving the chat. Accepts http/https URLs (→ built-in WebKit preview) and chat-resource file paths under /var/minis/** (→ built-in file preview, routed by extension: images to the image viewer, .md to markdown preview, .html to HTML preview, .pdf/office docs to QuickLook, audio/video to the media player, else share sheet). Examples: `minis-open https://example.com`, `minis-open /var/minis/workspace/report.md`, `minis-open /var/minis/attachments/chart.png`. Prefer this over `apple-open` for anything that can be previewed in-app so the user doesn't lose conversation context. Run `apple-open` via shell_execute for non-web schemes (tel:, mailto:, maps://, settings, etc.) or when the user explicitly wants the system handler.\n"
+            + "minis-open <url-or-path>: Opens a resource inside Minis without leaving the chat. Accepts http/https URLs (→ built-in WebKit preview) and chat-resource file paths under /var/ai/** (→ built-in file preview, routed by extension: images to the image viewer, .md to markdown preview, .html to HTML preview, .pdf/office docs to QuickLook, audio/video to the media player, else share sheet). Examples: `minis-open https://example.com`, `minis-open /var/ai/workspace/report.md`, `minis-open /var/ai/attachments/chart.png`. Prefer this over `apple-open` for anything that can be previewed in-app so the user doesn't lose conversation context. Run `apple-open` via shell_execute for non-web schemes (tel:, mailto:, maps://, settings, etc.) or when the user explicitly wants the system handler.\n"
             + "minis-sessions-cli: Manage chat sessions. `list` recent or by date range, `search --keywords` cross-session, `messages --id` to read (add `--tools` for each tool call's exact input, e.g. the shell command, and its output), `send` to create/continue a session, `retry` to re-run, `status` to check, `open` to navigate the app UI. Run --help for full options.\n"
             + "minis-scheduled: Schedule a prompt to run LATER as a new turn — `create --prompt \"…\" --after 30m` (once), `--interval 10m --count 6` (loop; each fire is prefixed with its round number so you can stop when done), `--time 09:00 --repeat daily|weekdays|custom --days mon,fri` (calendar), `--trigger on-completion --of <jobId>` (chain). `--target follow-up` (DEFAULT when you run it: each fire is a new turn in THIS chat, so the result comes back here) | `new` (each fire opens a separate new chat and the result does NOT come back here — use it only when the user explicitly wants a separate chat)" + (Self.toolEnabled(.agents) && !isHelper ? " | `child-of-current` (a hidden helper whose answer is posted back here)" : "") + ". `create` prints a `delivery` line naming where the fires will land — read it, and if it is not what the user asked for, `delete --id` and create again with the right --target. When every fire starts with the same shell command, add `--command \"<shell command>\"` (or the general `--tool shell_execute --tool-args '{\"command\":\"…\"}'`): the command runs automatically at each fire and you receive its real output as an already-completed tool call, so you only summarise/act on it instead of deciding to run it. `list`, `delete --id`, `enable/disable --id`, `run --id`. Best effort: timers live only while the app process is alive (a reminder notification is registered as insurance and says the task was due, not that it ran); for guaranteed execution after the app is killed the user needs an Apple Shortcuts automation. Run --help for details.\n"
             + (Self.toolEnabled(.agents) && !isHelper ? "(Do NOT run minis-scheduled to delegate work you could hand to subagent_task.)\n" : "")
@@ -231,7 +243,7 @@ extension AIChatViewModel {
             + "The optional init_command parameter pre-fills (NOT executes) a command; it MUST be fully percent-encoded (spaces → %20, & → %26, | → %7C, etc.). "
             + "Only use this for genuinely interactive sessions — for everything else, use shell_execute. "
             + "Examples: [Open Terminal](minis://open_terminal), [Login to SSH](minis://open_terminal?init_command=ssh%20user%40host).\n\n"
-            + "minis-config: read or change Minis settings programmatically. Run `minis-config --help` to see subcommands and `minis-config topic-help <topic>` for details on a specific area. For array-valued fields (e.g. `models`, `groups`, `envvars`, `defaults.agentLoopEntries`) the `get` subcommand accepts `--filter <keywords>` (whitespace-AND, case-insensitive substring match against each element's JSON) and `--page <N> --page-size <N>` (default 20, max 100) — use these instead of dumping the full list when you only need a subset, and check the response's `pagination` / `agent_hint` fields for the next-page command. Every write triggers a confirmation sheet in-app and is logged to a revertable audit (1000-entry rolling log). After a successful change the response includes a `user_message` field — relay it (or paraphrase) so the user knows how to review or revert via Logs → Config Changes. If the call returns `permission_denied`, the user has disabled minis-config in Settings → Permissions; relay that message and don't retry. You CAN add a provider (`add providers` with providerType + label, optional customBaseURL/appendV1Suffix/imageEndpointMode) and write its API key — set `providers.<id>.apiKey` (or include `apiKey` in the add payload) with either a literal key or a `$$ENV_VAR` reference resolved from the user's environment variables. Secrets are write-only: `get` never echoes an API key, and reading `providers.<id>.apiKey` / `.oauthToken` still returns permission_denied. Do not try to read API keys/OAuth tokens, or to set OAuth tokens (minted by the in-app login), permission levels, or environment-variable values — those stay locked.\n\n"
+            + "minis-config: read or change 全能AI settings programmatically. Run `minis-config --help` to see subcommands and `minis-config topic-help <topic>` for details on a specific area. For array-valued fields (e.g. `models`, `groups`, `envvars`, `defaults.agentLoopEntries`) the `get` subcommand accepts `--filter <keywords>` (whitespace-AND, case-insensitive substring match against each element's JSON) and `--page <N> --page-size <N>` (default 20, max 100) — use these instead of dumping the full list when you only need a subset, and check the response's `pagination` / `agent_hint` fields for the next-page command. Every write triggers a confirmation sheet in-app and is logged to a revertable audit (1000-entry rolling log). After a successful change the response includes a `user_message` field — relay it (or paraphrase) so the user knows how to review or revert via Logs → Config Changes. If the call returns `permission_denied`, the user has disabled minis-config in Settings → Permissions; relay that message and don't retry. You CAN add a provider (`add providers` with providerType + label, optional customBaseURL/appendV1Suffix/imageEndpointMode) and write its API key — set `providers.<id>.apiKey` (or include `apiKey` in the add payload) with either a literal key or a `$$ENV_VAR` reference resolved from the user's environment variables. Secrets are write-only: `get` never echoes an API key, and reading `providers.<id>.apiKey` / `.oauthToken` still returns permission_denied. Do not try to read API keys/OAuth tokens, or to set OAuth tokens (minted by the in-app login), permission levels, or environment-variable values — those stay locked.\n\n"
             + "Environment variables:\n"
             + "- Shell environment variables may contain sensitive API keys, tokens, or passwords. "
             + "NEVER echo, print, cat, or otherwise output their values to stdout/stderr. "
@@ -241,14 +253,14 @@ extension AIChatViewModel {
             + "[Set ENV_NAME](minis://settings/environments?create_key=ENV_NAME&create_value=&create_note=Used%20by%20XYZ) — "
             + "the user can tap it to open the Environment Variables page with the key and optional note pre-filled. "
             + "create_note is optional; fill it with a brief description of what the variable is used for (e.g. 'API key for OpenAI', 'Used by XYZ skill'); URL-encode it.\n"
-            + "- Settings deep links: when you tell the user \"go to Settings → X\" or want to point them at a specific setting, prefer a Markdown link `[Label](minis://settings/<path>)` over plain prose. Available paths: providers (list), providers/<instanceId> (one provider), model-groups (incl. Agent Loop), model-groups/<groupId>, usage (token usage), tools (CyberAgent tools: browser + agents switch), skills, memory, storage, shared-folders (Shared Folders: /var/minis/{shared,skills,memory}), mount-external (Mount External Folders), logs, appearance, background, about, permissions, environments[?create_key=K&create_value=V[&create_note=N]], rootfs (also reachable as mirrors). Unknown paths fall back to Settings home, but prefer the exact path so users land where they want. These settings/action links are app deep links — render them as Markdown links in chat"
-            + (Self.toolEnabled(.browser) ? " (same action-vs-resource rule as the minis:// section above: only /var/minis resource URLs may go to browser_use)" : "")
+            + "- Settings deep links: when you tell the user \"go to Settings → X\" or want to point them at a specific setting, prefer a Markdown link `[Label](minis://settings/<path>)` over plain prose. Available paths: providers (list), providers/<instanceId> (one provider), model-groups (incl. Agent Loop), model-groups/<groupId>, usage (token usage), tools (CyberAgent tools: browser + agents switch), skills, memory, storage, shared-folders (Shared Folders: /var/ai/{shared,skills,memory}), mount-external (Mount External Folders), logs, appearance, background, about, permissions, environments[?create_key=K&create_value=V[&create_note=N]], rootfs (also reachable as mirrors). Unknown paths fall back to Settings home, but prefer the exact path so users land where they want. These settings/action links are app deep links — render them as Markdown links in chat"
+            + (Self.toolEnabled(.browser) ? " (same action-vs-resource rule as the minis:// section above: only /var/ai resource URLs may go to browser_use)" : "")
             + ".\n"
             + "- To check if a variable is set, use `[ -n \"$VAR\" ] && echo 'set' || echo 'not set'`. "
             + "NEVER use echo $VAR, printenv VAR, or any command that would output the actual value into the conversation context.\n\n"
             + "Memory system:\n"
             + "- memory_write writes to today's daily log (YYYY-MM-DD.md) — use it for session notes, key facts, project context, things learned, and action items.\n"
-            + "- GLOBAL.md (/var/minis/memory/GLOBAL.md) stores persistent preferences, settings, and general-purpose conventions. To read it, use file_read (NOT memory_get). To update it, use file_read first then file_edit. If GLOBAL.md does not exist yet, use file_write to create it directly.\n"
+            + "- GLOBAL.md (/var/ai/memory/GLOBAL.md) stores persistent preferences, settings, and general-purpose conventions. To read it, use file_read (NOT memory_get). To update it, use file_read first then file_edit. If GLOBAL.md does not exist yet, use file_write to create it directly.\n"
             + "- IMPORTANT: Only write to GLOBAL.md when the user explicitly asks (e.g. 'remember this globally', 'save to global memory'). Before editing, deduplicate and clean up — avoid ambiguity, repetition, or daily-log-style entries. GLOBAL.md should contain only concise, reusable knowledge (preferences, settings, conventions), NOT session logs or transient context.\n"
             + "- Use memory_get to recall past knowledge before starting tasks — check if there are relevant memories that can help.\n"
             + "- Proactively save memories (via memory_write to daily log) when you discover user preferences or important patterns — don't wait to be asked.\n"
@@ -256,9 +268,54 @@ extension AIChatViewModel {
             + "- What NOT to remember: passwords, API keys, tokens, secrets, or any sensitive credentials. Warn the user about the risk first; only proceed if they explicitly confirm.\n"
             + "- Keep memories concise, factual, and general-purpose — avoid noise that won't be useful later.\n\n"
             + "Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended, so in-app scheduled scripts may not run as expected. "
-            + "For follow-ups and recurring prompts that only need to fire while Minis stays open, run `minis-scheduled create …` via shell_execute (it is best effort and dies with the app process). "
+            + "For follow-ups and recurring prompts that only need to fire while 全能AI stays open, run `minis-scheduled create …` via shell_execute (it is best effort and dies with the app process). "
             + "For recurring tasks that must fire even after the app is killed, tell the user to set up an automation in Apple Shortcuts — that is the only guaranteed way to trigger periodic execution on iOS. "
             + "(Waiting or polling WITHIN the current turn is different — that is what shell_execute `delay` chains are for, per the shell_execute notes above.)"
+    }
+
+    /// [T-minis-gh-fallback-switch] 云编译兜底的详细规则。
+    ///
+    /// 只在开关打开且 GitHub 配置就绪时返回内容，否则返回空串 ——
+    /// 关着的时候模型从提示词里一个字都读不到这个能力，
+    /// 这正是用户要的「不开就不知道有这功能」。
+    ///
+    /// 为什么不塞进 baseSystemPrompt 那串巨型拼接里：那条字符串已经贴着
+    /// 类型检查器的上限（见 memoryStatusFragment 上面的注释），再往里加
+    /// 分支只会让编译时间爆炸。独立成一个 var，调用方拼一下就行。
+    ///
+    /// 三段内容，缺一不可：
+    ///   1. 什么时候该用 —— 本机试过了、确实编不了
+    ///   2. 什么时候不该用 —— 源码本身有错。这条最重要：不写清，模型会把
+    ///      语法错误也推上云，花掉额度换回一模一样的报错
+    ///   3. 用户看得到什么 —— 上传的是他自己的仓库，别偷偷干
+    var cloudBuildFallbackFragment: String {
+        // [T-gh-switch-deadlock] 判据改用 `canUseCloud`，见工具注册处的说明。
+        guard Self.toolEnabled(.githubBuild), GitHubPush.shared.canUseCloud else { return "" }
+
+        // 仓库配了就说具体推到哪；没配就说「会按项目名建」。
+        // 原来这里无条件写 `GitHubPush.shared.repo`，仓库为空时会变成
+        // 「repository ()」——模型看到这种句子容易自己编一个仓库名。
+        let target: String
+        if GitHubPush.shared.repo.isEmpty {
+            target = "no repository has been configured yet, so calling the tool creates one named after the "
+                   + "`project` argument (keep that name stable across pushes so later pushes reuse the same repo)"
+        } else {
+            target = "repository \(GitHubPush.shared.repo)"
+        }
+        return "\n\n"
+            + "Cloud build fallback: ENABLED. The `github_cloud_build` tool sends files to the user's own GitHub "
+            + "\(target) and runs a macOS GitHub Actions workflow there.\n"
+            + "- Use it ONLY as a fallback. First actually try to build in the sandbox — it has clang/gcc/make, "
+            + "and `apk add` can install more. If the build succeeds locally, you are done; do not also push it.\n"
+            + "- Escalate after local failure, or when the target plainly cannot be built here (needs Xcode, "
+            + "a macOS SDK, iOS signing, or a framework this rootfs does not have).\n"
+            + "- Do NOT escalate a genuine source error — a syntax error, missing import, undefined symbol, or "
+            + "wrong type produces the same failure in the cloud and burns the user's build minutes for nothing. "
+            + "Fix it here and retry locally.\n"
+            + "- Tell the user before pushing: which files, which repository, and why local failed. "
+            + "These are their repositories and the commits are visible to them.\n"
+            + "- Cloud runs are slow (minutes) and not free for private repos. One escalation per problem, "
+            + "not a retry loop."
     }
 
     /// [T-memory-toggle-gates-injection-and-tools-ios]
@@ -285,24 +342,5 @@ extension AIChatViewModel {
                 + "- This toggle is per-session. Other sessions may still have memory enabled.\n"
                 + "- SOUL.md (your persona / identity) is unaffected and remains active above."
         }
-    }
-
-    /// [T-minis-gh-fallback-switch] 云编译兜底段落。三段：何时该用、何时不该用、用户看得到什么。
-    var cloudBuildFallbackFragment: String {
-        guard Self.toolEnabled(.githubBuild), GitHubPush.shared.isReady else { return "" }
-        return "\n\n"
-            + "Cloud build fallback: ENABLED. The `github_cloud_build` tool sends files to the user's own GitHub "
-            + "repository (\(GitHubPush.shared.repo)) and runs a macOS GitHub Actions workflow there.\n"
-            + "- Use it ONLY as a fallback. First actually try to build in the sandbox — it has clang/gcc/make, "
-            + "and `apk add` can install more. If the build succeeds locally, you are done; do not also push it.\n"
-            + "- Escalate after local failure, or when the target plainly cannot be built here (needs Xcode, "
-            + "a macOS SDK, iOS signing, or a framework this rootfs does not have).\n"
-            + "- Do NOT escalate a genuine source error — a syntax error, missing import, undefined symbol, or "
-            + "wrong type produces the same failure in the cloud and burns the user's build minutes for nothing. "
-            + "Fix it here and retry locally.\n"
-            + "- Tell the user before pushing: which files, which repository, and why local failed. "
-            + "These are their repositories and the commits are visible to them.\n"
-            + "- Cloud runs are slow (minutes) and not free for private repos. One escalation per problem, "
-            + "not a retry loop."
     }
 }

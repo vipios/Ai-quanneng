@@ -49,7 +49,7 @@ struct BrowserManagementView: View {
                 clearAllCookies()
             }
         } message: {
-            Text("This will remove all cookies and website data from the Minis browser.")
+            Text("This will remove all cookies and website data from the 全能AI browser.")
         }
         .task {
             await loadCookies()
@@ -382,7 +382,7 @@ struct BrowserManagementView: View {
         } header: {
             Text("Cookies & Data")
         } footer: {
-            Text("Clearing cookies will sign you out of all websites in the Minis browser.")
+            Text("Clearing cookies will sign you out of all websites in the 全能AI browser.")
         }
     }
 

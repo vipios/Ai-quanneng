@@ -24,7 +24,7 @@ func checkEq<T: Equatable>(_ l: String, _ a: T, _ b: T) {
 /// Mirrors AIChatViewModel.isOffloadStorePath.
 func isOffloadStorePath(_ path: String) -> Bool {
     let p = path.trimmingCharacters(in: .whitespacesAndNewlines)
-    return p.hasPrefix("/var/minis/offloads/") || p.hasPrefix("minis://offloads/")
+    return p.hasPrefix("/var/ai/offloads/") || p.hasPrefix("minis://offloads/")
 }
 
 /// Mirrors the tagging decision at the tool-result assembly point.
@@ -69,33 +69,33 @@ let big = String(repeating: "MOCK-BIG-PAYLOAD line xxxxxxxx\n", count: 800)   //
 
 print("\n[1] The path predicate")
 do {
-    check("linux offload path", isOffloadStorePath("/var/minis/offloads/tools/file_read_c-1.txt"))
+    check("linux offload path", isOffloadStorePath("/var/ai/offloads/tools/file_read_c-1.txt"))
     check("minis:// offload path", isOffloadStorePath("minis://offloads/file_read_x.txt"))
-    check("surrounding whitespace tolerated", isOffloadStorePath("  /var/minis/offloads/a.txt "))
+    check("surrounding whitespace tolerated", isOffloadStorePath("  /var/ai/offloads/a.txt "))
     // Deliberately narrower than isPersistentMinisPath: these are real sources
     // whose large results SHOULD still be offloadable.
-    check("workspace is NOT an offload path", isOffloadStorePath("/var/minis/workspace/notes.md"), false)
-    check("browser is NOT an offload path", isOffloadStorePath("/var/minis/browser/s/shot.jpg"), false)
-    check("attachments is NOT an offload path", isOffloadStorePath("/var/minis/attachments/a.png"), false)
+    check("workspace is NOT an offload path", isOffloadStorePath("/var/ai/workspace/notes.md"), false)
+    check("browser is NOT an offload path", isOffloadStorePath("/var/ai/browser/s/shot.jpg"), false)
+    check("attachments is NOT an offload path", isOffloadStorePath("/var/ai/attachments/a.png"), false)
     check("/tmp is NOT an offload path", isOffloadStorePath("/tmp/gh343_big.txt"), false)
     // A path merely CONTAINING the word must not match.
-    check("a lookalike path does not match", isOffloadStorePath("/var/minis/workspace/offloads/x"), false)
+    check("a lookalike path does not match", isOffloadStorePath("/var/ai/workspace/offloads/x"), false)
 }
 
 print("\n[2] Tagging happens on the argument, not the content")
 do {
     check("file_read of an offload file is tagged",
-          tagFor(tool: "file_read", args: ["path": "/var/minis/offloads/tools/a.txt"]))
+          tagFor(tool: "file_read", args: ["path": "/var/ai/offloads/tools/a.txt"]))
     check("file_read of a normal file is not",
           tagFor(tool: "file_read", args: ["path": "/tmp/gh343_big.txt"]), false)
     // Other tools reaching that directory produce genuinely new output.
     check("shell_execute is never tagged",
-          tagFor(tool: "shell_execute", args: ["path": "/var/minis/offloads/a.txt"]), false)
+          tagFor(tool: "shell_execute", args: ["path": "/var/ai/offloads/a.txt"]), false)
     check("a missing path argument is not tagged",
           tagFor(tool: "file_read", args: [:]), false)
     // The content itself carries file_read's own header and the original
     // payload — the very thing a prefix check cannot tell apart.
-    let readback = Part(content: "[/var/minis/offloads/tools/a.txt | 15220 bytes | 258 lines]\n" + big,
+    let readback = Part(content: "[/var/ai/offloads/tools/a.txt | 15220 bytes | 258 lines]\n" + big,
                         isOffloadReadback: true)
     check("read-back content does NOT start with the stub marker",
           readback.content.hasPrefix("[CONTEXT OFFLOADED]"), false)
@@ -105,8 +105,8 @@ do {
 print("\n[3] PATH A — the history scanner skips a read-back")
 do {
     let parts = [
-        Part(content: "[CONTEXT OFFLOADED] Content (~4406 tokens) saved to: /var/minis/offloads/tools/a.txt"),
-        Part(content: "[/var/minis/offloads/tools/a.txt | …]\n" + big, isOffloadReadback: true),
+        Part(content: "[CONTEXT OFFLOADED] Content (~4406 tokens) saved to: /var/ai/offloads/tools/a.txt"),
+        Part(content: "[/var/ai/offloads/tools/a.txt | …]\n" + big, isOffloadReadback: true),
         Part(content: big),                    // genuine new material
         Part(content: "ok"),                   // too small
     ]
@@ -151,10 +151,10 @@ do {
             for _ in r.candidates { filesWritten += 1 }
             // Everything offloaded becomes a stub…
             parts = r.candidates.map { _ in
-                Part(content: "[CONTEXT OFFLOADED] Content saved to: /var/minis/offloads/tools/x.txt")
+                Part(content: "[CONTEXT OFFLOADED] Content saved to: /var/ai/offloads/tools/x.txt")
             } + parts.filter { $0.isOffloadReadback || $0.content.count <= 500 }
             // …and the model reads the newest one back.
-            parts.append(Part(content: "[/var/minis/offloads/tools/x.txt | …]\n" + big,
+            parts.append(Part(content: "[/var/ai/offloads/tools/x.txt | …]\n" + big,
                               isOffloadReadback: fixed))
         }
         return filesWritten
@@ -183,7 +183,7 @@ if agentProv.isEmpty || offl.isEmpty { print("  ⏭  sources not readable") } el
           agentProv.contains("isOffloadReadback: Bool = false)"))
     check("the predicate exists and is offloads-only",
           offl.contains("nonisolated static func isOffloadStorePath(")
-          && offl.contains("p.hasPrefix(\"/var/minis/offloads/\") || p.hasPrefix(\"minis://offloads/\")"))
+          && offl.contains("p.hasPrefix(\"/var/ai/offloads/\") || p.hasPrefix(\"minis://offloads/\")"))
     check("the tag is derived from the file_read ARGUMENT",
           conc.contains("guard tu.name == \"file_read\",")
           && conc.contains("return AIChatViewModel.isOffloadStorePath(path)"))

@@ -123,7 +123,7 @@ class StorageManagementViewModel: ObservableObject {
     /// iterating the result.
     ///
     /// Symlinks are counted at their own (tiny) size and never followed —
-    /// following them would double-count `/var/minis/*`, which are symlinks into
+    /// following them would double-count `/var/ai/*`, which are symlinks into
     /// the per-session directories this same walk already visits.
     private func entries(under root: URL) -> [(rel: String, size: Int64)] {
         // Recurse explicitly, carrying the relative path DOWN as we descend,
@@ -145,7 +145,7 @@ class StorageManagementViewModel: ObservableObject {
         // named identically to the root.
         //
         // Symlinks are counted at their own (tiny) size and never followed —
-        // following them would double-count `/var/minis/*`, which point into the
+        // following them would double-count `/var/ai/*`, which point into the
         // per-session directories this walk already visits.
         var out: [(rel: String, size: Int64)] = []
         var stack: [(dir: URL, prefix: String)] = [(root, "")]
@@ -160,7 +160,7 @@ class StorageManagementViewModel: ObservableObject {
                 let rel = prefix.isEmpty ? name : prefix + "/" + name
                 let v = try? kid.resourceValues(forKeys: Set(Self.sizeKeys))
                 // Descend into real directories only. `isDirectory` is true for a
-                // symlink POINTING at a directory too, and `/var/minis/*` are
+                // symlink POINTING at a directory too, and `/var/ai/*` are
                 // exactly that — following them would re-walk the per-session
                 // trees (double-counting them) and, for any link that points at
                 // an ancestor, never terminate.
@@ -607,7 +607,7 @@ struct StorageManagementView: View {
             } header: {
                 Text("Overview")
             } footer: {
-                Text("Total is the app's full container size and should match the figure iOS Settings shows for Minis. \"Other\" covers everything not itemized above, so the categories always add up to the total.")
+                Text("Total is the app's full container size and should match the figure iOS Settings shows for 全能AI. \"Other\" covers everything not itemized above, so the categories always add up to the total.")
             }
 
             // [T-storage-clear-logs-caches]

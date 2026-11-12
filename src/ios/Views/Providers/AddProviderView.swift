@@ -26,7 +26,7 @@ struct AIDataSharingConsentView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("We Do Not Collect Your Data")
                                 .font(.headline)
-                            Text("Minis does not operate any server and does not collect, store, or process any of your personal data. All data stays on your device.")
+                            Text("全能AI does not operate any server and does not collect, store, or process any of your personal data. All data stays on your device.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                             Text("However, when you add a third-party AI provider and use it for conversations, the following data may be sent directly from your device to that provider's servers:")
@@ -72,7 +72,7 @@ struct AIDataSharingConsentView: View {
                                 dataItem("API keys and tokens are stored only in the iOS Keychain on your device and are never sent to us")
                                 dataItem("Data is sent only to the specific provider you choose for each conversation")
                                 dataItem("You can remove any provider and its credentials at any time from Settings")
-                                dataItem("No data is shared with Minis or any other party beyond the provider you select")
+                                dataItem("No data is shared with 全能AI or any other party beyond the provider you select")
                             }
                         }
                     }
@@ -141,7 +141,8 @@ struct AddProviderView: View {
     @State private var selectedType: ProviderType?
     @State private var selectedCredential: ProviderCredential?
     @State private var apiKeyInput = ""
-    @State private var showApiKeyPlaintext = false
+    @State private var showApiKeyPlaintext = true   // [R52-第三方键盘] 默认明文，SecureField 会强制原生键盘
+
     @State private var labelInput = ""
     /// True once the user has manually edited the label. We use this to
     /// stop `defaultLabel(for:)` from clobbering a label the user just

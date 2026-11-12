@@ -83,7 +83,7 @@ final class ImageRealIosAXCTests: XCTestCase {
     private func roundTrip(_ data: Data, ext: String, route: AttachmentInlineRoute)
         async throws -> (live: AttachmentInlineImage, rebuilt: (Data, String), wire: Wire) {
         let live = AIChatViewModel.inlineAttachmentImage(data, ext: ext, route: route)
-        let linuxPath = "/var/minis/attachments/uploads/fixture.\(ext)"
+        let linuxPath = "/var/ai/attachments/uploads/fixture.\(ext)"
         let ref = await store.saveMedia(data: live.final, mimeType: live.mimeType,
                                                    sessionId: sessionId, linuxPath: linuxPath)
         let stored: [ContentPart] = [.text("see attached"), .mediaRef(ref)]

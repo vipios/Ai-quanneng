@@ -67,7 +67,7 @@ struct RetryRunIntent: AppIntent {
         // intent (`openAppWhenRun = false`) never builds — so on a cold or
         // force-quit launch nothing acquired the security scopes, `activeURLs`
         // stayed empty, and the external-mount snapshot the agent reads was
-        // empty too. `/var/minis/mounts/<name>` was simply absent until the user
+        // empty too. `/var/ai/mounts/<name>` was simply absent until the user
         // opened the app once.
         //
         // Bounded so a slow FileProvider cannot stall the Shortcut: on expiry the
@@ -193,7 +193,7 @@ struct RetryRunIntent: AppIntent {
         if sendCompletionNotification {
             ShortcutNotification.post(
                 id: "shortcut-retry-\(sid)",
-                title: AppLocalized("Minis: Retrying"),
+                title: AppLocalized("全能AI: Retrying"),
                 body: "\(modelName): \(promptPreview)\(targetMessage.content.count > 50 ? "…" : "")",
                 sessionId: sid
             )
@@ -214,7 +214,7 @@ struct RetryRunIntent: AppIntent {
             if sendCompletionNotification {
                 ShortcutNotification.post(
                     id: "shortcut-retry-done-\(sid)",
-                    title: AppLocalized("Minis: Retry Done"),
+                    title: AppLocalized("全能AI: Retry Done"),
                     body: "\(modelName): \(String(responseText.prefix(200)))",
                     sessionId: sid
                 )
@@ -249,7 +249,7 @@ struct RetryRunIntent: AppIntent {
             if capturedSendCompletionNotification {
                 ShortcutNotification.post(
                     id: "shortcut-retry-done-\(capturedSid)",
-                    title: AppLocalized("Minis: Retry Done"),
+                    title: AppLocalized("全能AI: Retry Done"),
                     body: "\(capturedModelName): \(summary)",
                     sessionId: capturedSid
                 )

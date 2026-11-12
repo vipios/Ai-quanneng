@@ -41,16 +41,16 @@ enum ProviderType: String, Codable, CaseIterable, Hashable, Sendable {
 
     var displayName: String {
         switch self {
-        case .anthropic: return "Anthropic"
-        case .gemini: return "Google Gemini"
+        case .anthropic: return "Anthropic（Claude）"
+        case .gemini: return "谷歌 Gemini"
         case .openAI: return "OpenAI"
         case .antigravity: return "Antigravity"
         case .openRouter: return "OpenRouter"
-        case .openAIResponses: return "Responses API (v3)"
-        case .xAI: return "xAI (Grok)"
+        case .openAIResponses: return "Responses 接口（v3）"
+        case .xAI: return "xAI（Grok）"
         case .kimiCode: return "Kimi Code"
         case .githubCopilot: return "GitHub Copilot"
-        case .unsupported: return "Unsupported"
+        case .unsupported: return "未识别服务商"
         }
     }
 

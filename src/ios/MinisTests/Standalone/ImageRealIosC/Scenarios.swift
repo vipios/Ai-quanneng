@@ -72,7 +72,7 @@ func runScenarios() async {
     let live = ModelImageGate.prepare(original, maxBytes: AIChatViewModel.rawBytesForBase64Budget(AIChatViewModel.kPerImageMaxBytes)).data!
     image("p2.original", original)
     let snapRef = await ChatStore.shared.saveMedia(data: original, mimeType: "image/jpeg", sessionId: sid,
-                                                   subdir: "browser", linuxPath: "/var/minis/browser/screenshot_1.jpg")
+                                                   subdir: "browser", linuxPath: "/var/ai/browser/screenshot_1.jpg")
     let snap = ToolSnapshot(type: .image, text: nil, mediaRef: snapRef, duration: 1.5)
     let chosen = AIChatViewModel.toolResultMediaRef(imageData: live, snapshot: snap)
     R("p2.storedRefIsSnapshotRef", chosen == snapRef)
@@ -147,7 +147,7 @@ func runScenarios() async {
     R("budget.src.bytes", noisy.map(\.count))
     var over: [AgentMessage] = []
     over.append(AgentMessage(role: .user, parts: [.imageData(data: noisy[0], mimeType: "image/jpeg", linuxPath: nil)]))
-    over.append(AgentMessage(role: .user, parts: [.imageData(data: noisy[1], mimeType: "image/png", linuxPath: "/var/minis/attachments/uploads/b.png")]))
+    over.append(AgentMessage(role: .user, parts: [.imageData(data: noisy[1], mimeType: "image/png", linuxPath: "/var/ai/attachments/uploads/b.png")]))
     over.append(AgentMessage(role: .user, parts: [.toolResult(id: "t9", name: "", content: "shot", isError: false,
                                                               imageData: noisy[2], imageMimeType: nil, imageLinuxPath: nil)]))
     for d in noisy[3...] { over.append(AgentMessage(role: .user, parts: [.imageData(data: d, mimeType: "image/jpeg", linuxPath: nil)])) }
@@ -165,7 +165,7 @@ func runScenarios() async {
 
     // Missing media: the ref outlives its file.
     let gone = MediaRef(id: "gone", relativePath: "\(sid)/attachments/gone.jpg", mimeType: "image/jpeg",
-                        originalFileName: nil, linuxPath: "/var/minis/attachments/uploads/gone.jpg")
+                        originalFileName: nil, linuxPath: "/var/ai/attachments/uploads/gone.jpg")
     R("missing.userPartIsNil", RawMessage.rebuiltImagePart(gone, mediaResolver: resolver) == nil)
     let goneTool = RawMessage.rebuiltToolResultImage(gone, mediaResolver: resolver)
     R("missing.toolImageIsNil", goneTool.data == nil && goneTool.mimeType == nil)
@@ -177,7 +177,7 @@ func runScenarios() async {
     for (name, data, mime) in [("jpeg", jpeg, "image/jpeg"), ("heicAsJpeg", heicSmall, "image/jpeg"), ("png", png, "image/png"),
                                ("gifLabelOnJpeg", jpeg, "image/gif")] {
         let ref = await AIChatViewModel.persistedUserImageRef(data: data, mimeType: mime, sessionId: sid,
-                                                              linuxPath: "/var/minis/attachments/uploads/\(name)")
+                                                              linuxPath: "/var/ai/attachments/uploads/\(name)")
         R("rt.\(name).relativePath.ext", (ref.relativePath as NSString).pathExtension)
         R("rt.\(name).subdir", ref.relativePath.split(separator: "/").dropFirst().first.map(String.init) ?? "?")
         guard case .mediaRef(let back) = viaJSON([.mediaRef(ref)])[0],

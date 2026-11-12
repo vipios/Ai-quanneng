@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 struct ProviderInstancesView: View {
     @ObservedObject private var store = ProviderConfigStore.shared
     @State private var showAddProvider = false
+    // [T-minis-relay] 「添加 AI 中转站」弹窗
+    @State private var showAddRelay = false
     @State private var showImportFile = false
     @State private var importMessage: String?
     @State private var showImportResult = false
@@ -52,12 +54,12 @@ struct ProviderInstancesView: View {
                                 Button(role: .destructive) {
                                     pendingDeleteInstance = instance
                                 } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    Label("删除", systemImage: "trash")
                                 }
                                 Button {
                                     editingInstanceId = instance.id
                                 } label: {
-                                    Label("Edit", systemImage: "pencil")
+                                    Label("编辑", systemImage: "pencil")
                                 }
                                 .tint(.blue)
                             }
@@ -75,13 +77,13 @@ struct ProviderInstancesView: View {
             // + a "disable this voice row" toggle).
             let shadows = store.shadowVoiceProviders()
             if !shadows.isEmpty {
-                Section("Voice Services") {
+                Section("语音服务") {
                     if store.hasFoldedShadowDuplicates() {
                         // Non-destructive hint: same MiMo service configured twice.
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "info.circle")
                                 .foregroundStyle(.secondary)
-                            Text("A voice service is configured more than once. Voice is merged into a single row here; you can delete the extra provider above if you want.",
+                            Text("某个语音服务被配置了多次。语音在这里合并成一行显示；你可以在上面删除多余的服务商。",
                                  comment: "Duplicate voice provider hint")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -103,10 +105,10 @@ struct ProviderInstancesView: View {
                         Image(systemName: "key.slash")
                             .font(.system(size: 32))
                             .foregroundStyle(.quaternary)
-                        Text("No providers configured")
+                        Text("尚未配置任何服务商")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Text("Add a provider to get started.")
+                        Text("先添加一个服务商开始使用。")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
@@ -115,7 +117,7 @@ struct ProviderInstancesView: View {
                 }
             }
         }
-        .navigationTitle("Providers")
+        .navigationTitle("AI 服务商")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !store.instances.isEmpty {
@@ -129,6 +131,17 @@ struct ProviderInstancesView: View {
                         showAddProvider = true
                     } label: {
                         Label(AppLocalized("Add Provider"), systemImage: "plus")
+                    }
+                    // [R42] 「添加 AI 中转站」和「导入服务商」换了位置。
+                    //
+                    // 原来的顺序是「添加服务商 / 导入服务商 / 添加中转站」，
+                    // 中转站排在最下面。但在这台机器上，中转站是主路（服务商
+                    // 那条基本不用），排在第三位要多扫两行才找得到。换到第二位
+                    // 之后，「添加 / 导入」这种一次性的动作退到最后。
+                    Button {
+                        showAddRelay = true
+                    } label: {
+                        Label(AppLocalized("Add AI Relay"), systemImage: "network")
                     }
                     Button {
                         showImportFile = true
@@ -152,6 +165,11 @@ struct ProviderInstancesView: View {
         .sheet(isPresented: $showAddProvider) {
             NavigationStack {
                 AddProviderView()
+            }
+        }
+        .sheet(isPresented: $showAddRelay) {
+            NavigationStack {
+                AddRelayProviderView()
             }
         }
         .fileImporter(isPresented: $showImportFile, allowedContentTypes: [.json]) { result in
@@ -207,16 +225,16 @@ struct ProviderInstancesView: View {
             ),
             presenting: pendingDeleteInstance
         ) { instance in
-            Button("Delete", role: .destructive) {
+            Button("删除", role: .destructive) {
                 store.removeInstance(instance.id)
                 pendingDeleteInstance = nil
             }
-            Button("Cancel", role: .cancel) { pendingDeleteInstance = nil }
+            Button("取消", role: .cancel) { pendingDeleteInstance = nil }
         } message: { _ in
-            Text("This will remove the provider and all its model entries. API keys will be deleted from the Keychain.")
+            Text("这将移除该服务商及其全部模型条目，API Key 会从钥匙串中删除。")
         }
         .alert(AppLocalized("Import"), isPresented: $showImportResult) {
-            Button("OK") {}
+            Button("好") {}
         } message: {
             if let msg = importMessage { Text(msg) }
         }
@@ -437,7 +455,7 @@ private struct InstanceRow: View {
                 Text(instance.label)
                     .font(.body.weight(.medium))
                 HStack(spacing: 6) {
-                    Text(instance.credentialType == .apiKey ? "API Key" : "OAuth")
+                    Text(instance.credentialType == .apiKey ? "API 密钥" : "OAuth 登录")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("·")
@@ -458,7 +476,7 @@ private struct InstanceRow: View {
             Spacer()
 
             if !instance.isEnabled {
-                Text("Disabled")
+                Text("已停用")
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)

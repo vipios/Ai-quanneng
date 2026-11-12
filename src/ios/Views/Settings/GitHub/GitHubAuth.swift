@@ -151,6 +151,217 @@ struct GitHubAccount: Codable, Equatable {
         if !canTriggerWorkflow { m.append("workflow") }
         return m
     }
+
+    // MARK: - [R58-权限如实展示] 令牌有什么就显示什么
+
+    /// 这枚令牌实际拿到的权限，按「本 App 会用到 → 其它」排好序。
+    ///
+    /// 为什么要排而不是直接给 `scopes`：
+    /// 用户建令牌时可能顺手勾了一堆（`delete_repo`、`admin:org`…），
+    /// 全平铺出来会让人以为 App 申请了这些。把本 App 真会用的放前面、
+    /// 其余归到后面，用户一眼能分清「这是 App 要的」和「这是我自己多勾的」。
+    var grantedScopes: [GitHubScopeInfo] {
+        // scopeUnknown 时 scopes 一定是空的 —— 不能让调用方
+        // 把「读不到」渲染成「一个权限都没有」，那种误解比不显示更糟。
+        guard !unknown else { return [] }
+        let known = scopes.map { GitHubScopeCatalog.info(for: $0) }
+        let used = known.filter { $0.usedByApp }
+        let others = known.filter { !$0.usedByApp }
+        return used + others
+    }
+
+    /// 云端编译这条链路必须要有、但这枚令牌没有的权限。
+    /// 与 `missingScopes` 的区别：那个只给字符串给旧的调用方，
+    /// 这个带中文标题，界面直接用。
+    var missingRequiredScopes: [GitHubScopeInfo] {
+        guard !unknown else { return [] }
+        return GitHubScopeCatalog.requiredForCloudBuild.filter { !scopes.contains($0.scope) }
+    }
+}
+
+// MARK: - [R58-权限如实展示] 权限说明书
+
+/// 一个 scope 的展示信息。
+struct GitHubScopeInfo: Identifiable, Equatable {
+    /// scope 原文，例如 `repo`。同时作为 id
+    let scope: String
+    /// 中文名，例如「读写代码仓库」
+    let title: String
+    /// 一句人话解释它能干什么
+    let detail: String
+    /// 本 App（云端编译兜底）是否真的会用到
+    let usedByApp: Bool
+    /// 是不是危险权限 —— 有的话界面要提醒一句
+    let isSensitive: Bool
+
+    var id: String { scope }
+}
+
+/// scope 原文 → 中文说明的对照表。
+///
+/// 表里没有的 scope **不会丢**：`info(for:)` 会原样返回 scope 原文当标题，
+/// 用户照样能看见「这枚令牌还有一项 xxx 权限」。
+/// 这一点是刻意的 —— 这个页面的职责是如实反映令牌，
+/// 不是只显示我们认识的那部分。
+enum GitHubScopeCatalog {
+
+    /// 云端编译兜底必需的两项。
+    ///
+    /// 顺序有意义：`repo` 缺了连推都推不上去，`workflow` 缺了能推不能触发。
+    /// 界面按这个顺序报缺，用户修起来也是先修前一个再修后一个。
+    ///
+    /// 写成字面量而不是 `info(repo)`：静态属性之间互相引用虽然 Swift 允许
+    /// （惰性初始化），但这里只有两项，直接写死更清楚，也免得以后有人
+    /// 把 table 改成非惰性时踩初始化顺序的坑。
+    static let requiredForCloudBuild: [GitHubScopeInfo] = [
+        GitHubScopeInfo(
+            scope: "repo",
+            title: "读写代码仓库",
+            detail: "推代码、读仓库信息、建仓库。云端编译的基础权限。",
+            usedByApp: true,
+            isSensitive: false
+        ),
+        GitHubScopeInfo(
+            scope: "workflow",
+            title: "管理 Actions 工作流",
+            detail: "提交 / 触发 GitHub Actions。少了它，代码推得上去但编译触发不了（403）。",
+            usedByApp: true,
+            isSensitive: false
+        ),
+    ]
+
+    /// 已知 scope 的说明书。
+    ///
+    /// 覆盖 GitHub 经典令牌的常用项。`usedByApp == true` 的只有
+    /// `repo` / `workflow` / `read:user` 三项 —— 前两个是编译链路，
+    /// 最后一个是登录后读昵称头像。其余即使令牌里有，本 App 也不碰。
+    private static let table: [String: GitHubScopeInfo] = {
+        var t: [String: GitHubScopeInfo] = [:]
+
+        func put(_ scope: String,
+                 _ title: String,
+                 _ detail: String,
+                 used: Bool = false,
+                 sensitive: Bool = false) {
+            t[scope] = GitHubScopeInfo(
+                scope: scope, title: title, detail: detail,
+                usedByApp: used, isSensitive: sensitive
+            )
+        }
+
+        // ── 本 App 会用到 ──
+        put("repo", "读写代码仓库",
+            "推代码、读仓库信息、建仓库。云端编译的基础权限。",
+            used: true)
+        put("workflow", "管理 Actions 工作流",
+            "提交 / 触发 GitHub Actions。少了它，代码推得上去但编译触发不了（403）。",
+            used: true)
+        put("read:user", "读取账号资料",
+            "读你的用户名、昵称、头像，只用于这个页面显示。",
+            used: true)
+
+        // ── 仓库细项 ──
+        put("public_repo", "读写公开仓库",
+            "只对公开仓库生效，私有仓库碰不到。")
+        put("repo:status", "改提交状态",
+            "读写 commit 的 status 检查结果（CI 打勾打叉那种）。")
+        put("repo_deployment", "管理部署",
+            "读写部署状态与部署环境。")
+        put("repo:invite", "邀请他人进仓库",
+            "能给别人发仓库协作邀请。")
+        put("security_events", "读安全事件",
+            "读代码扫描、依赖漏洞这类安全告警。")
+        put("delete_repo", "删除仓库",
+            "可以整仓删除，删了就没了。本 App 绝不需要。",
+            sensitive: true)
+
+        // ── 仓库钩子 ──
+        put("admin:repo_hook", "管理仓库 Webhook",
+            "能增删改仓库的 Webhook —— 相当于能看到仓库推送的每一条事件。",
+            sensitive: true)
+        put("write:repo_hook", "写仓库 Webhook",
+            "能改 Webhook 配置。")
+        put("read:repo_hook", "读仓库 Webhook",
+            "能看 Webhook 配置。")
+
+        // ── 组织 ──
+        put("admin:org", "管理组织",
+            "能改组织成员、团队、设置，影响范围超出你自己的账号。",
+            sensitive: true)
+        put("write:org", "写组织",
+            "能改组织内的成员与团队。")
+        put("read:org", "读组织",
+            "能读组织成员和团队列表。")
+
+        // ── 密钥 ──
+        put("admin:public_key", "管理 SSH 公钥",
+            "能增删账号下的 SSH 公钥 —— 等于能给自己加一把进门的钥匙。",
+            sensitive: true)
+        put("write:public_key", "写 SSH 公钥", "能添加 SSH 公钥。")
+        put("read:public_key", "读 SSH 公钥", "能看已有的 SSH 公钥。")
+        put("admin:gpg_key", "管理 GPG 密钥",
+            "能增删 GPG 密钥，影响提交签名。",
+            sensitive: true)
+        put("admin:ssh_signing_key", "管理 SSH 签名密钥",
+            "能增删 SSH 签名密钥。",
+            sensitive: true)
+
+        // ── 包 ──
+        put("write:packages", "发布软件包",
+            "能往 GitHub Packages 传包。")
+        put("read:packages", "读软件包", "能从 GitHub Packages 拉包。")
+        put("delete:packages", "删除软件包", "能删已发布的包。")
+
+        // ── 讨论 ──
+        put("admin:discussion", "管理讨论区",
+            "能改讨论区设置。")
+        put("write:discussion", "写讨论区", "能发帖、回帖。")
+        put("read:discussion", "读讨论区", "能看讨论内容。")
+
+        // ── 其它 ──
+        put("gist", "管理 Gist",
+            "能增删改你的代码片段。")
+        put("notifications", "读写通知",
+            "能读通知、标记已读。")
+        put("user", "读写个人资料",
+            "能读也能改你的个人资料。")
+        put("user:email", "读邮箱地址",
+            "能读账号绑定的邮箱。")
+        put("user:follow", "关注 / 取关",
+            "能替你关注或取关别人。")
+        put("project", "管理项目看板",
+            "能读写 Projects 看板。")
+        put("read:project", "读项目看板", "能看 Projects 看板。")
+        put("codespace", "管理 Codespaces",
+            "能增删你的云端开发环境。")
+        put("audit_log", "读审计日志",
+            "能读组织的审计日志。")
+        put("read:audit_log", "读审计日志", "只读组织审计日志。")
+        put("admin:enterprise", "管理企业",
+            "企业级管理权限，影响整个企业账号。",
+            sensitive: true)
+        put("manage_runners:enterprise", "管理企业 Runner",
+            "能增删企业级 Actions 运行器。")
+        put("manage_billing:enterprise", "管理企业账单",
+            "能看改企业账单。")
+
+        return t
+    }()
+
+    /// 查一个 scope 的说明。表里没有就原样返回 scope 原文 ——
+    /// 宁可显示一个英文单词，也不能让这项权限从界面上消失。
+    static func info(for scope: String) -> GitHubScopeInfo {
+        if let hit = table[scope] { return hit }
+        // 未收录：标题用原文，说明如实说「本 App 不认识这项」。
+        // 不编一句解释 —— 编错了比不解释更糟。
+        return GitHubScopeInfo(
+            scope: scope,
+            title: scope,
+            detail: "本 App 没用到的权限，含义见 GitHub 的令牌设置页。",
+            usedByApp: false,
+            isSensitive: true   // 不认识的按危险处理，宁可多提醒一句
+        )
+    }
 }
 
 // MARK: - 认证管理器

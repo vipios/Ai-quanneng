@@ -52,7 +52,7 @@ struct FileMentionEntry: Identifiable, Equatable, Hashable {
         }
     }
 
-    /// iSH-visible path (e.g. `/var/minis/workspace/foo/bar.py`). Inserted into input.
+    /// iSH-visible path (e.g. `/var/ai/workspace/foo/bar.py`). Inserted into input.
     let linuxPath: String
     let scope: Scope
     /// Name of the specific mount (only set for `.mount`), used for grouping.
@@ -68,9 +68,9 @@ struct FileMentionEntry: Identifiable, Equatable, Hashable {
         (linuxPath as NSString).lastPathComponent
     }
 
-    /// Path shown in the menu (strips the `/var/minis/` prefix for density).
+    /// Path shown in the menu (strips the `/var/ai/` prefix for density).
     var displayPath: String {
-        let prefix = "/var/minis/"
+        let prefix = "/var/ai/"
         if linuxPath.hasPrefix(prefix) {
             return String(linuxPath.dropFirst(prefix.count))
         }
@@ -487,7 +487,7 @@ final class FileMentionIndex: ObservableObject {
     private struct ScanRoot {
         let scope: FileMentionEntry.Scope
         let hostURL: URL
-        /// Linux-visible path prefix (e.g. `/var/minis/workspace`).
+        /// Linux-visible path prefix (e.g. `/var/ai/workspace`).
         let linuxPrefix: String
         let mountName: String?
     }
@@ -557,7 +557,7 @@ final class FileMentionIndex: ObservableObject {
     ]
 
     /// True if any `/`-delimited component of `path` contains `query` as a
-    /// substring. Lets `@mounts` match `/var/minis/mounts/<name>/...` even
+    /// substring. Lets `@mounts` match `/var/ai/mounts/<name>/...` even
     /// when the file's basename doesn't contain "mounts".
     private static func anyPathComponentMatches(path: String, query: String) -> Bool {
         for component in path.split(separator: "/") where component.contains(query) {
@@ -566,16 +566,16 @@ final class FileMentionIndex: ObservableObject {
         return false
     }
 
-    /// Is this the immediate child of a scope root (e.g. `/var/minis/skills/foo`,
-    /// `/var/minis/mounts/bar`, `/var/minis/shared/baz`)? These top-level
+    /// Is this the immediate child of a scope root (e.g. `/var/ai/skills/foo`,
+    /// `/var/ai/mounts/bar`, `/var/ai/shared/baz`)? These top-level
     /// directories are first-class `@` targets, boosted above their descendants.
     private static func isTopLevelScopeRoot(_ entry: FileMentionEntry) -> Bool {
         guard entry.isDirectory else { return false }
         let path = entry.linuxPath
         let tops = [
-            "/var/minis/skills/",
-            "/var/minis/mounts/",
-            "/var/minis/shared/",
+            "/var/ai/skills/",
+            "/var/ai/mounts/",
+            "/var/ai/shared/",
         ]
         for top in tops where path.hasPrefix(top) {
             let rest = path.dropFirst(top.count)

@@ -185,7 +185,7 @@ final class ImageRealIosBTests: XCTestCase {
 
         // B2 (`minis_url`) and the snapshot media file are both the ORIGINAL.
         let linuxPath = AIChatViewModel.writeBrowserScreenshotCopy(shot.data, sessionId: sid)
-        XCTAssertTrue(linuxPath.hasPrefix("/var/minis/browser/screenshot_") && linuxPath.hasSuffix(".jpg"), linuxPath)
+        XCTAssertTrue(linuxPath.hasPrefix("/var/ai/browser/screenshot_") && linuxPath.hasSuffix(".jpg"), linuxPath)
         let b2 = AIChatViewModel.minisBrowserPersistentDir(for: sid).appendingPathComponent((linuxPath as NSString).lastPathComponent)
         XCTAssertEqual(try Data(contentsOf: b2), shot.data)
         let ref = await AIChatViewModel.saveBrowserSnapshotMedia(imageData: shot.data, sessionId: sid, linuxPath: linuxPath)
@@ -252,7 +252,7 @@ final class ImageRealIosBTests: XCTestCase {
 
         // R1: a copy of the ORIGINAL file under images/.
         let ref = await AIChatViewModel.saveReadImageSnapshotMedia(imagePath: file.path, imageData: page, sessionId: sid,
-                                                                   linuxPath: "/var/minis/attachments/uploads/page.jpg")
+                                                                   linuxPath: "/var/ai/attachments/uploads/page.jpg")
         XCTAssertEqual(ref.relativePath.split(separator: "/").dropFirst().first, "images")
         let r1URL = await store.mediaFileURL(for: ref)
         XCTAssertEqual(try Data(contentsOf: r1URL), page)

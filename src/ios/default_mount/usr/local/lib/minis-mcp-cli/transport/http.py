@@ -83,7 +83,7 @@ def _parse_response(resp):
 # the Keychain-backed credentials). The native side materializes a token
 # bridge file the guest can read:
 #
-#     /var/minis/mcp-servers/oauth/<server>.json
+#     /var/ai/mcp-servers/oauth/<server>.json
 #     { "access_token": "...", "expires_at": 1789999999,
 #       "refresh_token": "...", "token_endpoint": "https://...",
 #       "client_id": "...", "client_secret": "..." }        # secret optional
@@ -96,7 +96,7 @@ def _parse_response(resp):
 # Settings → MCP Integrations. The bridge file lives OUTSIDE servers.json on
 # purpose: servers.json syncs across devices via iCloud, tokens must not.
 
-OAUTH_DIR = "/var/minis/mcp-servers/oauth"
+OAUTH_DIR = "/var/ai/mcp-servers/oauth"
 
 
 def _oauth_token_path(server_name):
@@ -120,7 +120,7 @@ def _load_oauth_tokens(server_name):
     collapsing them is what made the bug invisible:
 
       * FileNotFoundError - genuinely not authorized yet, or the host wrote into
-        an App Group this sandbox cannot see because /var/minis/mcp-servers is a
+        an App Group this sandbox cannot see because /var/ai/mcp-servers is a
         local placeholder directory shadowing the symlink. Identical from here,
         so the absolute path is logged: an empty real directory at that path is
         the tell.

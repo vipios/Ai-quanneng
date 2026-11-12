@@ -140,9 +140,9 @@ final class ImageCtxIosEXCTests: XCTestCase {
 
     func testC04_cameraPhotoSameBytesLiveAndAfterRestart() async throws {
         let inline = AIChatViewModel.inlineAttachmentImage(jpeg(4032, 3024), ext: "jpg", route: .send)
-        let history = withIds([AgentMessage(role: .user, parts: [.text("[attached image: /var/minis/attachments/uploads/IMG.jpg]"),
+        let history = withIds([AgentMessage(role: .user, parts: [.text("[attached image: /var/ai/attachments/uploads/IMG.jpg]"),
                                                                  .imageData(data: inline.final, mimeType: inline.mimeType,
-                                                                            linuxPath: "/var/minis/attachments/uploads/IMG.jpg")])])
+                                                                            linuxPath: "/var/ai/attachments/uploads/IMG.jpg")])])
         let live = RequestContextBuilder.build(input(history)).messages
         let restarted = RequestContextBuilder.build(input(try await persistAndReload(history))).messages
         XCTAssertEqual(images(live).count, 1)
@@ -203,7 +203,7 @@ final class ImageCtxIosEXCTests: XCTestCase {
     func testC24_budgetDropsOnlyThePlannedImage() throws {
         let imgs = (0..<6).map { jpeg(600 + $0, 600, seed: UInt64($0)) }
         let history = withIds(imgs.enumerated().map { i, d in
-            AgentMessage(role: .user, parts: [.imageData(data: d, mimeType: "image/jpeg", linuxPath: "/var/minis/attachments/uploads/n\(i).jpg")])
+            AgentMessage(role: .user, parts: [.imageData(data: d, mimeType: "image/jpeg", linuxPath: "/var/ai/attachments/uploads/n\(i).jpg")])
         })
         let largest = imgs.map { AIChatViewModel.estimatedBase64Length($0.count) }.max()!
         let budget = imgs.map { AIChatViewModel.estimatedBase64Length($0.count) }.reduce(0, +) - largest / 2
@@ -213,7 +213,7 @@ final class ImageCtxIosEXCTests: XCTestCase {
         XCTAssertEqual(images(out.messages).count, 5, "only the planned image is dropped")
         let placeholders = texts(out.messages).filter { $0.contains("Original at ") }
         XCTAssertEqual(placeholders.count, 1)
-        XCTAssertTrue(placeholders.first?.contains("Original at /var/minis/attachments/uploads/n0.jpg ") == true,
+        XCTAssertTrue(placeholders.first?.contains("Original at /var/ai/attachments/uploads/n0.jpg ") == true,
                       "the placeholder names the dropped (oldest) image's own file")
     }
 
@@ -221,7 +221,7 @@ final class ImageCtxIosEXCTests: XCTestCase {
 
     func testC30_missingMediaIsDroppedSilently_today() async throws {
         let history = withIds([AgentMessage(role: .user, parts: [.text("look"), .imageData(data: jpeg(800, 600), mimeType: "image/jpeg",
-                                                                                         linuxPath: "/var/minis/attachments/uploads/p.jpg")])])
+                                                                                         linuxPath: "/var/ai/attachments/uploads/p.jpg")])])
         var rows: [AgentMessage] = []
         let parts = await AIChatViewModel.storedParts(for: history[0], sessionId: sid, store: store)
         for case .mediaRef(let ref) in parts { try FileManager.default.removeItem(at: await store.mediaFileURL(for: ref)) }

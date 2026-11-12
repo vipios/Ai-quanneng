@@ -40,7 +40,7 @@ extension AIChatViewModel {
 
                     // Install per-session path-translate hook. Must run
                     // before any session task is spawned so the first
-                    // /var/minis/* access already routes correctly.
+                    // /var/ai/* access already routes correctly.
                     MinisFsRouter.shared.installHook()
                 }
                 RootfsManager.shared.applyDefaultMountOverlay()
@@ -126,29 +126,29 @@ extension AIChatViewModel {
         logger.info("Withdrew queued message, queue size=\(self.promptQueue.count)")
     }
 
-    // MARK: - /var/minis/ Shared Directory
+    // MARK: - /var/ai/ Shared Directory
     //
     // Unified bidirectional file area between iOS and iSH:
-    //   /var/minis/attachments/  — screenshots, images, media
-    //   /var/minis/offloads/     — large tool outputs (migrated from /var/offloads/)
-    //   /var/minis/workspace/    — general session working area
+    //   /var/ai/attachments/  — screenshots, images, media
+    //   /var/ai/offloads/     — large tool outputs (migrated from /var/offloads/)
+    //   /var/ai/workspace/    — general session working area
     //
     // Persistent storage: Library/MinisChat/minis/<sessionId>/{attachments,offloads,workspace}/
-    // iSH-visible path:   /var/minis/{attachments,offloads,workspace}/  (session-unaware)
+    // iSH-visible path:   /var/ai/{attachments,offloads,workspace}/  (session-unaware)
     //
     // On session load/switch, the current session's files are synced into the
-    // iSH-visible directory so the model and shell commands always see /var/minis/.
+    // iSH-visible directory so the model and shell commands always see /var/ai/.
 
-    nonisolated static let minisLinuxBaseDir = "/var/minis"
-    nonisolated static let minisAttachmentsLinuxDir = "/var/minis/attachments"
-    nonisolated static let minisOffloadsLinuxDir = "/var/minis/offloads"
-    nonisolated static let minisWorkspaceLinuxDir = "/var/minis/workspace"
-    nonisolated static let minisBrowserLinuxDir = "/var/minis/browser"
-    nonisolated static let minisMemoryLinuxDir = "/var/minis/memory"
-    nonisolated static let minisSkillsLinuxDir = "/var/minis/skills"
-    nonisolated static let minisSharedLinuxDir = "/var/minis/shared"
-    nonisolated static let minisMcpServersLinuxDir = "/var/minis/mcp-servers"
-    nonisolated static let minisMountsLinuxDir = "/var/minis/mounts"
+    nonisolated static let minisLinuxBaseDir = "/var/ai"
+    nonisolated static let minisAttachmentsLinuxDir = "/var/ai/attachments"
+    nonisolated static let minisOffloadsLinuxDir = "/var/ai/offloads"
+    nonisolated static let minisWorkspaceLinuxDir = "/var/ai/workspace"
+    nonisolated static let minisBrowserLinuxDir = "/var/ai/browser"
+    nonisolated static let minisMemoryLinuxDir = "/var/ai/memory"
+    nonisolated static let minisSkillsLinuxDir = "/var/ai/skills"
+    nonisolated static let minisSharedLinuxDir = "/var/ai/shared"
+    nonisolated static let minisMcpServersLinuxDir = "/var/ai/mcp-servers"
+    nonisolated static let minisMountsLinuxDir = "/var/ai/mounts"
 
     /// iOS persistent base for all minis data (Library/MinisChat/minis/).
     nonisolated static var minisPersistentBase: URL {

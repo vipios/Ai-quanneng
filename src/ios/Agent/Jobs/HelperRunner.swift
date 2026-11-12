@@ -250,7 +250,7 @@ extension AIChatViewModel {
     /// True for a helper (child) vm.
     var isHelper: Bool { helperConfig != nil }
 
-    /// [T-p2-shared-workspace] The session whose `/var/minis` bucket this vm's
+    /// [T-p2-shared-workspace] The session whose `/var/ai` bucket this vm's
     /// shell and file tools operate in. A helper works in its PARENT's
     /// workspace — it shares the
     /// parent's files — so what it writes is what the parent (and the user)
@@ -979,7 +979,7 @@ extension AIChatViewModel {
         JobInsuranceNotification.schedule(
             jobId: job.id,
             at: startedAt.addingTimeInterval(TimeInterval(minutes * 60 + 60)),
-            title: AppLocalized("Minis agent"),
+            title: AppLocalized("全能AI agent"),
             body: String(format: AppLocalized("The agent \"%@\" may have finished or been interrupted. Open to check."), title),
             userInfo: ["sessionId": job.target.parentSessionId ?? "", "childSessionId": childId, "helperJobId": job.id])
 

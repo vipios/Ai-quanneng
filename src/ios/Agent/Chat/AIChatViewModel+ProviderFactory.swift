@@ -94,6 +94,15 @@ extension AIChatViewModel {
             logger.error("No ProviderInstance found for entry \(entry.id)")
             return AnthropicAgentProvider(provider: AnthropicProvider(apiKey: "", model: entry.model))
         }
+        // [R45-直连/在外模型] 中转站按线路覆盖模型（与 LLMProviderFactory.makeProvider
+        // 同一套逻辑）。发消息走的是这里，所以这里也必须覆盖 —— 否则只在
+        // 标题生成等旁路生效、真正的聊天请求不生效。
+        let effectiveModel: LLMModel
+        if let overrideId = RelayProfileStore.shared.overrideModelId(for: entry.providerInstanceId) {
+            effectiveModel = entry.model.withId(overrideId)
+        } else {
+            effectiveModel = entry.model
+        }
         // [T-model-custom-params] / [T-opencode-dedicated-channel] One seam for
         // every OpenAI-family branch below: the dedicated OpenCode channel,
         // then this entry's user overrides (temperature / top_p / custom
@@ -110,21 +119,21 @@ extension AIChatViewModel {
         }
         switch instance.providerType {
         case .anthropic:
-            return AnthropicAgentProvider(provider: LLMProviderFactory.makeAnthropicProvider(instance: instance, model: entry.model))
+            return AnthropicAgentProvider(provider: LLMProviderFactory.makeAnthropicProvider(instance: instance, model: effectiveModel))
         case .gemini:
-            return GeminiAgentProvider(provider: await LLMProviderFactory.makeGeminiProvider(instance: instance, model: entry.model))
+            return GeminiAgentProvider(provider: await LLMProviderFactory.makeGeminiProvider(instance: instance, model: effectiveModel))
         case .openAI:
-            return OpenAIAgentProvider(provider: wrap(LLMProviderFactory.makeOpenAIProvider(instance: instance, model: entry.model)))
+            return OpenAIAgentProvider(provider: wrap(LLMProviderFactory.makeOpenAIProvider(instance: instance, model: effectiveModel)))
         case .antigravity:
-            return AntigravityAgentProvider(provider: await LLMProviderFactory.makeAntigravityProvider(instance: instance, model: entry.model))
+            return AntigravityAgentProvider(provider: await LLMProviderFactory.makeAntigravityProvider(instance: instance, model: effectiveModel))
         case .openRouter:
-            return OpenAIAgentProvider(provider: wrap(LLMProviderFactory.makeOpenRouterProvider(instance: instance, model: entry.model)))
+            return OpenAIAgentProvider(provider: wrap(LLMProviderFactory.makeOpenRouterProvider(instance: instance, model: effectiveModel)))
         case .openAIResponses:
-            return OpenAIAgentProvider(provider: wrap(LLMProviderFactory.makeOpenAIResponsesProvider(instance: instance, model: entry.model)))
+            return OpenAIAgentProvider(provider: wrap(LLMProviderFactory.makeOpenAIResponsesProvider(instance: instance, model: effectiveModel)))
         case .xAI:
-            return OpenAIAgentProvider(provider: wrap(LLMProviderFactory.makeXAIProvider(instance: instance, model: entry.model)))
+            return OpenAIAgentProvider(provider: wrap(LLMProviderFactory.makeXAIProvider(instance: instance, model: effectiveModel)))
         case .kimiCode:
-            return OpenAIAgentProvider(provider: wrap(LLMProviderFactory.makeKimiProvider(instance: instance, model: entry.model)))
+            return OpenAIAgentProvider(provider: wrap(LLMProviderFactory.makeKimiProvider(instance: instance, model: effectiveModel)))
         case .githubCopilot:
             // [T-copilot-no-chat-warning] No warning in the chat.
             //
@@ -136,10 +145,10 @@ extension AIChatViewModel {
             // adds nothing the user has not already agreed to, and puts a
             // warning in the one place they cannot do anything about it.
             return OpenAIAgentProvider(
-                provider: LLMProviderFactory.makeCopilotProvider(instance: instance, model: entry.model))
+                provider: LLMProviderFactory.makeCopilotProvider(instance: instance, model: effectiveModel))
         case .unsupported:
             logger.error("\(instance.providerType) has no agent provider; returning placeholder")
-            return AnthropicAgentProvider(provider: AnthropicProvider(apiKey: "", model: entry.model))
+            return AnthropicAgentProvider(provider: AnthropicProvider(apiKey: "", model: effectiveModel))
         }
     }
 

@@ -2191,7 +2191,7 @@ final class DebugJSONRPC: @unchecked Sendable {
         let stdinScript = params["stdinScript"] as? Bool ?? false
         let env = params["env"] as? [String: String]
         // Optional sessionId to stamp the shell's task group with the matching
-        // fs_context, so /var/minis/{offloads,attachments,workspace,browser}
+        // fs_context, so /var/ai/{offloads,attachments,workspace,browser}
         // route to that session's bucket. Omit (or pass nil) for the default
         // global view (fs_context = 0).
         let sessionId = params["sessionId"] as? String

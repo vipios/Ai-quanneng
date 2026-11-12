@@ -209,9 +209,9 @@ do {
     // 4 MB raw each → 5.33 MB base64, clamped to the 5 MB per-image cap;
     // 8 images = 40 MB > 25 MB. Budget fits exactly 5 (5 × 5 MB <= 25 MB).
     var imgs: [BudgetImage] = []
-    for i in 1...6 { imgs.append(BudgetImage(rawBytes: 4 * MB, linuxPath: "/var/minis/browser/s/shot_\(i).jpg", tag: "hist\(i)")) }
-    imgs.append(BudgetImage(rawBytes: 4 * MB, linuxPath: "/var/minis/attachments/uploads/a.jpg", tag: "turnA"))
-    imgs.append(BudgetImage(rawBytes: 4 * MB, linuxPath: "/var/minis/attachments/uploads/b.jpg", tag: "turnB"))
+    for i in 1...6 { imgs.append(BudgetImage(rawBytes: 4 * MB, linuxPath: "/var/ai/browser/s/shot_\(i).jpg", tag: "hist\(i)")) }
+    imgs.append(BudgetImage(rawBytes: 4 * MB, linuxPath: "/var/ai/attachments/uploads/a.jpg", tag: "turnA"))
+    imgs.append(BudgetImage(rawBytes: 4 * MB, linuxPath: "/var/ai/attachments/uploads/b.jpg", tag: "turnB"))
     let plan = planRequestBudget(imgs)
     let dropped = plan.droppedIdx.sorted().map { imgs[$0].tag }
     checkEq("dropped = the three oldest history images", dropped, ["hist1", "hist2", "hist3"])
@@ -263,7 +263,7 @@ checkEq("text/plain user .txt upload → NOT inlined as text (name gate)", hydra
 checkEq("pasted text ref → .text", hydrate(MediaRef(mimeType: "text/plain", originalFileName: "Pasted#3.txt")), .text)
 // The elision placeholder is a fixed short sentence, never the bytes.
 let oneMB = Data(repeating: 0xAB, count: 1 * MB)
-let ph = elidedImagePlaceholder(linuxPath: "/var/minis/attachments/uploads/big.jpg")
+let ph = elidedImagePlaceholder(linuxPath: "/var/ai/attachments/uploads/big.jpg")
 check("elision placeholder is short (no payload)", ph.utf8.count < 300)
 check("…and contains no base64 of the image", !ph.contains(oneMB.prefix(64).base64EncodedString()))
 let cs = chatStoreSource()

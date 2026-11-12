@@ -45,10 +45,10 @@ checkEq("empty index → no ids", restoredSkillIds([]), Set<String>())
 print("\n▶️  linux paths for a restored tree")
 let entries = linuxEntries(hostRoot: "/host/skills/a1",
                            relative: [("scripts", true), ("scripts/run.sh", false)],
-                           prefix: "/var/minis/skills/a1")
-checkEq("dir itself first", entries[0].0, "/var/minis/skills/a1")
+                           prefix: "/var/ai/skills/a1")
+checkEq("dir itself first", entries[0].0, "/var/ai/skills/a1")
 check("dir itself is a directory", entries[0].1)
-checkEq("nested script path", entries[2].0, "/var/minis/skills/a1/scripts/run.sh")
+checkEq("nested script path", entries[2].0, "/var/ai/skills/a1/scripts/run.sh")
 check("script is a file", !entries[2].1)
 
 // MARK: - Source invariants
@@ -81,7 +81,7 @@ check("Shared Files keeps its no-meta.db policy",
       importer.contains("// Per §3.2 no meta.db write is needed"))
 
 check("writeSkillFile registers the non-SKILL.md path",
-      store.contains("let linuxPath = \"/var/minis/skills/\\(skillId)/\\(relativePath)\"\n            ensureParentDirsInMetaDB(for: linuxPath)\n            ensureFakefsMetadata(for: linuxPath, isDirectory: false)\n\n            // Update skill's updatedAt"))
+      store.contains("let linuxPath = \"/var/ai/skills/\\(skillId)/\\(relativePath)\"\n            ensureParentDirsInMetaDB(for: linuxPath)\n            ensureFakefsMetadata(for: linuxPath, isDirectory: false)\n\n            // Update skill's updatedAt"))
 check("writeSkillFile still routes SKILL.md through updateSkillContent",
       store.contains("if relativePath == \"SKILL.md\" {\n            try updateSkillContent(skillId, newContent: content)"))
 

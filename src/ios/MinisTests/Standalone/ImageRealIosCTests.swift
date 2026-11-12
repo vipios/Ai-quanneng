@@ -294,7 +294,7 @@ check("a user message: note text + one image", str("p4.role") == "user" && int("
 check("the image is the gate's output, 2000x1333 image/jpeg (was the 9000x6000 screenshot)",
       !bool("p4.liveIsSource") && bool("p4.liveIsGated") && dims("p4.live") == "2000x1333" && str("p4.live.mime") == "image/jpeg")
 check("written to browser/takeover_<timestamp>.jpg and pointed at by its linuxPath",
-      bool("p4.fileWritten") && str("p4.linuxPath") == "/var/minis/browser/takeover_1791000000.jpg")
+      bool("p4.fileWritten") && str("p4.linuxPath") == "/var/ai/browser/takeover_1791000000.jpg")
 check("not saved through the media store (so not in the stored history)", bool("p4.noMediaStoreWrite"))
 // [T-image-gate] Was: the request budget passed it through at 9000x6000.
 check("the request stage sends it unchanged (already compliant)", bool("p4.budgetUnchanged") && dims("p4.request") == "2000x1333")
@@ -311,7 +311,7 @@ check("6 images of 4 MB (5 MB base64 each) over the 25 MB budget: the oldest one
       int("budget.dropped") == 1 && int("budget.total") == 6)
 let outTexts = strs("budget.out.texts")
 check("an elided image without a linuxPath is spilled and the placeholder points at the spill file",
-      outTexts.contains { $0.hasPrefix("[image elided to fit 25MB request budget. Original at /var/minis/attachments/spillover/") && $0.contains(".jpg") })
+      outTexts.contains { $0.hasPrefix("[image elided to fit 25MB request budget. Original at /var/ai/attachments/spillover/") && $0.contains(".jpg") })
 check("no image is resized: whatever is not elided keeps its exact bytes", bool("budget.keptBytesUnchanged"))
 // [T-budget-position-ids] Was KNOWN GAP: the rewrite matched parts by
 // ObjectIdentifier(data as AnyObject) - a temporary box whose address is
@@ -322,7 +322,7 @@ print("     (observed: \(placeholders) of 6 images elided, \(strs("budget.out.im
 check("only the image the plan dropped is elided; the other 5 are still sent",
       placeholders == 1 && strs("budget.out.images").count == 5)
 check("an elided image that has a linuxPath is pointed at that path, not at a spill file",
-      outTexts.contains { $0.contains("Original at /var/minis/attachments/uploads/b.png") } || placeholders <= 1)
+      outTexts.contains { $0.contains("Original at /var/ai/attachments/uploads/b.png") } || placeholders <= 1)
 
 // MARK: - Missing media
 
@@ -337,7 +337,7 @@ print("Persist -> reload round trip (user images)")
 for name in ["jpeg", "heicAsJpeg", "png", "gifLabelOnJpeg"] {
     check("\(name): written under attachments/, read back byte-identical with the same MIME and linuxPath",
           str("rt.\(name).subdir") == "attachments" && bool("rt.\(name).bytesEqual") && bool("rt.\(name).mimeEqual")
-          && str("rt.\(name).linuxPath") == "/var/minis/attachments/uploads/\(name)")
+          && str("rt.\(name).linuxPath") == "/var/ai/attachments/uploads/\(name)")
 }
 check("file extension follows the stored MIME: jpg / jpg / png / gif",
       str("rt.jpeg.relativePath.ext") == "jpg" && str("rt.heicAsJpeg.relativePath.ext") == "jpg"

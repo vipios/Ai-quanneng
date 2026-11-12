@@ -1086,7 +1086,7 @@ enum ContextTrimPlanner {
         let shown = lines.suffix(indexMaxLines)
         let hidden = lines.count - shown.count
         var s = "\(AIChatViewModel.offloadedStubEnvelope)\n"
-        s += "[Minis context] \(collapsed.count) earlier step(s) of this task were collapsed to save context. "
+        s += "[全能AI context] \(collapsed.count) earlier step(s) of this task were collapsed to save context. "
         s += "Their full records stay in the chat history; large outputs are on disk at the paths shown. "
         s += "Do not redo a step listed as ok - read its output path if you need the details.\n"
         s += "Tool calls collapsed: \(counts.map { "\($0.name) \($0.count)" }.joined(separator: ", "))\n"

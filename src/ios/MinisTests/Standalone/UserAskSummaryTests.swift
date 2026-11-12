@@ -66,7 +66,7 @@ R("q_count", qs.count)
 R("topic_header", UserAskSummary.topic(qs[0]))
 R("topic_question", UserAskSummary.topic(qs[1]))
 R("topic_sheet", UserAskSummary.topic(qs[1], limit: UserAskSummary.sheetTopicLimit))
-R("topic_command", UserAskSummary.topic(questions(#"{"questions":[{"type":"confirm","question":"rm -rf /var/minis/workspace/build-cache/"}]}"#)[0]))
+R("topic_command", UserAskSummary.topic(questions(#"{"questions":[{"type":"confirm","question":"rm -rf /var/ai/workspace/build-cache/"}]}"#)[0]))
 
 R("pending", rows(UserAskSummary.pendingRows(qs)))
 R("answered", rows(UserAskSummary.resolvedRows(qs, results: [(.answered, ["3 个"]), (.answered, ["5 min", "10 min"]), (.approved, [])])))

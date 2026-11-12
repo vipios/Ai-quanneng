@@ -642,7 +642,7 @@ actor BackupExporter {
 
     // MARK: - Shared files
 
-    /// §3.2 — the cross-session `/var/minis/shared` bucket. Host-side this is
+    /// §3.2 — the cross-session `/var/ai/shared` bucket. Host-side this is
     /// the App Group directory, NOT anything inside the rootfs.
     private func exportSharedFiles(trees: BackupFileTreeExporter) throws
         -> BackupManifest.CategoryStat {

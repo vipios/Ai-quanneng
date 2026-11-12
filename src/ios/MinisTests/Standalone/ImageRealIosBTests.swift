@@ -271,7 +271,7 @@ check("P-i9 screenshotImageLine reports UIImage.size (points): \(str("s1.metaLin
 // (2760x21891 / 9000x6000 on every non-Anthropic serializer) - the five
 // KNOWN GAPs below are now checks.
 check("P-i1 browserUseInferenceImage: live \(dims("s1.live"))", dims("s1.live").hasPrefix("252x2000/") && str("s1.live.mime") == "image/jpeg")
-check("B2 writeBrowserScreenshotCopy writes the ORIGINAL at \(str("s1.b2.linuxPath"))", bool("s1.b2.isOriginal") && str("s1.b2.linuxPath") == "/var/minis/browser/screenshot_<s>.jpg")
+check("B2 writeBrowserScreenshotCopy writes the ORIGINAL at \(str("s1.b2.linuxPath"))", bool("s1.b2.isOriginal") && str("s1.b2.linuxPath") == "/var/ai/browser/screenshot_<s>.jpg")
 check("P-i1 saveBrowserSnapshotMedia persists the model image (\(dims("s1.persisted")), \(str("s1.persisted.subdir"))/, \(str("s1.persisted.name")))",
       dims("s1.persisted") == dims("s1.live") && str("s1.persisted.subdir") == "browser" && str("s1.persisted.name") == "browser_snapshot.jpg")
 check("S7 reload keeps the tool image - the live bytes (\(dims("s1.rebuilt")))", dims("s1.rebuilt") == dims("s1.live"))

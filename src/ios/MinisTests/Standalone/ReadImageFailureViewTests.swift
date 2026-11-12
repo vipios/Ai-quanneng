@@ -1,7 +1,7 @@
 #!/usr/bin/env swift
 // [T-batch-read-after-write] [T-readimage-fail-visible] read_image failed on
 // device (2026-10-06 13:32:04, q-1.png, 0.0s) and the detail sheet showed only
-// "Reading image /var/minis/workspace/tool_guide/q-1.png..." in bare text.
+// "Reading image /var/ai/workspace/tool_guide/q-1.png..." in bare text.
 //   - Cause: the model sent `shell_execute` (renders q-1.png) and
 //     `read_image q-1.png` in ONE batch; every call of a batch started at
 //     once, so the read ran 15 ms in, before the file existed.
@@ -70,9 +70,9 @@ print("@@writerIsNotReader=" + w(1, ["shell_execute", "shell_execute"]))
 print("@@readersOnly=" + w(1, ["read_image", "read_image"]))
 print("@@browserNotWriter=" + w(1, ["browser_use", "read_image"]))
 print("@@outOfRange=" + w(5, ["read_image"]))
-print("@@missing=" + AIChatViewModel.readImageFailureText(pathArg: "/var/minis/workspace/q.png", resolved: true, fileSize: nil))
-print("@@empty=" + AIChatViewModel.readImageFailureText(pathArg: "/var/minis/workspace/q.png", resolved: true, fileSize: 0))
-print("@@undecodable=" + AIChatViewModel.readImageFailureText(pathArg: "/var/minis/workspace/q.png", resolved: true, fileSize: 1234))
+print("@@missing=" + AIChatViewModel.readImageFailureText(pathArg: "/var/ai/workspace/q.png", resolved: true, fileSize: nil))
+print("@@empty=" + AIChatViewModel.readImageFailureText(pathArg: "/var/ai/workspace/q.png", resolved: true, fileSize: 0))
+print("@@undecodable=" + AIChatViewModel.readImageFailureText(pathArg: "/var/ai/workspace/q.png", resolved: true, fileSize: 1234))
 print("@@unresolved=" + AIChatViewModel.readImageFailureText(pathArg: "q.png", resolved: false, fileSize: nil))
 """
 let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("readimg_\(getpid())")
@@ -95,10 +95,10 @@ check("readers never wait for readers", got["readersOnly"] == "")
 check("browser_use is not a writer", got["browserNotWriter"] == "")
 check("out-of-range index is safe", got["outOfRange"] == "")
 check("missing file: says so, and how to fix it",
-      got["missing"] == "Error: No file at '/var/minis/workspace/q.png'. If a command in this same turn creates it, read it in the next turn after that command has finished.")
+      got["missing"] == "Error: No file at '/var/ai/workspace/q.png'. If a command in this same turn creates it, read it in the next turn after that command has finished.")
 check("empty file: says it may still be written", got["empty"]?.contains("exists but is empty (0 bytes)") == true)
 check("undecodable file: says it exists, its size, the formats", got["undecodable"]?.contains("exists (1234 bytes) but is not a decodable image") == true)
-check("unresolvable path: points at /var/minis/", got["unresolved"]?.contains("not a readable Minis path") == true)
+check("unresolvable path: points at /var/ai/", got["unresolved"]?.contains("not a readable Minis path") == true)
 try? FileManager.default.removeItem(at: tmp)
 
 print("[3] Wiring")

@@ -222,7 +222,7 @@ struct MountDetailView: View {
         } header: {
             Text("Name")
         } footer: {
-            Text("Becomes the folder name under /var/minis/mounts/")
+            Text("Becomes the folder name under /var/ai/mounts/")
         }
     }
 
@@ -251,7 +251,7 @@ struct MountDetailView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Show in Files app")
                     Text(visibleInFiles
-                         ? AppLocalized("This folder appears in Files → On My iPhone → Minis.")
+                         ? AppLocalized("This folder appears in Files → On My iPhone → 全能AI.")
                          : AppLocalized("This folder is hidden from the iOS Files app."))
                         .font(.caption)
                         .foregroundStyle(.secondary)

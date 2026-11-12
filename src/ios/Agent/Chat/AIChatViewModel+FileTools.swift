@@ -58,7 +58,7 @@ extension AIChatViewModel {
         )
     }
 
-    /// Snapshot all files under /var/minis/ with their modification dates.
+    /// Snapshot all files under /var/ai/ with their modification dates.
     func snapshotMinisFiles() -> [String: Date] {
         let fm = FileManager.default
         guard let hostBase = resolveHostPath(Self.minisLinuxBaseDir) else { return [:] }
@@ -126,9 +126,9 @@ extension AIChatViewModel {
             ?? candidates.first
     }
 
-    /// Convert a Linux path under /var/minis/ to a minis:// URL, or nil if not under /var/minis/.
+    /// Convert a Linux path under /var/ai/ to a minis:// URL, or nil if not under /var/ai/.
     func linuxPathToMinisURL(_ path: String) -> String? {
-        let prefix = "/var/minis/"
+        let prefix = "/var/ai/"
         guard path.hasPrefix(prefix) else { return nil }
         let rest = String(path.dropFirst(prefix.count))  // "attachments/foo.png"
         guard let slashIdx = rest.firstIndex(of: "/") else { return nil }
@@ -139,11 +139,11 @@ extension AIChatViewModel {
     }
 
     /// Resolve a Linux path for direct file reads (read_image, file_read, file_write).
-    /// For /var/minis/ paths, queries ISHExecutionCoordinator's active bind mount table
+    /// For /var/ai/ paths, queries ISHExecutionCoordinator's active bind mount table
     /// to get the actual host URL, avoiding races when mounts switch between concurrent sessions.
-    /// Falls back to resolveHostPath for non-/var/minis/ paths (e.g. /tmp, /root).
+    /// Falls back to resolveHostPath for non-/var/ai/ paths (e.g. /tmp, /root).
     func resolvePathForDirectRead(_ linuxPath: String) async -> URL? {
-        if linuxPath.hasPrefix("/var/minis/") || linuxPath == "/var/minis" {
+        if linuxPath.hasPrefix("/var/ai/") || linuxPath == "/var/ai" {
             if let resolved = await ISHExecutionCoordinator.shared.hostURL(for: linuxPath) {
                 let exists = FileManager.default.fileExists(atPath: resolved.path)
                 logger.notice("📂[RESOLVE] \(linuxPath) → \(resolved.path) exists=\(exists) sid=\(self.sessionId ?? "nil")")
@@ -170,14 +170,14 @@ extension AIChatViewModel {
         return fallback
     }
 
-    /// Resolve a minis:// URL or /var/minis/ Linux path for direct reads.
+    /// Resolve a minis:// URL or /var/ai/ Linux path for direct reads.
     /// Unifies both URL schemes into a single async resolution path.
     func resolveMinisPath(_ pathOrURL: String) async -> URL? {
         if pathOrURL.hasPrefix("minis://") {
             // Convert minis:// URL to Linux path, then resolve via mount table
             guard let url = URL(string: pathOrURL), let host = url.host else { return nil }
             let subPath = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
-            let linuxPath = "/var/minis/\(host)" + (subPath.isEmpty ? "" : "/\(subPath)")
+            let linuxPath = "/var/ai/\(host)" + (subPath.isEmpty ? "" : "/\(subPath)")
             return await resolvePathForDirectRead(linuxPath)
         }
         return await resolvePathForDirectRead(pathOrURL)
@@ -456,14 +456,14 @@ extension AIChatViewModel {
             )
         }
 
-        // If the target is under /var/minis/mounts/ (user-mounted external
+        // If the target is under /var/ai/mounts/ (user-mounted external
         // folders bind-mounted by iSH), the mount table may not yet be
         // populated for this session — `performMount` only runs lazily when
         // the first shell command executes. Without this prime, `hostURL(for:)`
         // returns nil and we fall back to `resolveHostPath` which writes to
         // the fakefs data/ directory, silently diverging from the real host
         // folder. Force a mount prime here so the lookup hits the real path.
-        if path.hasPrefix("/var/minis/mounts/"), let sid = self.sessionId {
+        if path.hasPrefix("/var/ai/mounts/"), let sid = self.sessionId {
             #if DEBUG
             let beforeSnap = await ISHExecutionCoordinator.shared.debugMountSnapshot()
             print("[FileWrite] ensureMounted BEFORE sid=\(sid) mountedSid=\(beforeSnap.sessionId ?? "<nil>") mountedPaths.count=\(beforeSnap.paths.count) keys=\(Array(beforeSnap.paths.keys))")
@@ -478,13 +478,13 @@ extension AIChatViewModel {
             #endif
         } else {
             #if DEBUG
-            if path.hasPrefix("/var/minis/mounts/") {
+            if path.hasPrefix("/var/ai/mounts/") {
                 print("[FileWrite] ensureMounted SKIPPED path=\(path) — sessionId is nil")
             }
             #endif
         }
 
-        // Write-specific resolution for /var/minis/mounts/ targets:
+        // Write-specific resolution for /var/ai/mounts/ targets:
         // `resolvePathForDirectRead` gates its mount-table result on
         // `fileExists(resolved)` — fine for reads, wrong for writes because a
         // brand-new file doesn't exist yet. That gate silently falls through
@@ -498,7 +498,7 @@ extension AIChatViewModel {
         // and the file will be created at the real host path (bind-mounted
         // into iSH and visible in iOS Files).
         let hostURL: URL?
-        if path.hasPrefix("/var/minis/mounts/") {
+        if path.hasPrefix("/var/ai/mounts/") {
             let mountURL = await ISHExecutionCoordinator.shared.hostURL(for: path)
             #if DEBUG
             print("[FileWrite] hostURL(for:\(path)) → \(mountURL?.path ?? "<nil>")")
@@ -549,17 +549,17 @@ extension AIChatViewModel {
             return FileToolResult(output: "Error: Content is not valid UTF-8", success: false)
         }
 
-        // Defense-in-depth: if the Linux path is under /var/minis/mounts/ but
+        // Defense-in-depth: if the Linux path is under /var/ai/mounts/ but
         // the resolved hostURL landed anywhere other than the real external
-        // folder (the fakefs `data/var/minis/mounts/` shadow, or a per-session
+        // folder (the fakefs `data/var/ai/mounts/` shadow, or a per-session
         // `minisPersistentBase/<sid>/mounts/` fallback path), the mount-table
         // lookup missed and we'd be writing to an orphan file invisible to
         // both iSH and the real host folder. Reject rather than silently
         // "succeed".
-        if path.hasPrefix("/var/minis/mounts/") {
+        if path.hasPrefix("/var/ai/mounts/") {
             let resolvedPath = hostURL.standardizedFileURL.path
             let fakefsMountsPrefix = RootfsManager.shared.dataPath
-                .appendingPathComponent("var/minis/mounts").standardizedFileURL.path
+                .appendingPathComponent("var/ai/mounts").standardizedFileURL.path
             let sessionFallbackPrefix = Self.minisPersistentBase
                 .standardizedFileURL.path
             #if DEBUG

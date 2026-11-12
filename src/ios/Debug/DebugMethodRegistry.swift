@@ -169,10 +169,10 @@ enum DebugMethodRegistry {
                 ParamSpec(name: "timeout", type: "number", required: false, default: 60, description: "Max wait time in seconds. Clamped to [1, 600]."),
                 ParamSpec(name: "stdinScript", type: "bool", required: false, default: false, description: "When true, run /bin/sh with no argv and feed command via stdin pipe. Mirrors ISHExecutionCoordinator.runCommand path used by the LLM agent. Required for sessionId routing."),
                 ParamSpec(name: "env", type: "object", required: false, default: nil, description: "Optional map of environment overrides passed to the child process."),
-                ParamSpec(name: "sessionId", type: "string", required: false, default: nil, description: "Stamp the spawned shell's task group with this session's fs_context, so /var/minis/{offloads,attachments,workspace,browser} route to that session's host bucket. Requires stdinScript=true. Omit for the default global view (fs_context=0)."),
+                ParamSpec(name: "sessionId", type: "string", required: false, default: nil, description: "Stamp the spawned shell's task group with this session's fs_context, so /var/ai/{offloads,attachments,workspace,browser} route to that session's host bucket. Requires stdinScript=true. Omit for the default global view (fs_context=0)."),
             ],
             returns: "{exitCode, pid, error, stdout, stderr, duration, timedOut}",
-            example: ["command": "ls /var/minis/workspace", "timeout": 30, "stdinScript": true, "sessionId": "ABC123..."]
+            example: ["command": "ls /var/ai/workspace", "timeout": 30, "stdinScript": true, "sessionId": "ABC123..."]
         ),
         MethodSpec(
             name: "debug.chatSearch",
@@ -218,7 +218,7 @@ enum DebugMethodRegistry {
                 ParamSpec(name: "passphrase", type: "string", required: false, default: nil,
                           description: "Encrypt the package (minisbak-enc/1). REQUIRED when credentials are included."),
                 ParamSpec(name: "deliver", type: "boolean", required: false, default: false,
-                          description: "Move the package into Files-visible shared storage (Minis ▸ Backups), the path the Backup UI uses."),
+                          description: "Move the package into Files-visible shared storage (全能AI ▸ Backups), the path the Backup UI uses."),
             ],
             returns: "{backupId, path, bytes, durationMs, categories, skippedFiles, skippedBytes, skippedPaths}",
             example: ["keep": true]

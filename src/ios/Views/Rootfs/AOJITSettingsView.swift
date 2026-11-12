@@ -653,7 +653,7 @@ struct AOJITSettingsSection: View {
             Button("Cancel", role: .cancel) {}
         } message: { image in
             Text(image.coreRole ?? "") + Text(verbatim: "\n\n")
-                + Text("This is a core system package: if it breaks, no program in the Shell Container can start. Minis first downloads the installed build for a rollback and does a dry run, stops without changing anything if other packages would be affected, and rolls back if the install fails. Back up files you cannot lose before continuing. The next apk upgrade may replace the restored build again.")
+                + Text("This is a core system package: if it breaks, no program in the Shell Container can start. 全能AI first downloads the installed build for a rollback and does a dry run, stops without changing anything if other packages would be affected, and rolls back if the install fails. Back up files you cannot lose before continuing. The next apk upgrade may replace the restored build again.")
         }
     }
 
@@ -690,7 +690,7 @@ struct AOJITSettingsSection: View {
             }
             // Plan B only when the installed file is not in the family at all.
             if !image.restorePackages.isEmpty, case .mismatch = state {
-                Text("You can put back the build bundled with Minis.")
+                Text("You can put back the build bundled with 全能AI.")
                     .font(.caption2).foregroundStyle(.secondary)
                 Button(role: .destructive) {
                     pendingRestore = image

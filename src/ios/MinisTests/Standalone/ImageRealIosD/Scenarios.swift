@@ -22,7 +22,7 @@ func screenshotHistory(_ image: Data) -> [AgentMessage] {
      AgentMessage(role: .assistant, parts: [.toolUse(id: "toolu_1", name: "browser_use", input: ["action": "screenshot"])]),
      AgentMessage(role: .user, parts: [.toolResult(id: "toolu_1", name: "browser_use", content: "Screenshot taken", isError: false,
                                                    imageData: image, imageMimeType: "image/jpeg",
-                                                   imageLinuxPath: "/var/minis/browser/screenshot_1.jpg")]),
+                                                   imageLinuxPath: "/var/ai/browser/screenshot_1.jpg")]),
      AgentMessage(role: .user, parts: [.text("what does it say?")])]
 }
 

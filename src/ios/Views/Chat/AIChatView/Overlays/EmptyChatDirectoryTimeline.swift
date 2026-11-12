@@ -2,7 +2,7 @@
 //  EmptyChatDirectoryTimeline.swift
 //  Minis - chat page (AIChatView)
 //
-//  Onboarding shown in an empty New Chat: the /var/minis directory layout.
+//  Onboarding shown in an empty New Chat: the /var/ai directory layout.
 //
 //  Map of the AIChatView files: AIChatView/AIChatView.swift.
 //
@@ -23,11 +23,11 @@ import WebKit
 
 /// Onboarding view rendered in the center of a New Chat (no messages yet).
 /// Shows the per-session vs cross-session directory layout under
-/// `/var/minis/` as a 2-column folder grid so the user understands what's
+/// `/var/ai/` as a 2-column folder grid so the user understands what's
 /// available before typing.
 ///
 /// Source-of-truth for the descriptions: AIChatViewModel.swift system-prompt
-/// directory listing (`Shared directory /var/minis/ ...`). Keep them aligned
+/// directory listing (`Shared directory /var/ai/ ...`). Keep them aligned
 /// when either side changes.
 struct EmptyChatDirectoryTimeline: View {
     var onBrowse: () -> Void

@@ -93,7 +93,7 @@ struct FakeFS {
     /// resolver --system-file, --prompt-file and --input all go through.
     func resolveExistingInputPath(_ path: String) -> String? {
         if path.isEmpty { return nil }
-        if path.hasPrefix("/var/minis/") || path.hasPrefix("/home/") || path.hasPrefix("/tmp/") {
+        if path.hasPrefix("/var/ai/") || path.hasPrefix("/home/") || path.hasPrefix("/tmp/") {
             if let mapped = resolveHostPath(path), existing.contains(mapped) { return mapped }
         }
         if existing.contains(path) { return path }
@@ -252,7 +252,7 @@ do {
 
     // Explicit --system wins over --system-file (the file is not even resolved).
     var resolved = false
-    let both = try! resolveSystemPrompt(CLIArgs(system: "be terse", systemFile: "/var/minis/workspace/s.md"),
+    let both = try! resolveSystemPrompt(CLIArgs(system: "be terse", systemFile: "/var/ai/workspace/s.md"),
                                         files: [:], resolve: { _ in resolved = true; return nil })
     checkEq("--system wins over --system-file", both.prompt, "be terse")
     check("…and --system-file is not resolved at all", resolved, false)
@@ -269,11 +269,11 @@ do {
 print("\n[2] --system-file resolves through the same path contract as --prompt-file")
 do {
     let fs = FakeFS(existing: [
-        "/var/mobile/Containers/Data/Application/APP/Documents/alpine-rootfs/data/var/minis/workspace/x.md",
-        "/var/mobile/Containers/Data/Application/APP/Documents/alpine-rootfs/data/var/minis/workspace/p.txt",
+        "/var/mobile/Containers/Data/Application/APP/Documents/alpine-rootfs/data/var/ai/workspace/x.md",
+        "/var/mobile/Containers/Data/Application/APP/Documents/alpine-rootfs/data/var/ai/workspace/p.txt",
         "/var/mobile/Containers/Data/Application/APP/Documents/attach/host.md",
     ])
-    let sysGuest = "/var/minis/workspace/x.md", promptGuest = "/var/minis/workspace/p.txt"
+    let sysGuest = "/var/ai/workspace/x.md", promptGuest = "/var/ai/workspace/p.txt"
     let sysHost = fs.resolveExistingInputPath(sysGuest)
     let promptHost = fs.resolveExistingInputPath(promptGuest)
     check("both guest paths map under the fakefs data root",
@@ -294,15 +294,15 @@ do {
 
     // GH#108: a missing file is reported with the FULL path the caller typed.
     do {
-        _ = try resolveSystemPrompt(CLIArgs(systemFile: "/var/minis/workspace/missing/s.txt"), files: [:], resolve: fs.resolveExistingInputPath)
+        _ = try resolveSystemPrompt(CLIArgs(systemFile: "/var/ai/workspace/missing/s.txt"), files: [:], resolve: fs.resolveExistingInputPath)
         check("missing system file throws", false)
     } catch let e as CLIError {
         checkEq("missing system file names the full caller path", e,
-                .systemFileNotFound("System file not found: /var/minis/workspace/missing/s.txt"))
+                .systemFileNotFound("System file not found: /var/ai/workspace/missing/s.txt"))
     } catch { check("unexpected error type", false) }
     check("PRE-GH#108: the old branch mapped unconditionally and never checked existence",
-          fs.preFixSystemFilePath("/var/minis/workspace/missing/s.txt") != nil
-          && fs.resolveExistingInputPath("/var/minis/workspace/missing/s.txt") == nil)
+          fs.preFixSystemFilePath("/var/ai/workspace/missing/s.txt") != nil
+          && fs.resolveExistingInputPath("/var/ai/workspace/missing/s.txt") == nil)
 
     check("an empty path resolves to nothing", fs.resolveExistingInputPath("") == nil)
     check("a guest path outside the bind prefixes is tried literally only",
@@ -412,7 +412,7 @@ if [cli, bridge, oai, gem, think].contains(where: { $0.isEmpty }) {
     check("--input uses the same resolver", cli.contains("NSString *hostPath = noff_resolve_existing_input_path(inputPath);"))
     check("a missing system file names the caller's path", cli.contains("@\"System file not found: %@\", systemFile"))
     check("the resolver tries bind prefixes then the literal path",
-          cli.contains("if ([path hasPrefix:@\"/var/minis/\"] || [path hasPrefix:@\"/home/\"] || [path hasPrefix:@\"/tmp/\"]) {\n        NSString *mapped = noff_resolve_host_path(path);"))
+          cli.contains("if ([path hasPrefix:@\"/var/ai/\"] || [path hasPrefix:@\"/home/\"] || [path hasPrefix:@\"/tmp/\"]) {\n        NSString *mapped = noff_resolve_host_path(path);"))
     check("system role in input JSON is skipped by the bridge", bridge.contains("case \"system\": continue // system handled separately via --system"))
     check("the bridge parses input_audio and rejects malformed blocks",
           bridge.contains("} else if partType == \"input_audio\" {") && bridge.contains("input_audio block is malformed."))

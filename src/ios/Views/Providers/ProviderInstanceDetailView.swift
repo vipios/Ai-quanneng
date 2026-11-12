@@ -35,7 +35,9 @@ struct ProviderInstanceDetailView: View {
     @State private var manualTokenInputText = ""
     @State private var editingModelEntry: ModelEntry?
     @State private var pendingDeleteModelEntry: ModelEntry?
-    @State private var showKeyRevealed = false
+    @State private var showKeyRevealed = true   // [R52-第三方键盘] 默认明文（普通 TextField），点眼睛可切回密文
+    /// [R52-编辑中转站] 中转站实例才有的「编辑」入口弹窗。
+    @State private var showEditRelay = false
 
     private var instance: ProviderInstance? {
         store.instance(for: instanceId)
@@ -53,12 +55,27 @@ struct ProviderInstanceDetailView: View {
         .navigationTitle(instance?.label ?? "Provider")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // [R52-编辑中转站] 中转站实例显示「编辑」，点进去改地址/Key/模型。
+            if RelayProfileStore.shared.isRelay(instanceId) {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showEditRelay = true
+                    } label: {
+                        Text("编辑")
+                    }
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     showExportShare = true
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
+            }
+        }
+        .sheet(isPresented: $showEditRelay) {
+            NavigationStack {
+                AddRelayProviderView(editInstanceId: instanceId)
             }
         }
         .sheet(item: $quotaConsoleURL) { url in
@@ -722,7 +739,7 @@ struct ProviderInstanceDetailView: View {
         } header: {
             Text(AppLocalized("Custom User-Agent"))
         } footer: {
-            Text(AppLocalized("Override the User-Agent header sent to this endpoint. Leave empty to use the Minis default. Useful for relays that only accept specific clients (e.g. \"claude-cli/1.0\")."))
+            Text(AppLocalized("Override the User-Agent header sent to this endpoint. Leave empty to use the 全能AI default. Useful for relays that only accept specific clients (e.g. \"claude-cli/1.0\")."))
         }
     }
 

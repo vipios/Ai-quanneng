@@ -88,14 +88,14 @@ func runEquiv(root: URL) async {
                                            AgentMessage(role: .user, parts: [.toolResult(id: "call_1|fc_1", name: "shell", content: "a b", isError: false)]),
                                            a("done")]),
          marker(sid, anchor: "db003", firstKept: "db004")),
-        ("userAndToolImage", withIds([AgentMessage(role: .user, parts: [.text("[attached image: /var/minis/attachments/uploads/p.jpg]"),
-                                                                        .imageData(data: photo, mimeType: "image/jpeg", linuxPath: "/var/minis/attachments/uploads/p.jpg")]),
+        ("userAndToolImage", withIds([AgentMessage(role: .user, parts: [.text("[attached image: /var/ai/attachments/uploads/p.jpg]"),
+                                                                        .imageData(data: photo, mimeType: "image/jpeg", linuxPath: "/var/ai/attachments/uploads/p.jpg")]),
                                       AgentMessage(role: .assistant, parts: [.toolUse(id: "call_2|fc_2", name: "browser_use", input: ["action": "screenshot"])]),
                                       AgentMessage(role: .user, parts: [.toolResult(id: "call_2|fc_2", name: "browser_use", content: "Screenshot", isError: false,
-                                                                                    imageData: shot, imageMimeType: "image/jpeg", imageLinuxPath: "/var/minis/browser/s.jpg")]),
+                                                                                    imageData: shot, imageMimeType: "image/jpeg", imageLinuxPath: "/var/ai/browser/s.jpg")]),
                                       u("what now")]), nil),
         ("budget6x4MB", withIds(noise.enumerated().flatMap { i, d in
-            [AgentMessage(role: .user, parts: [.text("img \(i)"), .imageData(data: d, mimeType: "image/jpeg", linuxPath: i % 2 == 0 ? "/var/minis/attachments/uploads/n\(i).jpg" : nil)]), a("ok \(i)")]
+            [AgentMessage(role: .user, parts: [.text("img \(i)"), .imageData(data: d, mimeType: "image/jpeg", linuxPath: i % 2 == 0 ? "/var/ai/attachments/uploads/n\(i).jpg" : nil)]), a("ok \(i)")]
         }), nil),
     ]
     let vm = AIChatViewModel()
@@ -119,7 +119,7 @@ func runEquiv(root: URL) async {
         }
     }
     // Missing media: persist a user image, delete its file, reload, request.
-    let msg = AgentMessage(role: .user, parts: [.text("look"), .imageData(data: photo, mimeType: "image/jpeg", linuxPath: "/var/minis/attachments/uploads/p.jpg")])
+    let msg = AgentMessage(role: .user, parts: [.text("look"), .imageData(data: photo, mimeType: "image/jpeg", linuxPath: "/var/ai/attachments/uploads/p.jpg")])
     let raw = await vm.buildRawMessage(msg)!
     for case .mediaRef(let ref) in raw.parts { try? FileManager.default.removeItem(at: await ChatStore.shared.mediaFileURL(for: ref)) }
     let resolver = await ChatStore.shared.mediaFileURLResolver()

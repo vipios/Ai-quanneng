@@ -29,7 +29,7 @@ extension AIChatViewModel {
     /// re-issuing its own earlier `file_write` pasted the placeholder back in.
     ///
     /// Mirrors Android `ContextOffload.SYSTEM_NOTICE_TAG`.
-    nonisolated static let offloadedStubNoticeTag = "[Minis System Notice]"
+    nonisolated static let offloadedStubNoticeTag = "[全能AI System Notice]"
 
     /// Envelope opener for the current stub format. Kept separate from the tag
     /// so detection can require BOTH (a bare `<system-reminder>` is a legitimate
@@ -174,7 +174,7 @@ extension AIChatViewModel {
     }
 
     /// Decide whether a file path (Linux view) or minis:// URL is backed by
-    /// persistent session storage under `/var/minis/*`. Paths in those
+    /// persistent session storage under `/var/ai/*`. Paths in those
     /// locations survive shell restarts, session reloads, and cross-day
     /// reopens, so we don't need to write a snapshot copy of the bytes.
     ///
@@ -182,11 +182,11 @@ extension AIChatViewModel {
     /// volatile and must be snapshotted before the original is dropped from
     /// context.
     private static func isPersistentMinisPath(_ path: String) -> Bool {
-        // Linux view: bind-mounted persistent directories under /var/minis
-        if path.hasPrefix("/var/minis/workspace/") { return true }
-        if path.hasPrefix("/var/minis/browser/") { return true }
-        if path.hasPrefix("/var/minis/attachments/") { return true }
-        if path.hasPrefix("/var/minis/offloads/") { return true }
+        // Linux view: bind-mounted persistent directories under /var/ai
+        if path.hasPrefix("/var/ai/workspace/") { return true }
+        if path.hasPrefix("/var/ai/browser/") { return true }
+        if path.hasPrefix("/var/ai/attachments/") { return true }
+        if path.hasPrefix("/var/ai/offloads/") { return true }
         // minis:// URL view maps 1:1 to the directories above
         if path.hasPrefix("minis://workspace/") { return true }
         if path.hasPrefix("minis://browser/") { return true }
@@ -208,7 +208,7 @@ extension AIChatViewModel {
     /// a result, off the main actor.
     nonisolated static func isOffloadStorePath(_ path: String) -> Bool {
         let p = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        return p.hasPrefix("/var/minis/offloads/") || p.hasPrefix("minis://offloads/")
+        return p.hasPrefix("/var/ai/offloads/") || p.hasPrefix("minis://offloads/")
     }
 
     /// Extract the original accessible path of an image produced by a known
@@ -237,7 +237,7 @@ extension AIChatViewModel {
         }
         // browser_use (any action) appends `minis_url: minis://...` to the
         // result content when it persists a screenshot or fetched file to
-        // /var/minis/browser/. Extract that URL.
+        // /var/ai/browser/. Extract that URL.
         if toolName == "browser_use" || toolName.isEmpty {
             if let urlRange = content.range(of: #"minis://\S+"#, options: .regularExpression) {
                 return String(content[urlRange])
@@ -251,7 +251,7 @@ extension AIChatViewModel {
     /// replaced with a text placeholder.
     ///
     /// Snapshot policy: an image is **not** copied to offloads when its
-    /// original path lives under `/var/minis/*` (workspace, browser,
+    /// original path lives under `/var/ai/*` (workspace, browser,
     /// attachments, offloads) — those directories are persistent and the
     /// placeholder's path hint is enough for the model to re-fetch via
     /// `read_image`. Any other origin — volatile (`/tmp/*`), unknown, or a
@@ -317,7 +317,7 @@ extension AIChatViewModel {
                     )
 
                     // Decide whether to snapshot: only skip the copy when the
-                    // original path is under /var/minis/* (persistent).
+                    // original path is under /var/ai/* (persistent).
                     let snapshotPath: String?
                     if let op = originalPath, Self.isPersistentMinisPath(op) {
                         snapshotPath = nil
@@ -855,7 +855,7 @@ extension AIChatViewModel {
             let toolsDir = Self.minisOffloadsPersistentDir(for: sid)
                 .appendingPathComponent("tools", isDirectory: true)
             let fileCount = (try? FileManager.default.contentsOfDirectory(atPath: toolsDir.path).count) ?? 0
-            logger.info("  /var/minis/offloads/tools/ — \(fileCount) files")
+            logger.info("  /var/ai/offloads/tools/ — \(fileCount) files")
             logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         }
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - offloadStart) * 1000)
@@ -895,7 +895,7 @@ extension AIChatViewModel {
         logger.info("Migrated offloads for session \(sid) to new minis path")
     }
 
-    /// Bind-mount a session's minis directories into iSH-visible /var/minis/.
+    /// Bind-mount a session's minis directories into iSH-visible /var/ai/.
     /// Delegates to ISHExecutionCoordinator for serialized mount management.
     func mountMinis(for sid: String) {
         // Always ensure symlinks exist in data/ for the file browser,
@@ -906,7 +906,7 @@ extension AIChatViewModel {
 
     /// [T-ish-container-identity GH#99] One-shot per launch: detect an iOS
     /// data-container migration (the UUID rotates on EVERY app update /
-    /// reinstall; contents migrate). All /var/minis symlinks carry absolute
+    /// reinstall; contents migrate). All /var/ai symlinks carry absolute
     /// paths from the previous container, so right after an update — before
     /// the first session mounts and re-points them — the shell sees dangling
     /// links / empty dirs, which users read as data loss. Log the migration
@@ -931,7 +931,7 @@ extension AIChatViewModel {
     /// [T-minis-symlink-placeholder-dir issue #380] Remove a real directory that
     /// is squatting where a symlink belongs, escalating until it is gone.
     ///
-    /// `/var/minis/mcp-servers` and its siblings are symlinks into the App Group.
+    /// `/var/ai/mcp-servers` and its siblings are symlinks into the App Group.
     /// When a guest process wins the race and creates a plain directory there
     /// (the guest CLI used to `mkdir -p` it unconditionally), the host's App Group
     /// becomes unreachable from the sandbox: the app writes an OAuth bridge file
@@ -981,8 +981,8 @@ extension AIChatViewModel {
         let dataPath = RootfsManager.shared.dataPath
         Self.noteContainerMigrationIfNeeded()
 
-        // Ensure /var/minis/ exists in data/
-        let minisDataDir = dataPath.appendingPathComponent("var/minis")
+        // Ensure /var/ai/ exists in data/
+        let minisDataDir = dataPath.appendingPathComponent("var/ai")
         try? fm.createDirectory(at: minisDataDir, withIntermediateDirectories: true)
 
         let mappings: [(persistDir: URL, linuxDir: String)] = [
@@ -1088,7 +1088,7 @@ extension AIChatViewModel {
         Self.refreshMountedFolderSymlinks()
     }
 
-    /// Create/refresh `/var/minis/mounts/<name>` symlinks for every entry in
+    /// Create/refresh `/var/ai/mounts/<name>` symlinks for every entry in
     /// `MountedFoldersManager`. Removes stale symlinks whose mounts were deleted.
     ///
     /// Called from:
@@ -1146,14 +1146,14 @@ extension AIChatViewModel {
         }
     }
 
-    /// Reconcile `/var/minis/mounts/<name>` against `snapshot`. Runs entirely
+    /// Reconcile `/var/ai/mounts/<name>` against `snapshot`. Runs entirely
     /// off the main thread — see `refreshMountedFolderSymlinks` for why.
     nonisolated private static func performMountedFolderSymlinkRefresh(
         snapshot: [MountedFolderSymlinkSpec]
     ) {
         let fm = FileManager.default
         let dataPath = RootfsManager.shared.dataPath
-        let mountsDir = dataPath.appendingPathComponent("var/minis/mounts", isDirectory: true)
+        let mountsDir = dataPath.appendingPathComponent("var/ai/mounts", isDirectory: true)
         try? fm.createDirectory(at: mountsDir, withIntermediateDirectories: true)
 
         let desiredNames = Set(snapshot.map(\.name))

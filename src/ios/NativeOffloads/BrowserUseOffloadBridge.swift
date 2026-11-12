@@ -164,7 +164,7 @@ import Foundation
     /// therefore navigated each other's tabs.
     ///
     /// When `withBase64` is false (default), any captured screenshot is
-    /// persisted to that session's `/var/minis/browser/` directory and
+    /// persisted to that session's `/var/ai/browser/` directory and
     /// surfaced via `image_path` + `minis_url` instead of `image_base64`.
     /// Set `withBase64` to true only when the caller explicitly wants the
     /// raw base64 blob inline (e.g. piping to another tool).
@@ -278,7 +278,7 @@ import Foundation
         // live mount table — a concurrent UI session-switch could null that
         // out mid-flight. `minisBrowserPersistentDir` is a pure path join
         // against Library/MinisChat/minis/<sid>/browser/, which is exactly
-        // what /var/minis/browser/ bind-mounts to for that session.
+        // what /var/ai/browser/ bind-mounts to for that session.
         let browserHostDir: URL? = (sid == Self.unmountedSentinel)
             ? nil
             : AIChatViewModel.minisBrowserPersistentDir(for: sid)
@@ -300,7 +300,7 @@ import Foundation
                     logger.warning("Failed to persist screenshot to \(dest.path): \(error.localizedDescription)")
                 }
             } else {
-                logger.warning("No /var/minis/browser mount — falling back to base64-only output")
+                logger.warning("No /var/ai/browser mount — falling back to base64-only output")
             }
         }
 

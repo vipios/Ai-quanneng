@@ -18,6 +18,11 @@
 import Foundation
 import SwiftUI
 
+// [T-gh-toolchain-never-probed] 工具链探测是后台跑内核，得留日志。
+// 这个文件原来一个 logger 都没有 —— 上一版 `refreshToolchain(executor:)`
+// 静默躺着没人调，就是因为没日志也没界面反馈，谁都不知道它没跑。
+private let logger = AppLogger(category: "GitHubStore")
+
 @MainActor
 final class GitHubStore: ObservableObject {
 
@@ -84,10 +89,37 @@ final class GitHubStore: ObservableObject {
         fallbackEnabled = on
     }
 
-    /// 开关能拨上去的前提：登录 + scope 够 + 仓库配了。
-    /// 不满足时界面把开关置灰 —— 打开一个什么也做不到的开关只会让人困惑。
-    /// 置灰本身就把状态说完了，不需要再配一行小字解释。
-    var canToggleFallback: Bool { GitHubPush.shared.isReady }
+    /// 开关能拨上去的前提：登录 + scope 够。
+    ///
+    /// [T-gh-switch-deadlock] **不再要求仓库已配置**。
+    ///
+    /// 原来的判据是 `GitHubPush.shared.isReady`，而它有一条
+    /// 「repo 必须是 用户名/仓库名 两段」的前置。可是「没配仓库」恰恰是
+    /// 新用户的正常状态 —— 设计上本来就允许不填、推的时候按项目名自动建仓
+    /// （见 `ensureTarget`）。两处口径不一致，结果就是死锁：
+    ///
+    ///   想自动建仓 → 得先打开兜底开关 → 开关要求仓库已配 → 去手填仓库
+    ///   → 但页面上写着「这里可以不填」，用户不填 → 开关永远灰的，拨不动
+    ///
+    /// 用户实测就是这个现象（「最上面的开关打不开，没反应」）。
+    ///
+    /// 仓库为空时自动建仓那一步只在真的推送时才需要，跟「允不允许用云端」
+    /// 是两件事，不该拿它当前置条件。这里与工具注册、系统提示词用同一个
+    /// 判据 `GitHubPush.canUseCloud`，三处口径必须一致 —— 否则又会出现
+    /// 「开关能拨但工具不给」或反过来的错位。
+    var canToggleFallback: Bool { GitHubPush.shared.canUseCloud }
+
+    /// 开关为什么拨不动 —— 给界面显示一行原因用。
+    /// 置灰而不说原因，用户只能干瞪眼，这正是之前那个「没反应」的体感来源。
+    var fallbackBlockedReason: String? {
+        if canToggleFallback { return nil }
+        if !signedIn { return "先登录 GitHub" }
+        if let a = account {
+            let miss = a.missingScopes
+            if !miss.isEmpty { return "令牌缺权限：\(miss.joined(separator: "、"))" }
+        }
+        return "登录状态异常，退出后重新登录一次"
+    }
 
     /// 上一轮保存进 UserDefaults 的值。
     ///
@@ -125,7 +157,13 @@ final class GitHubStore: ObservableObject {
     var signedIn: Bool { account != nil && GitHubAuth.shared.hasToken }
 
     /// 三样都齐了：登录 + scope 够 + 仓库配了
-    var canUseCloudBuild: Bool { GitHubPush.shared.isReady }
+    /// 能不能把活推上云。
+    ///
+    /// [T-gh-switch-deadlock] 用 `canUseCloud`（登录 + 权限）而不是
+    /// `isReady`（额外要求仓库已配）。仓库留空时推送会自动建仓，
+    /// 这里若要求「已配」，`BuildRouter` 就会认为云端不可用，
+    /// 本机编不出来时直接报「两条路都不通」，而不是去建仓。
+    var canUseCloudBuild: Bool { GitHubPush.shared.canUseCloud }
 
     /// 界面顶部那句状态
     var statusLine: String {
@@ -350,39 +388,112 @@ final class GitHubStore: ObservableObject {
         return s.isEmpty ? "build.yml" : s
     }
 
-    // MARK: - 工具链探测
+    // MARK: - 工具链探测（自带起内核 + 挂载 + 执行）
 
     /// 探测 iSH 里的编译器。
     ///
-    /// 实际执行交给 iSH（`ISHKernel`），这里只负责状态与解析。
-    /// 传进来的 executor 由调用方提供 —— 这样这个文件不直接依赖
-    /// iSH 的 Objective-C 头，单独也能编译（测试友好）。
+    /// [T-gh-toolchain-never-probed] 这里原本有一个 `refreshToolchain(executor:)`，
+    /// 逻辑完整但**全项目零调用** —— 界面 `.onAppear` 只调了 `reloadFromDisk()`，
+    /// 于是「本机工具链」那一行永远显示「未检测」，用户看到的是一个死的
+    /// 只读行，既不知道有没有工具，也没有任何办法触发检测。
+    /// 那个函数已删除，统一走下面的 `probeToolchainIfNeeded()`。
+
+    /// 探测专用的会话 id。
     ///
-    /// ⚠️ executor 的回调声明为 `@Sendable`：它会在 iSH 的后台线程上被调，
-    ///    Swift 6 严格并发下不标就会报「捕获了非 Sendable 的 self」。
-    ///    回调体里只做一件事 —— 跳回 MainActor 更新状态。
-    func refreshToolchain(
-        executor: @escaping @Sendable (String, @escaping @Sendable (String?, Error?) -> Void) -> Void
-    ) {
+    /// 为什么不借真实会话：`ensureStaticMountsInitialized` 会按 sessionId
+    /// 铺 `/var/ai/memory`、`/var/ai/skills` 那套挂载点。拿一个真实会话的 id
+    /// 去铺，等于在设置页偷偷改了那个会话的挂载状态（`mountedSessionId`
+    /// 也会被改写成它）。探测一个字节的用户数据都不需要，用独立的 id 最干净。
+    ///
+    /// `MinisFsRouter.context(for:)` 对任何字符串都能现发一个 fs context，
+    /// 不需要预先注册，所以这里随便一个稳定值就够。
+    static let probeSessionId = "toolchain-probe"
+
+    /// 界面上那次探测的真正入口。
+    ///
+    /// 为什么不只是一个 `command -v`：iSH 不是进程起来的，
+    /// 它要先把 rootfs 装好（`installIfNeeded`）、把内核 boot 起来、
+    /// 再把会话的挂载点铺好，`execute` 才有意义。这三步只有
+    /// `ISHTerminalView.startShell` 里拼过一遍，别处没现成的入口。
+    /// 若内核没 boot 就调 `execute`，会直接抛 `kernelNotBooted`，
+    /// 探测结果变成「全 false」—— 比不检测更误导：用户会以为工具链没装。
+    ///
+    /// 所以这里按同样的顺序走一遍，只是不启动 shell、不显示终端：
+    ///   installIfNeeded → boot（若未 boot）→ mountForSession → execute
+    ///
+    /// - Parameters:
+    ///   - sessionId: 借用哪个会话的挂载上下文。默认用探测专用 id（见
+    ///                `probeSessionId`），不会碰任何真实会话。
+    ///   - force: true 时忽略「刚探测过」，用于用户手动重试。
+    func probeToolchainIfNeeded(sessionId: String = GitHubStore.probeSessionId,
+                                force: Bool = false) {
         guard !probingToolchain else { return }
+        // 已经探测过且不算太旧（5 分钟）就不再折腾内核。
+        // 手工点重试时传 force = true 绕过。
+        if !force, let tc = toolchain, Date().timeIntervalSince(tc.checkedAt) < 300 {
+            return
+        }
         probingToolchain = true
-        executor(LocalToolchainProbe.probeScript) { output, _ in
-            // 只把值传进去，不捕获取 self —— 保证 Sendable
-            let parsed = output.map { LocalToolchainProbe.parse($0) }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.probingToolchain = false
-                if let tc = parsed {
-                    self.toolchain = tc
-                } else {
-                    // 探测本身失败：iSH 起不来 / 命令超时。
-                    // 给一个全 false 的结果，比留 nil 更好 ——
-                    // 界面能显示「没检测到工具」，而不是一直转圈。
-                    var tc = LocalToolchain()
-                    tc.checkedAt = Date()
-                    self.toolchain = tc
+
+        Task.detached { [weak self] in
+            // ── 1. 装 rootfs（已装则是空操作）──
+            do {
+                try RootfsManager.shared.installIfNeeded()
+            } catch {
+                logger.warning("[ToolchainProbe] installIfNeeded failed: \(error.localizedDescription)")
+                await MainActor.run { self?.finishProbe(nil) }
+                return
+            }
+
+            // ── 2. boot 内核 ──
+            // `RootfsManager` / `ISHKernel` 都不是 MainActor 隔离的（前者是
+            // 普通 class，后者是 ObjC 单例），所以直接调即可，不需要跳主线程。
+            // 终端那边之所以在主线程调，是因为它同时要处理 CATransaction 提交，
+            // 不是因为 boot 本身有线程要求。
+            if !ISHKernel.shared.isBooted {
+                let bootErr = ISHKernel.shared.boot(withRootPath: RootfsManager.shared.rootfsPath.path)
+                if bootErr < 0 {
+                    logger.warning("[ToolchainProbe] boot failed: \(bootErr)")
+                    await MainActor.run { self?.finishProbe(nil) }
+                    return
                 }
             }
+
+            // ── 3. 铺挂载 ──
+            await ISHExecutionCoordinator.shared.mountForSession(sessionId)
+
+            // ── 4. 跑探测脚本 ──
+            // 一个字节都不用读会话数据，纯 `command -v`。
+            let script = LocalToolchainProbe.probeScript
+            do {
+                let result = try await ISHExecutionCoordinator.shared.execute(
+                    sessionId: sessionId,
+                    command: script,
+                    timeout: 20,
+                    ownerId: nil,
+                    lineCallback: { _ in },
+                    pidCallback: { _ in }
+                )
+                let tc = LocalToolchainProbe.parse(result.output)
+                logger.info("[ToolchainProbe] \(tc.summary)")
+                await MainActor.run { self?.finishProbe(tc) }
+            } catch {
+                logger.warning("[ToolchainProbe] execute failed: \(error.localizedDescription)")
+                await MainActor.run { self?.finishProbe(nil) }
+            }
+        }
+    }
+
+    /// 探测收尾：nil 表示「探测本身没跑通」，给一个全 false 的结果，
+    /// 界面显示「没检测到工具」而不是一直转圈或停在「未检测」。
+    private func finishProbe(_ tc: LocalToolchain?) {
+        probingToolchain = false
+        if let tc {
+            toolchain = tc
+        } else {
+            var empty = LocalToolchain()
+            empty.checkedAt = Date()
+            toolchain = empty
         }
     }
 

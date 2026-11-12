@@ -401,6 +401,11 @@ extension AIChatView {
                 // Unlike the hints above, this one points at a Setting rather
                 // than an in-composer gesture, and so takes no soul name — the
                 // Return Key preference (Settings -> Appearance) is global.
+                // [R45-占位符中文化] key 必须和 Localizable.xcstrings 里的
+                // 「Minis can make the Return key …」保持一致 —— 之前改名把
+                // 这里的 key 换成了「全能AI can make…」，和翻译表对不上，
+                // AppLocalized 查不到就原样吐英文。zh-Hans 的翻译早就有：
+                // 「全能AI 可以把 ↩︎ 键设为发送或换行」。
                 AppLocalized("Minis can make the Return key send or insert a newline"),
             ],
             // [T-ios-composer-placeholder-rotation] Rotate on the very first

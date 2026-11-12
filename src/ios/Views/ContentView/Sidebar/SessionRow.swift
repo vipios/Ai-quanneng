@@ -273,7 +273,7 @@ struct SessionRow: View, Equatable {
             // overlay sit outside this VStack so they stay crisp.
             VStack(alignment: .leading, spacing: 4) {
                 highlightedText(
-                    session.title ?? "New Chat",
+                    session.title ?? "新对话",
                     font: .system(size: fontSettings.scaledApp(16), weight: .semibold),
                     color: Color(UIColor.label)
                 )
@@ -293,7 +293,7 @@ struct SessionRow: View, Equatable {
                     .lineLimit(2)
                 } else {
                     highlightedText(
-                        session.lastMessage ?? "No messages yet",
+                        session.lastMessage ?? "暂无消息",
                         font: .system(size: fontSettings.scaledApp(14)),
                         color: Color(UIColor.secondaryLabel)
                     )
@@ -569,7 +569,7 @@ struct RemoteSessionRow: View {
                 }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(session.title ?? "Untitled")
+                Text(session.title ?? "未命名")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color(UIColor.label))
                     .lineLimit(1)

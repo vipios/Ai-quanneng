@@ -827,7 +827,7 @@ private let logger = AppLogger(category: "ModelUseOffload")
 
             // Save media attachments to files.
             // Write directly to the session-specific persistent directory
-            // instead of through the /var/minis/attachments symlink, which
+            // instead of through the /var/ai/attachments symlink, which
             // is racy under concurrent sessions (symlink target can change
             // mid-write when another session's view appears).
             var mediaFiles: [[String: Any]] = []
@@ -837,7 +837,7 @@ private let logger = AppLogger(category: "ModelUseOffload")
                 attachDir = AIChatViewModel.minisAttachmentsPersistentDir(for: callerSid).path
             } else {
                 attachDir = RootfsManager.shared.dataPath
-                    .appendingPathComponent("var/minis/attachments").path
+                    .appendingPathComponent("var/ai/attachments").path
             }
             let modelSlug = entry.model.id.replacingOccurrences(of: "/", with: "_")
             let sessionShort = callerSid
@@ -863,7 +863,7 @@ private let logger = AppLogger(category: "ModelUseOffload")
                 } else {
                     // No --output, or a STRUCTURED (.json/.yaml) --output whose
                     // media belongs in attachments and is REFERENCED by the
-                    // structured file → /var/minis/attachments/.
+                    // structured file → /var/ai/attachments/.
                     // [T-model-use-media-path-mismatch] Aligns this save site
                     // with buildMediaResult (which already guarded structured
                     // output): previously a structured --output in workspace
@@ -1655,7 +1655,7 @@ private let logger = AppLogger(category: "ModelUseOffload")
             attachDir = AIChatViewModel.minisAttachmentsPersistentDir(for: callerSid2).path
         } else {
             attachDir = RootfsManager.shared.dataPath
-                .appendingPathComponent("var/minis/attachments").path
+                .appendingPathComponent("var/ai/attachments").path
         }
         let modelSlug = entry.model.id.replacingOccurrences(of: "/", with: "_")
         let sessionShort = callerSid2
@@ -1751,8 +1751,8 @@ private let logger = AppLogger(category: "ModelUseOffload")
     ///     (attachments, workspace, offloads, shared, skills, memory,
     ///     mounts). Active session id is inferred from the calling
     ///     agent's chat context.
-    ///   - `/var/minis/<scope>/<path>` — bare Linux paths under
-    ///     `/var/minis/`, mapped to the same scopes as `minis://`.
+    ///   - `/var/ai/<scope>/<path>` — bare Linux paths under
+    ///     `/var/ai/`, mapped to the same scopes as `minis://`.
     ///   - `/<absolute/host/path>` (other) — fall back to direct iSH
     ///     rootfs lookup.
     ///
@@ -1783,7 +1783,7 @@ private let logger = AppLogger(category: "ModelUseOffload")
         if url.hasPrefix("minis://") {
             guard let parsed = URL(string: url),
                   let resolved = AIChatViewModel.resolveMinisURL(parsed) else {
-                throw ModelUseError.invalidInput("Could not resolve minis:// URL '\(url)' — file not found in any session scope. Try /var/minis/<scope>/<path> or file:///<host-path>.")
+                throw ModelUseError.invalidInput("Could not resolve minis:// URL '\(url)' — file not found in any session scope. Try /var/ai/<scope>/<path> or file:///<host-path>.")
             }
             guard let data = FileManager.default.contents(atPath: resolved.path) else {
                 throw ModelUseError.invalidInput("minis:// URL '\(url)' resolved to \(resolved.path) but the file is unreadable")
@@ -1792,16 +1792,16 @@ private let logger = AppLogger(category: "ModelUseOffload")
             return LLMMessage.ImageAttachment(mimeType: mime, data: data)
         }
 
-        // /var/minis/<scope>/<path> — Linux bare path equivalent of
+        // /var/ai/<scope>/<path> — Linux bare path equivalent of
         // minis://<scope>/<path>. Rewrite to a minis:// URL and reuse
         // the same resolver so behavior is identical.
-        if url.hasPrefix("/var/minis/") {
-            let stripped = String(url.dropFirst("/var/minis/".count))
+        if url.hasPrefix("/var/ai/") {
+            let stripped = String(url.dropFirst("/var/ai/".count))
             // Split into scope + subpath. The minis URL "host" is the
             // first path component.
             let parts = stripped.split(separator: "/", maxSplits: 1).map(String.init)
             guard !parts.isEmpty, !parts[0].isEmpty else {
-                throw ModelUseError.invalidInput("/var/minis/ path must include a scope (attachments, workspace, shared, etc.): '\(url)'")
+                throw ModelUseError.invalidInput("/var/ai/ path must include a scope (attachments, workspace, shared, etc.): '\(url)'")
             }
             let scope = parts[0]
             let sub = parts.count > 1 ? parts[1] : ""
@@ -1819,7 +1819,7 @@ private let logger = AppLogger(category: "ModelUseOffload")
 
         // http(s):// — not supported. Tell the agent how to do it.
         if url.hasPrefix("http://") || url.hasPrefix("https://") {
-            throw ModelUseError.invalidInput("http(s):// image URLs are not supported by minis-model-use. Download first with `shell_execute` (curl/wget) into /var/minis/workspace/, then reference the local path.")
+            throw ModelUseError.invalidInput("http(s):// image URLs are not supported by minis-model-use. Download first with `shell_execute` (curl/wget) into /var/ai/workspace/, then reference the local path.")
         }
 
         // file:// — keep behavior, but throw on missing.
@@ -1842,14 +1842,14 @@ private let logger = AppLogger(category: "ModelUseOffload")
                 let mime = Self.imageMimeForExtension(url)
                 return LLMMessage.ImageAttachment(mimeType: mime, data: data)
             }
-            throw ModelUseError.invalidInput("Image file not found at '\(url)'. For minis-scope files prefer /var/minis/<scope>/<path> or minis://<scope>/<path>.")
+            throw ModelUseError.invalidInput("Image file not found at '\(url)'. For minis-scope files prefer /var/ai/<scope>/<path> or minis://<scope>/<path>.")
         }
 
-        throw ModelUseError.invalidInput("Unsupported image_url '\(url)'. Use a data: URL, file:///host/path, /var/minis/<scope>/<path>, or minis://<scope>/<path>.")
+        throw ModelUseError.invalidInput("Unsupported image_url '\(url)'. Use a data: URL, file:///host/path, /var/ai/<scope>/<path>, or minis://<scope>/<path>.")
     }
 
     /// Read a file given a Linux-side path. Tries the iSH rootfs data
-    /// directory first (where bind-mounted /var/minis/* and /tmp/* land
+    /// directory first (where bind-mounted /var/ai/* and /tmp/* land
     /// for direct host access), then the literal host path.
     private static func readImageFile(linuxPath: String) -> Data? {
         let hostPath = RootfsManager.shared.dataPath.appendingPathComponent(linuxPath).path
@@ -1881,7 +1881,7 @@ private let logger = AppLogger(category: "ModelUseOffload")
     // MARK: - Output
 
     /// Convert a host filesystem path back to the Linux (shell) path.
-    /// e.g. "/private/var/mobile/.../Documents/alpine-rootfs/data/var/minis/foo" → "/var/minis/foo"
+    /// e.g. "/private/var/mobile/.../Documents/alpine-rootfs/data/var/ai/foo" → "/var/ai/foo"
     private static func toLinuxPath(_ hostPath: String) -> String {
         let dataPrefix = RootfsManager.shared.dataPath.path
         // Try with and without /private prefix (iOS symlink)
@@ -1902,7 +1902,7 @@ private let logger = AppLogger(category: "ModelUseOffload")
         return hostPath
     }
 
-    /// [T-model-use-media-path-mismatch] Derive the guest (`/var/minis/...`)
+    /// [T-model-use-media-path-mismatch] Derive the guest (`/var/ai/...`)
     /// path a just-saved media file is actually reachable at, from the REAL
     /// host `filePath` it was written to — so the response `media_files[].path`
     /// always matches where the bytes landed.
@@ -1912,15 +1912,15 @@ private let logger = AppLogger(category: "ModelUseOffload")
     ///      workspace,offloads}/`). These are NOT under rootfs `dataPath`, so
     ///      `toLinuxPath` can't strip them — they're reachable in the guest only
     ///      via the per-session symlinks `ensureMinisSymlinks` maintains
-    ///      (`/var/minis/attachments` → `.../<sid>/attachments`, etc.). Map by
+    ///      (`/var/ai/attachments` → `.../<sid>/attachments`, etc.). Map by
     ///      matching the persistent-dir prefix for THIS caller session and
-    ///      substituting the corresponding `/var/minis/<name>` root, preserving
+    ///      substituting the corresponding `/var/ai/<name>` root, preserving
     ///      any sub-path + filename.
     ///   2. A path already inside rootfs `dataPath` (e.g. a user `--output`
-    ///      under `/var/minis/...` resolved by the CLI). `toLinuxPath` strips
+    ///      under `/var/ai/...` resolved by the CLI). `toLinuxPath` strips
     ///      it directly.
     ///
-    /// The previous code hardcoded `/var/minis/attachments/<filename>` in the
+    /// The previous code hardcoded `/var/ai/attachments/<filename>` in the
     /// fallback branch regardless of where the file actually went — so a media
     /// file saved next to a `--output` in workspace was announced under
     /// attachments and read back as "file not found".

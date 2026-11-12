@@ -7,7 +7,7 @@ private let logger = AppLogger(category: "FollowUpIntent")
 /// Sends a follow-up prompt to an existing session, continuing the conversation.
 struct FollowUpSessionIntent: AppIntent {
     static var title: LocalizedStringResource = "Follow Up Session"
-    static var description = IntentDescription("Sends a follow-up prompt to an existing Minis session, continuing the conversation with the AI agent.")
+    static var description = IntentDescription("Sends a follow-up prompt to an existing 全能AI session, continuing the conversation with the AI agent.")
     static var openAppWhenRun = false
 
     @Parameter(title: "Session")
@@ -70,7 +70,7 @@ struct FollowUpSessionIntent: AppIntent {
         // intent (`openAppWhenRun = false`) never builds — so on a cold or
         // force-quit launch nothing acquired the security scopes, `activeURLs`
         // stayed empty, and the external-mount snapshot the agent reads was
-        // empty too. `/var/minis/mounts/<name>` was simply absent until the user
+        // empty too. `/var/ai/mounts/<name>` was simply absent until the user
         // opened the app once.
         //
         // Bounded so a slow FileProvider cannot stall the Shortcut: on expiry the
@@ -137,7 +137,7 @@ struct FollowUpSessionIntent: AppIntent {
             let promptPreview = String(prompt.prefix(50))
             ShortcutNotification.post(
                 id: "shortcut-followup-\(sid)",
-                title: AppLocalized("Minis: Follow-up Sent"),
+                title: AppLocalized("全能AI: Follow-up Sent"),
                 body: "\(modelName): \(promptPreview)\(prompt.count > 50 ? "…" : "")",
                 sessionId: sid
             )
@@ -160,7 +160,7 @@ struct FollowUpSessionIntent: AppIntent {
             if sendCompletionNotification {
                 ShortcutNotification.post(
                     id: "shortcut-followup-done-\(sid)",
-                    title: AppLocalized("Minis: Follow-up Done"),
+                    title: AppLocalized("全能AI: Follow-up Done"),
                     body: "\(modelName): \(String(responseText.prefix(200)))",
                     sessionId: sid
                 )
@@ -199,7 +199,7 @@ struct FollowUpSessionIntent: AppIntent {
             if capturedSendCompletionNotification {
                 ShortcutNotification.post(
                     id: "shortcut-followup-done-\(capturedSid)",
-                    title: AppLocalized("Minis: Follow-up Done"),
+                    title: AppLocalized("全能AI: Follow-up Done"),
                     body: "\(capturedModelName): \(summary)",
                     sessionId: capturedSid
                 )

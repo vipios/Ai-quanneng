@@ -207,7 +207,7 @@ struct MediaRef: Codable, Hashable {
     let mimeType: String
     let originalFileName: String?
     /// iSH-visible linux path the file is mirrored to (e.g.
-    /// `/var/minis/attachments/uploads/<name>`, `/var/minis/browser/<sid>/...`).
+    /// `/var/ai/attachments/uploads/<name>`, `/var/ai/browser/<sid>/...`).
     /// Optional — older persisted rows decode with `nil` and fall back to
     /// spillover at request-budget elide time. New writes always populate
     /// this when the file is offloaded to iSH-visible storage.

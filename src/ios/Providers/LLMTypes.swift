@@ -145,6 +145,10 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
 
     /// [R45-直连/在外模型] 返回一个只改 `id` / `displayName` 的副本，
     /// 其余元数据（contextWindow、reasoning 等）原样保留。
+    ///
+    /// 供中转站的「按线路覆盖模型」用：覆盖只改发给 API 的模型名，
+    /// 不该丢掉从 catalog 拿到的上下文窗口等能力信息 —— 那些信息
+    /// 和 relay 的实际模型是两码事，硬丢会导致压缩/思维开关判错。
     func withId(_ newId: String) -> LLMModel {
         var m = LLMModel(
             id: newId,

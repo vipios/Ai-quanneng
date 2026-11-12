@@ -419,6 +419,15 @@ struct ContentView: View {
     // [T-ios-crash-objectdestroy-fab-uaf] Same, for the draggable FABs.
     @State var fabActions = FABActionChannel()
 
+    /// 左边缘抽屉里的搜索词。
+    ///
+    /// 和侧栏搜索的 `searchText` 刻意分开：侧栏搜索会驱动
+    /// `searchMatchedIds` / `searchMatchSnippets` 那套全库检索，
+    /// 抽屉是「一边打字一边就地出结果」，两套状态混用会互相清空。
+    /// 抽屉这边标题命中本地算，正文命中复用 `searchMatchSnippets`
+    /// （有就带上，没有不重跑 SQL）。
+    @State var drawerQuery = ""
+
     // Search
     @State var showSearchBar = false
     var isSearching: Bool { showSearchBar && !searchText.isEmpty }
@@ -568,7 +577,13 @@ struct ContentView: View {
                 if wide {
                     splitLayout
                 } else {
-                    stackLayout
+                    // iPhone：原版 NavigationStack 原样包进左边缘抽屉。
+                    // 对话页、push、返回全部走原版代码，一行没改 ——
+                    // 这里只是给它外面加了一层，见 Views/Drawer/。
+                    //
+                    // 宽度用外层这个 geo 直接传：再套一层 GeometryReader 会让
+                    // 里面的 NavigationStack 拿不到尺寸约束，塌成 0 高。
+                    stackLayoutWithDrawer(width: geo.size.width)
                 }
             }
             .overlay(alignment: .top) {
@@ -1096,6 +1111,17 @@ struct ContentView: View {
                         var tx = Transaction()
                         tx.disablesAnimations = true
                         withTransaction(tx) { openSession(latest.id) }
+                    } else if sessions.isEmpty {
+                        // [R38-iPhone 落地页] 原版这里什么都不做，于是 iPhone
+                        // 上「一次都没聊过 + 没有 15 分钟前的旧会话」会停在
+                        // 空列表（一片白底 + 一个 FAB），第一次装的人会当成
+                        // 卡死。iPad 有分栏兜着，只有窄屏会露出来。
+                        //
+                        // 只补这一条：有旧会话时仍按原版行为留在列表页，
+                        // 不抢用户本来就该看到的会话列表。
+                        var tx = Transaction()
+                        tx.disablesAnimations = true
+                        withTransaction(tx) { openSession(Self.makeNewSessionId()) }
                     }
                 }
             }

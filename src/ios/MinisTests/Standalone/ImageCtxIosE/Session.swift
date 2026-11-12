@@ -2,7 +2,7 @@
 //
 // A Session is one conversation in its own temp directory: `ChatStore(baseURL:
 // <case dir>/MinisChat)` (the same initializer the app's tests use), and every
-// /var/minis path resolves under `<case dir>/MinisChat/minis/<sid>/...`.
+// /var/ai path resolves under `<case dir>/MinisChat/minis/<sid>/...`.
 // Nothing outside the case directory is read or written.
 //
 // What runs for real (compiled from the current sources by the driver):
@@ -56,7 +56,7 @@ final class Session {
 
     var sessionDir: URL { AIChatViewModel.minisPersistentBase.appendingPathComponent(sid, isDirectory: true) }
     func hostPath(linux: String) -> URL {
-        sessionDir.appendingPathComponent(String(linux.dropFirst("/var/minis/".count)))
+        sessionDir.appendingPathComponent(String(linux.dropFirst("/var/ai/".count)))
     }
 
     // MARK: persistence
@@ -151,7 +151,7 @@ final class Session {
             let safeName = AIChatViewModel.uniqueFileName(for: attachment.fileName, in: uploadsDir)
             let destURL = uploadsDir.appendingPathComponent(safeName)
             do { try fm.copyItem(at: attachment.cacheURL, to: destURL) } catch { continue }
-            let linuxPath = "/var/minis/attachments/uploads/\(safeName)"
+            let linuxPath = "/var/ai/attachments/uploads/\(safeName)"
             metas.append(AttachmentMeta(path: linuxPath, size: fileSize, modified: fileDate))
             guard attachment.kind == .image else { continue }
             guard let data = try? Data(contentsOf: attachment.cacheURL) else { continue }
@@ -233,17 +233,17 @@ final class Session {
         try? FileManager.default.createDirectory(at: uploads, withIntermediateDirectories: true)
         let url = uploads.appendingPathComponent(f.fileName)
         if !FileManager.default.fileExists(atPath: url.path) { try! f.data.write(to: url) }
-        await assistant(nil, toolUses: [(id, "read_image", ["path": "/var/minis/attachments/uploads/\(f.fileName)"])])
+        await assistant(nil, toolUses: [(id, "read_image", ["path": "/var/ai/attachments/uploads/\(f.fileName)"])])
         guard let ui = UIImage(data: f.data) else {
             await toolResult(id, "read_image", "Error: not an image")
             return nil
         }
         let inf = AIChatViewModel.readImageInference(fileData: f.data, image: ui)
         let ref = await AIChatViewModel.saveReadImageSnapshotMedia(imagePath: url.path, imageData: inf.data, sessionId: sid,
-                                                                   linuxPath: "/var/minis/attachments/uploads/\(f.fileName)")
+                                                                   linuxPath: "/var/ai/attachments/uploads/\(f.fileName)")
         let snap = ToolSnapshot(type: .image, text: nil, mediaRef: ref, duration: nil)
         await toolResult(id, "read_image", "Image \(inf.originalW)x\(inf.originalH) -> \(inf.resizedW)x\(inf.resizedH)",
-                         image: inf.data, mime: inf.mimeType, linuxPath: "/var/minis/attachments/uploads/\(f.fileName)", snapshot: snap)
+                         image: inf.data, mime: inf.mimeType, linuxPath: "/var/ai/attachments/uploads/\(f.fileName)", snapshot: snap)
         return inf.data
     }
 

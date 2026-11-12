@@ -425,7 +425,7 @@ final class SyncCore {
         isSending = true; defer { isSending = false }
 
         // Drain any pending file changes recorded by the iSH fakefs
-        // change tracker (shell tools writing under /var/minis/<subdir>)
+        // change tracker (shell tools writing under /var/ai/<subdir>)
         // and translate them into SessionFile dirty rows. This must run
         // BEFORE loadDirtyRecords so the freshly-marked rows are picked
         // up in this push cycle. Cheap when nothing pending.
@@ -967,7 +967,7 @@ final class SyncCore {
 
     /// Drain pending file changes from `SessionFileChangeTracker` (events
     /// emitted by the iSH fakefs realfs hooks for any shell-tool write,
-    /// truncate, unlink, rename inside `/var/minis/<workspace|attachments|browser|offloads>/...`)
+    /// truncate, unlink, rename inside `/var/ai/<workspace|attachments|browser|offloads>/...`)
     /// and turn them into SessionFile v2 dirty rows.
     ///
     /// Called from `sendNow` immediately before reading dirty rows so the

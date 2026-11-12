@@ -88,7 +88,7 @@ extension AIChatView {
                     .onTapGesture { inputFocused = false }
             }
             // Empty-chat onboarding tip: a single card explaining the
-            // per-session vs cross-session /var/minis/ layout. Only shown
+            // per-session vs cross-session /var/ai/ layout. Only shown
             // on a true draft (vm.sessionId == nil) — opening an existing
             // session would otherwise flash the card during the brief
             // window before its messages load. Returning users with any

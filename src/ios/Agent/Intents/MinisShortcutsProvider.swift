@@ -56,7 +56,7 @@ struct MinisShortcutsProvider: AppShortcutsProvider {
                 "Talk to \(.applicationName)",
                 "New \(.applicationName) chat",
             ],
-            shortTitle: "Ask Minis",
+            shortTitle: "Ask 全能AI",
             systemImageName: "sparkles"
         )
         AppShortcut(

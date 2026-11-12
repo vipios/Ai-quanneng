@@ -140,7 +140,7 @@ final class OffloadScanCache {
     c.store("r:t1", fingerprint: fp, verdict: .candidate, bytes: 900)
     c.beginScan()
     check("next scan hits with the same fingerprint", c.lookup("r:t1", fingerprint: fp)?.verdict == .candidate && c.hits == 1)
-    let stub = "<system-reminder>offloaded</system-reminder> saved to /var/minis/offloads/tools/x"
+    let stub = "<system-reminder>offloaded</system-reminder> saved to /var/ai/offloads/tools/x"
     let fpStub = OffloadScanCache.fingerprint(content: stub, extraBytes: 0, flag: false)
     check("offloaded (rewritten) part misses → re-judged", c.lookup("r:t1", fingerprint: fpStub) == nil)
     let sameLen = "y" + String(repeating: "x", count: 899)

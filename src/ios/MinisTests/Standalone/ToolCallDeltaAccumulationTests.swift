@@ -169,7 +169,7 @@ do {
 
 print("▶️  3. arguments split over 5 fragments → parses")
 do {
-    let full = #"{"tool_title":"count","command":"wc -l /var/minis/workspace/notes.md","timeout":30}"#
+    let full = #"{"tool_title":"count","command":"wc -l /var/ai/workspace/notes.md","timeout":30}"#
     let pieces = stride(from: 0, to: full.count, by: max(1, full.count / 5 + 1)).map { start -> String in
         let s = full.index(full.startIndex, offsetBy: start)
         let e = full.index(s, offsetBy: min(full.count / 5 + 1, full.distance(from: s, to: full.endIndex)))

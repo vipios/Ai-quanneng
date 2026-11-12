@@ -268,7 +268,7 @@ extension AIChatViewModel {
             // already present on the ChatMessage are skipped.
             let rel = ref.relativePath as NSString
             liveCardMetas.append(AttachmentMeta(
-                path: "/var/minis/\((rel.deletingLastPathComponent as NSString).lastPathComponent)/\(rel.lastPathComponent)",
+                path: "/var/ai/\((rel.deletingLastPathComponent as NSString).lastPathComponent)/\(rel.lastPathComponent)",
                 size: Data(entry.text.utf8).count,
                 modified: Date(),
                 displayName: ref.originalFileName,
@@ -316,7 +316,7 @@ extension AIChatViewModel {
             let fileId = UUID().uuidString
             plan[id] = fileId
             metas.append(AttachmentMeta(
-                path: "/var/minis/\(PastePlaceholder.mediaSubdir)/\(fileId).txt",
+                path: "/var/ai/\(PastePlaceholder.mediaSubdir)/\(fileId).txt",
                 size: Data(entry.text.utf8).count,
                 modified: Date(),
                 displayName: PastePlaceholder.mediaRefFileName(for: id),
@@ -738,7 +738,7 @@ extension AIChatViewModel {
                 continue
             }
             try? fm.setAttributes([.creationDate: fileDate, .modificationDate: fileDate], ofItemAtPath: destURL.path)
-            let linuxPath = "/var/minis/attachments/uploads/\(safeName)"
+            let linuxPath = "/var/ai/attachments/uploads/\(safeName)"
             let meta = AttachmentMeta(path: linuxPath, size: fileSize, modified: fileDate)
             metas.append(meta)
             logger.info("📎[QUEUE-DRAIN]   saved \(safeName): \(fileSize) bytes → \(linuxPath)")

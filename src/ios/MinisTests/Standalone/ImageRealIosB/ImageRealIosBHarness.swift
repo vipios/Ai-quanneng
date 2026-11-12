@@ -108,7 +108,7 @@ final class Runner {
         record("\(key).live", inf.data, mime: inf.mimeType)
         R("\(key).sizes", "\(inf.originalW)x\(inf.originalH)->\(inf.resizedW)x\(inf.resizedH)")
         let ref = await AIChatViewModel.saveReadImageSnapshotMedia(imagePath: url.path, imageData: inf.data, sessionId: sid,
-                                                                   linuxPath: "/var/minis/attachments/uploads/\(fileName)")
+                                                                   linuxPath: "/var/ai/attachments/uploads/\(fileName)")
         record("\(key).persisted", await fileData(ref), mime: ref.mimeType)
         R("\(key).persisted.subdir", subdir(ref)); R("\(key).persisted.ext", (ref.relativePath as NSString).pathExtension)
         let id = "call_\(key)|fc_\(key)"

@@ -116,7 +116,7 @@ enum ChatSearchDisplayText {
                 let a = r.answer.joined(separator: ", ")
                 return a.isEmpty ? nil : a
             case .delegated:
-                return results.count > 1 ? AppLocalized("Left to Minis") : nil
+                return results.count > 1 ? AppLocalized("Left to 全能AI") : nil
             case .denied:
                 let n = r.note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 return n.isEmpty ? nil : n

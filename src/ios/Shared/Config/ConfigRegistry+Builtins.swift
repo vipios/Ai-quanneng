@@ -200,7 +200,7 @@ extension ConfigRegistry {
                 + "      MIME may be image/png, image/jpeg, image/webp, image/gif, image/heic or image/tiff.\n"
                 + "  • bare base64 (no data: prefix) — auto-detected, e.g. iVBORw0KGgo...\n"
                 + "  • minis:// resource, e.g. minis://attachments/icon.png or minis://workspace/icon.png\n"
-                + "  • local path inside the minis directories, e.g. /var/minis/attachments/icon.png\n"
+                + "  • local path inside the minis directories, e.g. /var/ai/attachments/icon.png\n"
                 + "  • https:// URL, e.g. https://example.com/icon.png (http:// also works; "
                 + "private/loopback/link-local hosts are refused)\n"
                 + "\n"
@@ -1181,7 +1181,7 @@ extension ConfigRegistry {
         // still enabled, plus to surface the switch in topic-help.
         // [T-ish-container-identity GH#99] Storage-identity fields. Users and
         // agents had NO sanctioned way to tell which session's storage
-        // /var/minis currently points at, or that the iOS data container UUID
+        // /var/ai currently points at, or that the iOS data container UUID
         // rotates on every app update (contents migrate) — so a per-session
         // empty workspace or a post-update path change read as "my files are
         // gone". Read-only, side-effect-free.
@@ -1204,7 +1204,7 @@ extension ConfigRegistry {
         r.register(ReadOnlyField(
             path: "system.mountedSession",
             displayName: "Mounted session",
-            description: "Chat session whose storage /var/minis currently points at. Each session has its own attachments/offloads/workspace — files from other sessions are not visible here. Empty when no session is mounted. Read-only.",
+            description: "Chat session whose storage /var/ai currently points at. Each session has its own attachments/offloads/workspace — files from other sessions are not visible here. Empty when no session is mounted. Read-only.",
             valueSchema: .string(maxLength: 64),
             reader: {
                 .string(ISHExecutionCoordinator.mountedSessionIdSnapshot ?? "")

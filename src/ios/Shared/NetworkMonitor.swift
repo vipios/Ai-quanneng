@@ -77,7 +77,7 @@ final class ContainerDnsSettings: NSObject {
     /// resolv.conf for a custom list: one `nameserver` line per address, in the
     /// user's order. No `search` line — custom mode is exactly what was entered.
     static func resolvConf(servers: [String]) -> String {
-        var out = "# Custom DNS set in Minis (Rootfs > Container Network).\n"
+        var out = "# Custom DNS set in 全能AI (Rootfs > Container Network).\n"
             + "# Kept across network changes; set DNS Mode to Auto to follow the system.\n"
         for server in servers { out += "nameserver \(server)\n" }
         return out

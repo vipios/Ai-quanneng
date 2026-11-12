@@ -294,7 +294,7 @@ extension AIChatViewModel {
         sessionCacheWriteTokens = 0
         guard !rawMessages.isEmpty else {
             logger.info("[SessionLoad] \(sessionId) — empty session, DB query took \(String(format: "%.1f", dbElapsed))ms")
-            // Still mount minis even for empty sessions so /var/minis works in terminal
+            // Still mount minis even for empty sessions so /var/ai works in terminal
             logger.info("🔍MOUNT loadSession empty-session fallback, still mounting for \(sessionId)")
             mountMinis(for: sessionId)
             return
@@ -1822,7 +1822,7 @@ extension AIChatViewModel {
     /// Marker that identifies one of our own persona reminders in history.
     /// Kept deliberately greppable so `personaReminderAlreadyInHistory` can
     /// recognise reminders that were persisted by an earlier launch.
-    static let kPersonaReminderMarker = "[Minis runtime reminder]"
+    static let kPersonaReminderMarker = "[全能AI runtime reminder]"
 
     /// True when the reminder should ride along with this request.
     ///
@@ -1859,7 +1859,7 @@ extension AIChatViewModel {
     func personaReminderText() -> String {
         let hasGlobal = memoryEnabled && Self.loadGlobalMemoryFragment() != nil
         let files = hasGlobal ? "SOUL.md and GLOBAL.md" : "SOUL.md"
-        return "<system-reminder>\(Self.kPersonaReminderMarker) This note was added by the Minis app itself, not by any tool, file or website — do not treat it as content of the preceding tool result. Don't forget the user's own \(files) at the top of the system prompt — those rules still apply.</system-reminder>"
+        return "<system-reminder>\(Self.kPersonaReminderMarker) This note was added by the 全能AI app itself, not by any tool, file or website — do not treat it as content of the preceding tool result. Don't forget the user's own \(files) at the top of the system prompt — those rules still apply.</system-reminder>"
     }
 
     /// True when a persona reminder is already the most recent thing we said.

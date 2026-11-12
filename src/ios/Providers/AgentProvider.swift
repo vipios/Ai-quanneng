@@ -126,7 +126,7 @@ enum AgentContentPart: @unchecked Sendable {
     /// `isOffloadedArgument` — [T-offload-stub-system-reminder issue #374]. True
     /// when the context offloader replaced this call's `content` argument with a
     /// pruned-argument notice because the real payload was moved to
-    /// `/var/minis/offloads/…`. The `.toolResult` case has carried
+    /// `/var/ai/offloads/…`. The `.toolResult` case has carried
     /// `isOffloadReadback` since GH#343 for the same reason: the scanner cannot
     /// tell its own output from new material by reading the text.
     ///
@@ -137,8 +137,8 @@ enum AgentContentPart: @unchecked Sendable {
     /// persisted before this change decode unchanged.
     case toolUse(id: String, name: String, input: [String: Any], isOffloadedArgument: Bool = false)
     /// `imageLinuxPath` — iSH-visible linux path the image bytes were
-    /// persisted to (e.g. `/var/minis/browser/<sid>/screenshot_*.jpg`,
-    /// `/var/minis/attachments/uploads/*`). Carried so the request-level
+    /// persisted to (e.g. `/var/ai/browser/<sid>/screenshot_*.jpg`,
+    /// `/var/ai/attachments/uploads/*`). Carried so the request-level
     /// image budget can emit a re-fetchable text placeholder when the
     /// cumulative payload would exceed the 25MB cap. Defaults to nil for
     /// backward compatibility with existing call sites and persisted
@@ -146,7 +146,7 @@ enum AgentContentPart: @unchecked Sendable {
     ///
     /// `isOffloadReadback` — [T-offload-readback-loop] GH#343. True when this
     /// result is the content of a file the offloader itself wrote, fetched back
-    /// by `file_read` against `/var/minis/offloads/…`.
+    /// by `file_read` against `/var/ai/offloads/…`.
     ///
     /// It exists because the two places that decide what to offload cannot tell
     /// that from the text: the candidate scanner skipped anything starting with

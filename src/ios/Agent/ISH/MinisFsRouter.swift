@@ -2,7 +2,7 @@
 //  MinisFsRouter.swift
 //  MinisApp
 //
-//  Routes guest paths under /var/minis/{offloads,attachments,workspace,browser}
+//  Routes guest paths under /var/ai/{offloads,attachments,workspace,browser}
 //  to per-session host directories via the iSH fakefs path-translate hook.
 //
 //  Each session gets a unique fs_context token (u64) that is stamped on the
@@ -18,7 +18,7 @@ final class MinisFsRouter: @unchecked Sendable {
 
     /// Guest path prefixes that route per-session. Anything under one of these
     /// becomes ~/Library/.../minis/<sid>/<bucket>/<tail>. Paths under
-    /// /var/minis/{memory,skills,shared} stay global and are NOT listed here —
+    /// /var/ai/{memory,skills,shared} stay global and are NOT listed here —
     /// they fall through to the legacy g_bind_mounts[] table.
     private let perSessionBuckets: [(linuxPrefix: String, hostSubdir: String)] = [
         (AIChatViewModel.minisOffloadsLinuxDir,    "offloads"),
@@ -113,7 +113,7 @@ final class MinisFsRouter: @unchecked Sendable {
     }
 
     /// Reverse hook: given a host APFS path under <minisBaseURL>/<sid>/<bucket>,
-    /// return the canonical guest path /var/minis/<bucket>/<tail>.
+    /// return the canonical guest path /var/ai/<bucket>/<tail>.
     /// Returns nil if the path doesn't live under any per-session bucket
     /// (caller falls back to the static bind_mount_resolve table).
     private func reverse(hostPath: String) -> String? {

@@ -83,7 +83,7 @@ enum CrashDiagnostics {
         }()
         let base = FileManager.default.temporaryDirectory.appendingPathComponent("CrashDiagnostics", isDirectory: true)
         try? FileManager.default.removeItem(at: base)
-        let folder = base.appendingPathComponent("Minis-crash-diagnostics-\(stamp)", isDirectory: true)
+        let folder = base.appendingPathComponent("全能AI-crash-diagnostics-\(stamp)", isDirectory: true)
         let all = items()
         var sources: [CrashDiagnosticsExport.Source] = all.map { item in
             let path: String
@@ -107,7 +107,7 @@ enum CrashDiagnostics {
             sources.append(.init(kind: .log, path: "logs/\(log.name)") { CrashDiagnosticsExport.tail(of: log.url) })
         }
         let info = Bundle.main.infoDictionary
-        let header = "Minis crash diagnostics\nApp \(info?["CFBundleShortVersionString"] ?? "?") (\(info?["CFBundleVersion"] ?? "?"))"
+        let header = "全能AI crash diagnostics\nApp \(info?["CFBundleShortVersionString"] ?? "?") (\(info?["CFBundleVersion"] ?? "?"))"
             + "\nSystem \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)\nExported \(stamp)"
         try CrashDiagnosticsExport.writeBundle(sources, into: folder, header: header)
         let zip = base.appendingPathComponent("\(folder.lastPathComponent).zip")

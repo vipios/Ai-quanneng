@@ -106,7 +106,7 @@ actor ISHExecutionCoordinator {
     /// need to be re-mounted on session switch.
     private var staticMountsInitialized: Set<String> = []
 
-    /// Maps linux mount paths (e.g. "/var/minis/memory") to their host
+    /// Maps linux mount paths (e.g. "/var/ai/memory") to their host
     /// persistent URLs. Holds only the static (global) mounts and external
     /// folders today. Per-session buckets are no longer in this map; use
     /// MinisFsRouter to resolve their host paths.
@@ -221,7 +221,7 @@ actor ISHExecutionCoordinator {
     }
     #endif
 
-    /// Resolve a Linux path under /var/minis/ to its current host URL.
+    /// Resolve a Linux path under /var/ai/ to its current host URL.
     /// Tries the static bind-mount table first (memory/skills/shared +
     /// external folders), then falls back to MinisFsRouter for the per-
     /// session buckets. Per-session lookups need a sessionId because the
@@ -541,7 +541,7 @@ actor ISHExecutionCoordinator {
                 Self.unregisterAbandon(myId)
                 Task { await self.recordInflightPid(sessionId: sessionId, id: myId, pid: 0) }
                 pidCallback(0)
-                let notice = "[Stopped by user. The command did not exit within \(Int(Self.stopAbandonGrace))s of the stop signal - it is probably blocked in file I/O (for example an iCloud folder waiting to sync) - so Minis stopped waiting for it.]"
+                let notice = "[Stopped by user. The command did not exit within \(Int(Self.stopAbandonGrace))s of the stop signal - it is probably blocked in file I/O (for example an iCloud folder waiting to sync) - so 全能AI stopped waiting for it.]"
                 let output = outputEndingWith(notice, emptyNotice: notice)
                 logger.warning("[ShellStop] abandoned pid=\(pid) sid=\(sessionId.prefix(8)) — no exit \(Self.stopAbandonGrace)s after stop")
                 continuation.resume(returning: ISHCommandResult(output: output, exitCode: -1))
@@ -604,7 +604,7 @@ actor ISHExecutionCoordinator {
 
     // MARK: - Mount Logic
 
-    /// Bind-mount a session's minis directories into iSH-visible /var/minis/.
+    /// Bind-mount a session's minis directories into iSH-visible /var/ai/.
     private func performMount(_ sid: String) {
         let mountStart = CFAbsoluteTimeGetCurrent()
         let fm = FileManager.default
@@ -687,11 +687,11 @@ actor ISHExecutionCoordinator {
                         }
                     }
                     // Force-remove whatever is at hostDir (file, dir, or non-empty dir)
-                    // Safety: only remove paths under data/var/minis/ to avoid accidentally
+                    // Safety: only remove paths under data/var/ai/ to avoid accidentally
                     // deleting other fakefs directories (e.g. data/dev/) due to path bugs.
-                    let dataVarMinis = RootfsManager.shared.dataPath.appendingPathComponent("var/minis").path
+                    let dataVarMinis = RootfsManager.shared.dataPath.appendingPathComponent("var/ai").path
                     guard hostDir.path.hasPrefix(dataVarMinis) else {
-                        logger.error("MOUNT [\(idx)] SAFETY: refusing removeItem outside var/minis: \(hostDir.path)")
+                        logger.error("MOUNT [\(idx)] SAFETY: refusing removeItem outside var/ai: \(hostDir.path)")
                         break
                     }
                     let kind = isDir ? "dir" : "file"
@@ -741,7 +741,7 @@ actor ISHExecutionCoordinator {
 
         // After session-scoped mounts, also bind-mount every user-mounted
         // external folder (see MountedFoldersManager) so iSH shell can read/write
-        // them just like /var/minis/shared.
+        // them just like /var/ai/shared.
         mountExternalFoldersLocked()
 
         let elapsed = (CFAbsoluteTimeGetCurrent() - mountStart) * 1000
@@ -993,7 +993,7 @@ actor ISHExecutionCoordinator {
 
         guard !snapshot.isEmpty else { return }
 
-        // Ensure the parent /var/minis/mounts dir exists in meta.db so fakefs
+        // Ensure the parent /var/ai/mounts dir exists in meta.db so fakefs
         // can list it.
         ensureParentDirsInMetaDB(for: "\(AIChatViewModel.minisMountsLinuxDir)/placeholder")
         ensureFakefsMetadata(for: AIChatViewModel.minisMountsLinuxDir, isDirectory: true)

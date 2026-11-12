@@ -231,7 +231,7 @@ private let logger = AppLogger(category: "ScheduledOffload")
             return ["created": registry.jobDict(job),
                     "delivery": delivery,
                     "deliveryTarget": ScheduledTargetDelivery.summary(destination, defaulted: targetDefaulted),
-                    "note": "Best effort: this timer lives only while the Minis app process is alive. A reminder notification is registered as insurance; for guaranteed background execution use an Apple Shortcuts automation."] as NSDictionary
+                    "note": "Best effort: this timer lives only while the 全能AI app process is alive. A reminder notification is registered as insurance; for guaranteed background execution use an Apple Shortcuts automation."] as NSDictionary
         }
     }
 

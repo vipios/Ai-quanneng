@@ -7,7 +7,7 @@
 //
 //  The server list lives in MinisConfig/mcp-servers/servers.json (mcpServers
 //  object form, Claude-Desktop compatible), bind-mounted into the guest at
-//  /var/minis/mcp-servers — the SAME file the in-guest `minis-mcp-cli`
+//  /var/ai/mcp-servers — the SAME file the in-guest `minis-mcp-cli`
 //  reads/writes, so the two co-read/write it. Session-override metadata reuses
 //  the skills.db SQLite file via an `mcp_session_overrides` table (mirrors
 //  SkillStore's session_skill_overrides).
@@ -105,7 +105,7 @@ final class MCPStore: ObservableObject {
 
     // MARK: - Paths
 
-    /// Host path of the guest's /var/minis/mcp-servers/servers.json. Lives in
+    /// Host path of the guest's /var/ai/mcp-servers/servers.json. Lives in
     /// the MinisConfig persistent dir (same mechanism as skills/shared/memory:
     /// the guest path is a bind mount / symlink onto this dir — see the static
     /// mount tables in ISHExecutionCoordinator.performMount and
@@ -124,7 +124,7 @@ final class MCPStore: ObservableObject {
     /// that motivated the move). Kept only for one-time migration.
     nonisolated private static var legacyServersFileURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("alpine-rootfs/data/var/minis/mcp-servers", isDirectory: true)
+            .appendingPathComponent("alpine-rootfs/data/var/ai/mcp-servers", isDirectory: true)
             .appendingPathComponent("servers.json")
     }
 
@@ -665,7 +665,7 @@ final class MCPStore: ObservableObject {
     /// (`minis-mcp-cli refresh <name>`), so tools the remote added after the
     /// last connect show up without restarting anything. The synthetic
     /// sessionId gives the coordinator a mount context; the static mount layer
-    /// it initializes includes /var/minis/mcp-servers.
+    /// it initializes includes /var/ai/mcp-servers.
     func refreshTools(server: String) async throws -> [MCPToolInfo] {
         guard ISHKernel.shared.isBooted else { throw ToolsRefreshError.kernelNotBooted }
         // Shell-quote the name defensively (names are also file keys, but a

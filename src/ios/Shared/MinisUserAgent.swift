@@ -14,6 +14,15 @@ import UIKit
 /// user-set per-provider custom UA still overrides it, and OAuth/CLI-gated
 /// flows (Codex `codex_cli_rs/…`, Claude Code `claude-cli/…`, Gemini/Antigravity
 /// CLI UAs) keep their required UA untouched.
+///
+/// ⚠️⚠️ **这个字符串必须是纯 ASCII，不能换成中文「全能AI」。**
+/// 2026-11-10 全量换字把它改成了 `全能AI/1.0 (iOS 17.0; iPhone)`，那是一颗雷：
+///   · HTTP 头部按 RFC 只允许 ASCII 可见字符；
+///   · CFNetwork 遇到含非 ASCII 的 header value，部分路径会直接抛
+///     `NSInvalidArgumentException: Non-ASCII characters in header`，
+///     请求根本发不出去 —— 表现是「所有模型都连不上」，而且跟模型无关；
+///   · 就算没抛，服务商侧（Cloudflare、各家网关）也会按 latin-1 解出乱码。
+/// 所以这里保留英文产品名。界面上用户看不到 UA，换成中文没有任何收益。
 enum MinisUserAgent {
     /// Cached because the components are process-constant. `nonisolated(unsafe)`
     /// is safe: the value is computed once from immutable bundle/device info and

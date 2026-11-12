@@ -23,7 +23,7 @@ final class ContextTrimPlannerTests: XCTestCase {
         var fn: P.Offloader {
             { [self] _, toolId, toolName in
                 calls.append((toolId, toolName))
-                return "/var/minis/offloads/tools/\(toolName)_\(toolId).txt"
+                return "/var/ai/offloads/tools/\(toolName)_\(toolId).txt"
             }
         }
     }
@@ -302,7 +302,7 @@ final class ContextTrimPlannerTests: XCTestCase {
         let r = results(applied), u = uses(applied)
         for i in 0..<3 {
             XCTAssertTrue(r[i].content.hasPrefix(AIChatViewModel.offloadedStubPrefix), "result \(i) stubbed")
-            XCTAssertTrue(r[i].content.contains("/var/minis/offloads/tools/file_write_call_\(i).txt"))
+            XCTAssertTrue(r[i].content.contains("/var/ai/offloads/tools/file_write_call_\(i).txt"))
             XCTAssertTrue(AIChatViewModel.isOffloadedStub(u[i].input["content"] as! String),
                           "argument \(i) is the placeholder the write tools refuse")
             XCTAssertTrue(u[i].offloaded)
@@ -318,8 +318,8 @@ final class ContextTrimPlannerTests: XCTestCase {
     }
 
     func testTheResultStubIsTheExistingOffloadFormat() {
-        XCTAssertEqual(P.resultStub(tokens: 12, bytes: 34, path: "/var/minis/offloads/tools/a.txt"),
-                       "[CONTEXT OFFLOADED] Content (~12 tokens, 34 bytes) saved to: /var/minis/offloads/tools/a.txt\nUse file_read tool to retrieve if needed.")
+        XCTAssertEqual(P.resultStub(tokens: 12, bytes: 34, path: "/var/ai/offloads/tools/a.txt"),
+                       "[CONTEXT OFFLOADED] Content (~12 tokens, 34 bytes) saved to: /var/ai/offloads/tools/a.txt\nUse file_read tool to retrieve if needed.")
         XCTAssertTrue(AIChatViewModel.isOffloadedStub(P.shortenedArgumentNotice(String(repeating: "x", count: 500))))
     }
 
@@ -356,7 +356,7 @@ final class ContextTrimPlannerTests: XCTestCase {
         let its = P.iterations(history)
         let applied = P.apply(history, state: P.State(skeletonBefore: its[2].key), offloader: off())!
         let r0 = results(applied)[0]
-        XCTAssertTrue(r0.content.contains("[shortened for context (image omitted); full output: /var/minis/offloads/tools/shell_execute_call_0.txt]"))
+        XCTAssertTrue(r0.content.contains("[shortened for context (image omitted); full output: /var/ai/offloads/tools/shell_execute_call_0.txt]"))
         XCTAssertNil(r0.imageBytes, "image dropped")
         XCTAssertLessThanOrEqual(r0.content.split(separator: "\n")[0].count, P.skeletonChars)
         XCTAssertEqual(results(applied)[1].content, res(20), "a small result is already a skeleton")
@@ -372,7 +372,7 @@ final class ContextTrimPlannerTests: XCTestCase {
         let applied = P.apply(history, state: both, offloader: fake.fn)!
         let r0 = results(applied)[0].content
         XCTAssertTrue(r0.hasPrefix(AIChatViewModel.offloadedStubPrefix))
-        XCTAssertTrue(r0.contains("/var/minis/offloads/tools/shell_execute_call_0.txt"))
+        XCTAssertTrue(r0.contains("/var/ai/offloads/tools/shell_execute_call_0.txt"))
         XCTAssertEqual(fake.calls.filter { $0.id == "call_0" }.count, 1, "offloaded once, not again for the skeleton")
         let shrunkOnly = P.apply(history, state: P.State(shrinkBefore: its[1].key), offloader: off())!
         XCTAssertLessThanOrEqual(ContextSizeMeter.estimateTokens(applied), ContextSizeMeter.estimateTokens(shrunkOnly))
@@ -481,11 +481,11 @@ final class ContextTrimPlannerTests: XCTestCase {
     func testTheIndexNamesErrorsAndOutputPaths() {
         var it = iteration(0)
         it[1].parts = [.toolResult(id: "call_0", name: "shell_execute",
-                                   content: P.resultStub(tokens: 1, bytes: 2, path: "/var/minis/offloads/tools/x.txt"), isError: false)]
+                                   content: P.resultStub(tokens: 1, bytes: 2, path: "/var/ai/offloads/tools/x.txt"), isError: false)]
         var failed = iteration(1)
         failed[1].parts = [.toolResult(id: "call_1", name: "shell_execute", content: "boom", isError: true)]
         let index = P.indexText([(it[0], [it[1]]), (failed[0], [failed[1]]), (iteration(2)[0], [])])
-        XCTAssertTrue(index.contains("#1 shell_execute «step 0» → ok (/var/minis/offloads/tools/x.txt)"))
+        XCTAssertTrue(index.contains("#1 shell_execute «step 0» → ok (/var/ai/offloads/tools/x.txt)"))
         XCTAssertTrue(index.contains("#2 shell_execute «step 1» → error"))
         XCTAssertTrue(index.contains("#3 shell_execute «step 2» → no result"))
     }

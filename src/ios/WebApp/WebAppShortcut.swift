@@ -9,7 +9,7 @@ enum WebAppPathScope: String, Codable, Hashable, Sendable {
     case sessionAttachment = "session_attachment"
     /// `<sessionRoot>/workspace/...` — files inside the agent's working dir.
     case sessionWorkspace = "session_workspace"
-    /// iSH `/var/minis/shared/...` — host-mapped shared space.
+    /// iSH `/var/ai/shared/...` — host-mapped shared space.
     case shared = "shared"
     /// User-mounted folder (Files.app picker / iCloud / external drive).
     case mount = "mount"

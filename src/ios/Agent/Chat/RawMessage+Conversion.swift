@@ -149,7 +149,7 @@ extension RawMessage {
                 }
                 // Strip model-facing attachment markers from user-visible text.
                 // These are generated in AIChatViewModel when building the LLM payload
-                // (`[attached image: /var/minis/...]` next to inline image data, and
+                // (`[attached image: /var/ai/...]` next to inline image data, and
                 // `[image omitted to save context — ...]` when eviction replaces
                 // image bytes with a text placeholder). The UI already renders the
                 // real attachments via `msg.attachments` parsed from the
@@ -194,7 +194,7 @@ extension RawMessage {
                             if !textContent.isEmpty { textContent += "\n" }
                             textContent += PastePlaceholder.literal(for: pastedId)
                         }
-                        // Path must be under /var/minis/ for AttachmentMeta to
+                        // Path must be under /var/ai/ for AttachmentMeta to
                         // derive a resolvable `minis://` URL — the host path
                         // would fall through minisURL's guard unchanged and the
                         // card's tap would try to open a raw filesystem path.
@@ -215,7 +215,7 @@ extension RawMessage {
                         let realName = rel.lastPathComponent
                         let host = (rel.deletingLastPathComponent as NSString).lastPathComponent
                         userAttachments.append(AttachmentMeta(
-                            path: "/var/minis/\(host)/\(realName)",
+                            path: "/var/ai/\(host)/\(realName)",
                             size: size,
                             modified: Date(),
                             displayName: ref.originalFileName,

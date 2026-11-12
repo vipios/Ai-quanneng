@@ -351,7 +351,7 @@ private struct ChatExportHeaderView: View {
                                 .stroke(Color(uiColor: .separator), lineWidth: 0.5))
                     }
                     // Product name: not localized.
-                    ExportLabel(text: "Open Minis", font: .systemFont(ofSize: 14, weight: .semibold),
+                    ExportLabel(text: "Open 全能AI", font: .systemFont(ofSize: 14, weight: .semibold),
                                 color: .label, lines: 1)
                         .fixedSize()
                 }
@@ -682,7 +682,7 @@ final class ChatExportRenderer {
         let contentHeight = pageHeight - m * 2 - footer
         let url = try Self.fileURL(title: title, ext: "pdf")
         var box = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
-        var infoDict: [String: Any] = [kCGPDFContextCreator as String: "Minis"]
+        var infoDict: [String: Any] = [kCGPDFContextCreator as String: "全能AI"]
         if !title.isEmpty { infoDict[kCGPDFContextTitle as String] = title }
         let info = infoDict as CFDictionary
         guard let ctx = CGContext(url as CFURL, mediaBox: &box, info) else { throw ChatExportError.writeFailed }

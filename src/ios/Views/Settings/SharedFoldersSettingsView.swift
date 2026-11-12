@@ -20,7 +20,7 @@ struct SharedFoldersSettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Shared folders", systemImage: "info.circle")
                         .font(.subheadline.weight(.semibold))
-                    Text("These directories appear in iOS Files under On My iPhone → Minis. Tap a row to see details, browse, or toggle visibility.")
+                    Text("These directories appear in iOS Files under On My iPhone → 全能AI. Tap a row to see details, browse, or toggle visibility.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -139,7 +139,7 @@ struct SharedFolderEntry: Identifiable, Hashable {
     /// UserDefaults key / FileProvider subdir name ("shared", "skills", "memory").
     let name: String
     let displayName: String
-    /// Linux path inside iSH (e.g. "/var/minis/shared").
+    /// Linux path inside iSH (e.g. "/var/ai/shared").
     let linuxPath: String
     /// Host filesystem URL (App Group container) for FileBrowserView.
     let hostURL: URL
@@ -196,7 +196,7 @@ final class SharedFoldersViewModel: ObservableObject {
             SharedFolderEntry(
                 name: "shared",
                 displayName: AppLocalized("Shared"),
-                linuxPath: "/var/minis/shared",
+                linuxPath: "/var/ai/shared",
                 hostURL: root.appendingPathComponent("shared", isDirectory: true),
                 iconName: "folder.fill",
                 iconColor: .blue,
@@ -205,7 +205,7 @@ final class SharedFoldersViewModel: ObservableObject {
             SharedFolderEntry(
                 name: "skills",
                 displayName: AppLocalized("Skills"),
-                linuxPath: "/var/minis/skills",
+                linuxPath: "/var/ai/skills",
                 hostURL: root.appendingPathComponent("skills", isDirectory: true),
                 iconName: "sparkles",
                 iconColor: .purple,
@@ -214,7 +214,7 @@ final class SharedFoldersViewModel: ObservableObject {
             SharedFolderEntry(
                 name: "memory",
                 displayName: AppLocalized("Memory"),
-                linuxPath: "/var/minis/memory",
+                linuxPath: "/var/ai/memory",
                 hostURL: root.appendingPathComponent("memory", isDirectory: true),
                 iconName: "brain.head.profile",
                 iconColor: .pink,

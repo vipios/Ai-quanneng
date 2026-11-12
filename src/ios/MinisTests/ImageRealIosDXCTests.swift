@@ -158,7 +158,7 @@ final class ImageRealIosDXCTests: XCTestCase {
     func testReloadedScreenshotGoesOutGatedOnEveryProvider() async throws {
         let original = page(2760, 21891)
         let history = try await reloadedToolTurn(tool: "browser_use", image: original, subdir: "browser",
-                                                 linuxPath: "/var/minis/browser/screenshot_1.jpg")
+                                                 linuxPath: "/var/ai/browser/screenshot_1.jpg")
         guard case .toolResult(_, _, _, _, let rebuilt?, let mime, _, _, _) = history[2].parts.first else {
             return XCTFail("tool image lost on reload")
         }
@@ -184,7 +184,7 @@ final class ImageRealIosDXCTests: XCTestCase {
     func testReloadedReadImageGoesOutOnEveryProvider() async throws {
         let shot = page(1200, 900)
         let history = try await reloadedToolTurn(tool: "read_image", image: shot, subdir: "images",
-                                                 linuxPath: "/var/minis/images/photo.jpg")
+                                                 linuxPath: "/var/ai/images/photo.jpg")
         let b = try serialize(history)
         for (name, imgs) in [("anthropic", b.anthropic), ("gemini", b.gemini), ("antigravity", b.antigravity), ("chat", b.chat)] {
             XCTAssertEqual(imgs.count, 1, name)
@@ -199,7 +199,7 @@ final class ImageRealIosDXCTests: XCTestCase {
     /// token like the OAuth chain, so the tool image rides in the tool_result.
     func testKeyAuthRouteSendsTheToolImage() async throws {
         let history = try await reloadedToolTurn(tool: "browser_use", image: page(800, 600), subdir: "browser",
-                                                 linuxPath: "/var/minis/browser/screenshot_2.jpg")
+                                                 linuxPath: "/var/ai/browser/screenshot_2.jpg")
         let b = try serialize(history)
         XCTAssertEqual(b.anthropic.count, 1, "the OAuth route carries the tool image")
         XCTAssertEqual(b.anthropicKeyAuth.count, 1, "a tool-result image reaches Anthropic in API-key mode too")

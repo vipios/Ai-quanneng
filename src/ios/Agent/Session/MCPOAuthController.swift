@@ -243,7 +243,7 @@ final class MCPOAuthController: NSObject, ObservableObject {
     // MARK: - Guest bridge file
 
     /// Host URL of the guest-visible token bridge for `server`
-    /// (bind-mounted at /var/minis/mcp-servers/oauth/<name>.json).
+    /// (bind-mounted at /var/ai/mcp-servers/oauth/<name>.json).
     nonisolated static func bridgeFileURL(server: String) -> URL {
         AIChatViewModel.minisMcpServersPersistentDir
             .appendingPathComponent("oauth", isDirectory: true)
@@ -258,7 +258,7 @@ final class MCPOAuthController: NSObject, ObservableObject {
     ///
     /// The failure this guards against is silent by construction: the host writes
     /// into its App Group and reports success, while the sandbox reads
-    /// `/var/minis/mcp-servers` — a symlink that a guest-created placeholder
+    /// `/var/ai/mcp-servers` — a symlink that a guest-created placeholder
     /// directory can shadow. Everything on the host side looks fine; the guest
     /// simply never finds a token and reports "not authorized" forever.
     private static func materializeBridge(server: String, oauth: MCPOAuthConfig, tokens: StoredTokens) throws {
@@ -330,7 +330,7 @@ final class MCPOAuthController: NSObject, ObservableObject {
     }
 
     /// [T-mcp-bridge-guest-verify] Why the guest cannot read the bridge file at
-    /// `guestDir` (the host location of `/var/minis/mcp-servers`), or nil when
+    /// `guestDir` (the host location of `/var/ai/mcp-servers`), or nil when
     /// it can. lstat, not stat: a guest-made real directory at that path is
     /// exactly the #380 shadow, and following links would hide the difference.
     /// A missing path is accepted: the rootfs has not been mounted yet, and the

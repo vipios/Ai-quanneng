@@ -1023,7 +1023,7 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
         let foreign = Self.detectInjectedDylibs()
         if !foreign.isEmpty {
             report += "\n⚠️ Injected: \(foreign.joined(separator: ", "))"
-            report += "\n         (third-party tweak/hook libraries loaded in-process — crashes may originate there, not in Minis)"
+            report += "\n         (third-party tweak/hook libraries loaded in-process — crashes may originate there, not in 全能AI)"
         }
 
         if let phase = lastPhase {

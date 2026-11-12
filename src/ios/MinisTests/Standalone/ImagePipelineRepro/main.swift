@@ -164,7 +164,7 @@ func readImageScenario(_ key: String, file: URL) async {
     let live = vm.readImageLive(fileData: data, uiImage: UIImage(data: data)!)
     record("\(key).live", live.data, mime: live.mime)
     let ref = await vm.persistReadImageSnapshot(imagePath: file.path, imageData: try! Data(contentsOf: file), sid: sid,
-                                                toolImageLinuxPath: "/var/minis/attachments/uploads/\(file.lastPathComponent)")
+                                                toolImageLinuxPath: "/var/ai/attachments/uploads/\(file.lastPathComponent)")
     let persisted = await fileData(ref)!
     record("\(key).persisted", persisted, mime: ref.mimeType)
     R("\(key).persisted.subdir", subdirOf(ref))
@@ -187,7 +187,7 @@ func attachmentRows(_ text: String, _ ref: MediaRef) -> [(MessageRole, [ContentP
 func sendScenario(_ key: String, file: URL, wireIt: Bool = false) async -> Data? {
     let data = try! Data(contentsOf: file)
     let att = InputAttachment(fileName: file.lastPathComponent, cacheURL: file, kind: .image)
-    let linuxPath = "/var/minis/attachments/uploads/\(file.lastPathComponent)"
+    let linuxPath = "/var/ai/attachments/uploads/\(file.lastPathComponent)"
     let parts = await vm.sendPathImage(att, data: data, linuxPath: linuxPath)
     R("\(key).imageParts", parts.filter { if case .imageData = $0 { return true }; return false }.count)
     R("\(key).hasAttachedMarker", parts.contains { if case .text(let t) = $0 { return t.hasPrefix("[attached image:") }; return false })
@@ -302,7 +302,7 @@ func run() async {
 
     // P-i4 takeover: raw screenshot appended as-is
     let bigShot = screenshotLike(pointW: 3000, pointH: 2000).data
-    let msg = vm.takeoverMessage(data: bigShot, linuxPath: "/var/minis/browser/takeover_1.jpg")
+    let msg = vm.takeoverMessage(data: bigShot, linuxPath: "/var/ai/browser/takeover_1.jpg")
     if let (d, mime) = userImage([msg]) { record("p4.live", d, mime: mime) }
     wire([AgentMessage(role: .user, parts: [.text("take over")]), msg], "p4.wire.live")
 

@@ -177,7 +177,7 @@ extension AIChatViewModel {
     }
 
     /// Lazily persist `data` under a session's `attachments/spillover/<sha1>.<ext>`
-    /// directory and return the iSH-visible `/var/minis/attachments/spillover/...`
+    /// directory and return the iSH-visible `/var/ai/attachments/spillover/...`
     /// path. Idempotent — same bytes hash to the same path. Returns nil
     /// if the write fails; the caller falls back to the no-path
     /// placeholder variant.
@@ -214,7 +214,7 @@ extension AIChatViewModel {
                 return nil
             }
         }
-        return "/var/minis/attachments/spillover/\(sha).\(ext)"
+        return "/var/ai/attachments/spillover/\(sha).\(ext)"
     }
 
     /// Apply the request-level image budget to a fully-resolved agent

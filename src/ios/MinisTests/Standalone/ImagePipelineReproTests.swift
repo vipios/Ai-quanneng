@@ -323,7 +323,7 @@ emit("""
 // Takeover (BackgroundTask.swift): the message it appends, verbatim.
 emit("""
     var agentHistory: [AgentMessage] = []
-    static var minisBrowserLinuxDir: String { "/var/minis/browser" }
+    static var minisBrowserLinuxDir: String { "/var/ai/browser" }
     func takeoverMessage(data: Data, linuxPath persistLinuxPath: String) -> AgentMessage {
         let linuxPath = persistLinuxPath
     \(block(BG, from: "            let takeoverNote = ", through: "            agentHistory.append(msg)"))
