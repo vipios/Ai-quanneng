@@ -289,7 +289,20 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         // [R79] 卡片出血全靠这四个数，取一次，整段 body 共用。
         let m = Self.windowMetrics()
 
-        return ZStack(alignment: .leading) {
+        // [R81-铺到顶] 对齐方式从 `.leading` 改成 `.topLeading`。
+        //
+        // 为什么必须改：卡片是「和屏幕等高的板」（`m.height`），它比父容器
+        // （安全区高度）高一截。ZStack 会按**最大子视图**定自己的尺寸，
+        // 于是 ZStack 也长到了整屏高；`.leading` 在纵向是**居中**语义没用，
+        // 纵向默认居中 —— 但 ZStack 自己被 GeometryReader 顶到安全区顶，
+        // 结果整层往下坠了一个状态栏的高度：
+        //   · 卡片顶上留一条（用户说的「上面缺一条」）
+        //   · 卡片底下溢出被裁（所以「下面缺圆角」）
+        //   · 抽屉跟着往下坠 46pt，右下角齿轮被推出屏幕（「齿轮快没了」）
+        //
+        // 改 `.topLeading` 之后一切按「顶边对齐」算，位置不再依赖
+        // 父子两边高度差的推导，下面的 offset 只需要减掉状态栏那一段。
+        return ZStack(alignment: .topLeading) {
             // ── 抽屉层（最底下，静止不动）──
             //
             // [R67-抽屉沉底] 用户给的参照（截图 + 原话）：
@@ -307,7 +320,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             // 被卡片盖住的部分不会误触；完全收起时卡片盖满全屏，
             // 抽屉那一层根本接不到触摸。
             drawer
-                .frame(width: drawerWidth)
+                .frame(width: drawerWidth, maxHeight: .infinity)
                 // 收起过程中（progress 还在 0 附近）不参与命中：
                 // 否则动画刚起步那一瞬，露出的 1~2pt 会把聊天界面左边缘的
                 // 点击吃掉。
@@ -358,13 +371,19 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             //   3. 里面的 content 自己上下加 padding，退回安全区原位 ——
             //      导航栏、返回键、列表 inset 一个点不动。
             //
-            // 位置怎么算：父容器是安全区高度（`H`, 上下少 top / bottom），
-            // 这块板是 `H + top + bottom` 高，ZStack 默认居中摆，于是板顶
-            // 落在 `-(top + bottom)/2`；要它落在 `-top`，再推
-            // `(bottom − top)/2` 刚好。
+            // 位置怎么算：[R81] 改成「顶边对齐 + 上移一个状态栏」。
             //
-            // 取不到窗口信息（`m == nil`）时 height 传 nil，等于不约束、
-            // 退回原样：宁可维持现状，也绝不把聊天页弄没。
+            // ZStack 现在是 `.topLeading`，卡片顶边贴着父容器顶边（= 安全区顶，
+            // 屏幕坐标里的 y = top）。所以只要往上推 `top`，卡片顶边就落在
+            // 屏幕 0，底边落在 `top + 屏高 - top - bottom…` 也就是正好整屏。
+            //
+            // 原来那版用的是 `(bottom − top) / 2`，前提是「ZStack 居中摆一个
+            // 比它高的子视图」—— 那个前提本身不成立（见上面 `.topLeading`
+            // 那段注释），所以越修越歪。现在这个式子只有一个变量，就是状态栏高度，
+            // 读多少推多少，没有推导链。
+            //
+            // 取不到窗口信息（`m == nil`）时 height 传 nil、offset 传 0，
+            // 等于不约束、退回原样：宁可维持现状，也绝不把聊天页弄没。
             ZStack(alignment: .top) {
                 Color(UIColor.systemBackground)
                 content
@@ -372,7 +391,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                     .padding(.bottom, m?.bottom ?? 0)
             }
             .frame(width: totalWidth, height: m?.height, alignment: .top)
-            .offset(y: m.map { ($0.bottom - $0.top) / 2 } ?? 0)
+            .offset(y: -(m?.top ?? 0))
             // 「越走越浅」靠这层底色蒙出来。[R80] 这里是**唯一**的变浅手段，
             // 不再有 blur —— 只改 alpha，一次合成，不碰离屏渲染。
             //
@@ -385,12 +404,19 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             // 蒙的是 `systemBackground` 而不是白：深色模式下蒙白会
             // 把深色卡片糊成一片雾。
             //
-            // 系数从 0.22 提到 0.34：少了模糊之后，0.22 太弱，右侧露出来的
-            // 那一条还是「一清二楚」。0.34 差不多是「看得出有字、读不出内容」，
-            // 和参照里那条虚影对得上。
+            // 系数从 0.22 提到 0.34，[R81] 再提到 0.55 —— 用户第二次反馈：
+            //   「滑动到右边的时候聊天页文字显示的太清晰，背景太白了」
+            //
+            // 0.34 只做到「隐约看得出有字」，但真机上正文字号小、行距密，
+            // 那层白蒙不住笔画，还是一眼能读。0.55 才是参照里的观感：
+            // 能看出是聊天气泡，读不出任何一句内容。
+            //
+            // 只调这一个数，不叠第二层黑 —— 两层叠起来第一次合成就多一遍全屏
+            // 混合，而收益只是背景再灰一点点；白蒙到 0.55 时卡片底色已经
+            // 跟着亮了一档，和抽屉的 #fbfbfd 拉不开太刺眼的对比了。
             .overlay {
                 Color(UIColor.systemBackground)
-                    .opacity(0.34 * state.progress)
+                    .opacity(0.55 * state.progress)
                     .allowsHitTesting(false)
             }
             // 先蒙再裁：蒙层在 clipShape 里面，圆角外面那圈不会被
@@ -490,6 +516,16 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                 .allowsHitTesting(false)
                 .zIndex(2)
         }
+        // [R81-铺到顶] 把 ZStack 自己**钉死在父容器给的尺寸**（安全区那块）上。
+        //
+        // 不加这句的话，ZStack 会按最大的子视图（整屏高的卡片）定尺寸，
+        // 自己长到整屏高 —— 于是抽屉（`.frame(maxHeight: .infinity)`）也跟着
+        // 拿到整屏高，底部多出 `bottom` 那一截，右下角的齿轮又被推出屏幕。
+        //
+        // `.frame(maxHeight: .infinity)` 只是「用满提议尺寸」，不会像固定
+        // `height:` 那样把内容压扁；卡片超出这层限制的部分照样画出来
+        // （SwiftUI 默认不裁），所以出血效果不受影响。
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .environmentObject(state)
         // [R80] 抽屉里的视图靠它收自己，不再订阅 `state`（见 DrawerCloseAction）。
         .environment(\.drawerClose, closeAction)
