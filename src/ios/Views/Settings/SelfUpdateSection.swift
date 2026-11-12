@@ -49,6 +49,11 @@ struct SelfUpdateSection: View {
     @State private var downloading = false
     @State private var progress: Double = 0
     @State private var totalBytes: Int64 = 0
+    // [R81-下载进度条] 下面三个只为一个目的：把「还要多久」算给用户看。
+    // 光有一个百分比，80MB 下两分钟里数字爬得很慢，看着像卡住了。
+    @State private var speedBytesPerSec: Double = 0
+    @State private var lastTickAt: Date?
+    @State private var lastTickBytes: Double = 0
     @State private var savedFile: URL?
     /// [R44] 下完之后要弹的系统共享面板。非 nil 就 present。
     ///
@@ -110,7 +115,14 @@ struct SelfUpdateSection: View {
 
             // 结果一句话。只在有话说的时候出现 ——
             // 常驻一行「点上面检查」是多余的，那一行标题已经写清楚了。
-            if !checking && !downloading, let r = result {
+            //
+            // [R81] 下载中改成显示进度条：原来这里显示的是「有新版 1.27 ·
+            // 线路 …」，配上行尾那个 mini 转圈，用户的原话是
+            // 「没有进度条，不知道下到多少」—— 80MB 的包，行尾那点小字
+            // 根本看不出在走。现在下载期间这一块换成横条 + 已下/总量/速度/剩余。
+            if downloading {
+                downloadProgressBlock
+            } else if !checking, let r = result {
                 Text(r.message)
                     .font(SettingsDesign.subFont)
                     .foregroundStyle(color(for: r))
@@ -219,6 +231,117 @@ struct SelfUpdateSection: View {
         return "\(Int(progress * 100))%  \(String(format: "%.0f", mb))MB"
     }
 
+    // MARK: - 下载进度块  [R81]
+
+    /// 下载中的进度条。
+    ///
+    /// 为什么要有：原来整个下载过程只有「检查更新」行尾一个 `mini` 转圈
+    /// 加一行 `caption2` 的百分比。80MB 的包在手机上要一两分钟，那点
+    /// 尺寸和字号几乎看不出在动 —— 用户的原话是「没有进度条，不知道
+    /// 下载到多少」。
+    ///
+    /// 这里给的是：一条横向进度条 + 百分比 + 「已下 / 总量」+ 实时速度 +
+    /// 剩余时间。速度不是装饰，它决定用户要不要继续等 —— 13KB/s 和
+    /// 580KB/s 在同一个百分比下是完全不同的处境。
+    @ViewBuilder
+    private var downloadProgressBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if progress >= 0 {
+                ProgressView(value: min(max(progress, 0), 1))
+                    .progressViewStyle(.linear)
+                    .tint(SettingsDesign.green)
+            } else {
+                // 不知道总量（服务器没给 Content-Length，且 release 里也没
+                // 记 size）。别画一条永远 0% 的空轨道 —— 那种「看起来卡住」
+                // 的观感正是这次要修的东西，改用不确定态的圆环。
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("下载中…")
+                        .font(.caption2)
+                        .foregroundStyle(Color(.secondaryLabel))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack(spacing: 8) {
+                Text(progress >= 0 ? "\(Int(progress * 100))%" : "下载中…")
+                    .font(.caption.weight(.medium))
+                    .monospacedDigit()
+                    .foregroundStyle(Color(.label))
+
+                Spacer(minLength: 0)
+
+                Text(progressDetail)
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(Color(.secondaryLabel))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, SettingsDesign.rowPaddingH)
+        .padding(.top, 2)
+        .padding(.bottom, 10)
+    }
+
+    /// 「34 / 77 MB · 1.2 MB/s · 剩 36 秒」。缺什么就少写什么，不补 0。
+    private var progressDetail: String {
+        var parts: [String] = []
+
+        if totalBytes > 0, progress >= 0 {
+            let done = progress * Double(totalBytes)
+            parts.append("\(String(format: "%.0f", done / 1_048_576)) / \(String(format: "%.0f", Double(totalBytes) / 1_048_576)) MB")
+        }
+
+        if speedBytesPerSec > 0 {
+            parts.append("\(String(format: "%.1f", speedBytesPerSec / 1_048_576)) MB/s")
+        }
+
+        if let eta = remainingSecondsText {
+            parts.append("剩 \(eta)")
+        }
+
+        return parts.joined(separator: " · ")
+    }
+
+    /// 剩余时间。只在进度真的动了以后才算 —— 第一个采样点没有速度，
+    /// 硬算会得出一个荒谬的数字。
+    private var remainingSecondsText: String? {
+        guard progress > 0.02, progress < 1,
+              speedBytesPerSec > 1, totalBytes > 0 else { return nil }
+        let remaining = Double(totalBytes) * (1 - progress) / speedBytesPerSec
+        guard remaining.isFinite, remaining > 0, remaining < 3600 else { return nil }
+        if remaining < 60 { return "\(Int(remaining.rounded())) 秒" }
+        return "\(Int((remaining / 60).rounded())) 分"
+    }
+
+    /// 用相邻两次回调的字节差算瞬时速度，再做一次指数平滑。
+    ///
+    /// 为什么不平滑直接用瞬时值：进度回调的间隔并不均匀（有时 100ms 一次、
+    /// 有时 1s 一次），原始值会在 0.2~8 MB/s 之间乱跳，看着像坏了。
+    /// 0.6/0.4 的权重既能跟上真实变化，又不会让数字抖。
+    private func sampleSpeed(progress p: Double, total: Int64) {
+        guard p >= 0, total > 0 else { return }
+        let done = p * Double(total)
+        let now = Date()
+
+        guard let last = lastTickAt else {
+            lastTickAt = now
+            lastTickBytes = done
+            return
+        }
+
+        let dt = now.timeIntervalSince(last)
+        // 回调太密就先不更新：0.4 秒以下的间隔算出来的速度没有意义。
+        guard dt >= 0.4 else { return }
+
+        let instant = max(0, (done - lastTickBytes) / dt)
+        speedBytesPerSec = speedBytesPerSec > 0
+            ? speedBytesPerSec * 0.6 + instant * 0.4
+            : instant
+        lastTickAt = now
+        lastTickBytes = done
+    }
+
     private func updateBadge(_ r: SelfUpdateResult) -> some View {
         let (text, bg): (String, Color) = {
             switch r {
@@ -260,6 +383,9 @@ struct SelfUpdateSection: View {
         savedFile = nil
         progress = 0
         totalBytes = 0
+        speedBytesPerSec = 0
+        lastTickAt = nil
+        lastTickBytes = 0
 
         let outcome = await SelfUpdate.check()
         result = outcome.result
@@ -295,6 +421,10 @@ struct SelfUpdateSection: View {
                     }
                     progress = p
                     if total > 0 { totalBytes = total }
+                    // [R81] 速度采样。用 totalBytes 而不是闭包里的 total：
+                    // 服务器偶尔只在响应头给一次 Content-Length，之后回调
+                    // 里带的 total 可能是 0，那时候要用已经记下来的总量。
+                    sampleSpeed(progress: p, total: total > 0 ? total : totalBytes)
                 }
             }
             savedFile = file
