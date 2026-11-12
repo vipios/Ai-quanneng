@@ -61,6 +61,17 @@ extension AIChatViewModel {
             + "Prefer this for most tasks — it is a real Linux environment with persistent filesystem. "
             + "Common tools (python3, pip, curl, wget, git, ssh, etc.) can be installed via apk add; Python packages via pip install. "
             + "Use `which <cmd>` to check if a tool is already installed before running apk add — many packages persist across sessions. "
+            // [R80-命令写得省 CPU] 用户报：跑「列出最占空间的已装包」时 CPU 52~59%、
+            // 手机发烫、界面卡。查下来命令是
+            //   for p in $(apk list --installed …); do apk info -s "$p"; done
+            // —— 每个已装包 fork 一次 apk，几百次进程创建 + 几百次包索引解析。
+            // 这不是 App 的 UI 在烧 CPU（截图里画面是静止的），是命令本身。
+            // 所以从源头管：告诉模型优先用「一次成型」的命令，别 N 次 fork。
+            + "Command efficiency rule: this is a phone running an emulated Linux, so process creation is expensive — a loop that spawns one process per item (hundreds of forks) can pin the CPU for minutes and make the device hot. "
+            + "Never write `for x in $(list); do tool \"$x\"; done` when one command can produce the whole answer. "
+            + "Example: installed package sizes come from a single `apk info -s` pass — do not call it once per package. "
+            + "The same applies to `du` / `find` / `grep` / `stat` over many paths: prefer one pass with `-exec … +`, `xargs -n 200`, or a single awk/python script. "
+            + "If a task genuinely needs to touch hundreds of items, do it inside one process (python/awk) instead of a shell loop, and prefer printing less — piping into `head` is cheaper than formatting megabytes the user will not read. "
             + "When you need to wait before checking results (e.g. polling, waiting for a process), use the `delay` parameter instead of `sleep` in the command — "
             + "delay blocks the agent flow without occupying the iSH shell, so other concurrent tasks can use it during the wait. This avoids resource contention. "
             // [T-agent-prompt-no-phantom-checkins] Device log 2026-07-17: the agent
