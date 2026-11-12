@@ -80,6 +80,10 @@ struct SessionDrawer: View {
     @MainActor private static var topInset: CGFloat { DrawerWindow.metrics()?.top ?? 0 }
     @MainActor private static var bottomInset: CGFloat { DrawerWindow.metrics()?.bottom ?? 0 }
 
+    /// 列表底部要给齿轮让出的高度：齿轮直径 60 + 齿轮底边距 + 余量 10。
+    /// 底边距和 `settingsGear` 里用的是同一个式子，两边必须同源。
+    @MainActor private static var gearReserve: CGFloat { 60 + max(16, bottomInset + 16) + 10 }
+
     /// 补到屏幕边缘的一条底色。
     ///
     /// `alignment: .top` 的补边要往上顶（-h），`.bottom` 往下压（+h）——
@@ -118,10 +122,11 @@ struct SessionDrawer: View {
                         normalList
                     }
                 }
-                // 底部留白 = 齿轮直径 60 + 底边距 16 + 余量 10 = 88。
-                // 齿轮是 overlay 里的绝对定位元素、不参与 VStack 布局，
-                // 少了这段留白最后一条会话会被齿轮盖住点不到。
-                .padding(.bottom, 88)
+                // 底部留白跟着齿轮走，不再写死 88。
+                // 齿轮上移了多少，这段留白就得跟着长多少，否则最后一条
+                // 会话会被它盖住点不到（齿轮是 overlay 里的绝对定位元素，
+                // 不参与 VStack 布局，VStack 完全不知道它占了地方）。
+                .padding(.bottom, Self.gearReserve)
             }
             .scrollDismissesKeyboard(.interactively)
         }
