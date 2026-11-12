@@ -191,10 +191,16 @@ struct SettingsSheet: View {
                 // 图形仍用 network：它本来就是中转站在这台机器上的记号，换掉
                 // 反而要重新认。
                 //
-                // 服务商页那个 Menu 里的对应项已同步删除，否则同一个动作会有
-                // 两个入口，改了一个忘了另一个就是下次的 bug。
+                // [R78-中转站自己管自己] 这一行原来直通「添加 AI 中转站」表单
+                // ← 于是用户加完中转站，回到「AI 服务商」才找得到它（中转站
+                // 底层就是个 ProviderInstance，天然会混进那边的分组里）。
+                // 现在改成进中转站自己的列表页：列表 + 右上角加号，
+                // 结构跟「AI 服务商」一模一样，各管各的。
+                //
+                // 标题沿用原来的 key（「添加 AI 中转站」），不换名字 ——
+                // 用户认的就是这一行，改名等于让他重新找一个入口。
                 NavigationLink {
-                    AddRelayProviderView()
+                    RelayInstancesView()
                 } label: {
                     SettingsRowContent(
                         title: AnyView(SettingsRowLabel(.addRelay,

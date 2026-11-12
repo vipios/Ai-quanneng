@@ -641,6 +641,7 @@
 		9BF0BCCADAFECBAACB46C29F /* RelaySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 177B2BDEF0ABAEB6BDE1FD3A /* RelaySettingsView.swift */; };
 		E119A3B4B3A1FDED3DDCAEDE /* RelayProviderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0AF1F7C48BAEC98C5FCA49D /* RelayProviderSettings.swift */; };
 		D84ECEC1BCA13B50CB53A6F5 /* AddRelayProviderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214ABCF4BB16AE90AADA0496 /* AddRelayProviderView.swift */; };
+		E5RLYLST0BF00000000000A1 /* RelayInstancesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5RLYLST0FR00000000000A1 /* RelayInstancesView.swift */; };
 		SU000000000000000000GH07 /* SelfUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = RU000000000000000000GH07 /* SelfUpdate.swift */; };
 		SS000000000000000000GH08 /* SelfUpdateSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = RS000000000000000000GH08 /* SelfUpdateSection.swift */; };
 		BF000000000000000000GH01 /* BuildFallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = RF000000000000000000GH01 /* BuildFallback.swift */; };
@@ -1484,6 +1485,7 @@
 		177B2BDEF0ABAEB6BDE1FD3A /* RelaySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelaySettingsView.swift; sourceTree = "<group>"; };
 		D0AF1F7C48BAEC98C5FCA49D /* RelayProviderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayProviderSettings.swift; sourceTree = "<group>"; };
 		214ABCF4BB16AE90AADA0496 /* AddRelayProviderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRelayProviderView.swift; sourceTree = "<group>"; };
+		E5RLYLST0FR00000000000A1 /* RelayInstancesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayInstancesView.swift; sourceTree = "<group>"; };
 		RU000000000000000000GH07 /* SelfUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfUpdate.swift; sourceTree = "<group>"; };
 		RS000000000000000000GH08 /* SelfUpdateSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfUpdateSection.swift; sourceTree = "<group>"; };
 		RF000000000000000000GH01 /* BuildFallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildFallback.swift; sourceTree = "<group>"; };
@@ -2730,6 +2732,7 @@
 				177B2BDEF0ABAEB6BDE1FD3A /* RelaySettingsView.swift */,
 				D0AF1F7C48BAEC98C5FCA49D /* RelayProviderSettings.swift */,
 				214ABCF4BB16AE90AADA0496 /* AddRelayProviderView.swift */,
+				E5RLYLST0FR00000000000A1 /* RelayInstancesView.swift */,
 			);
 			path = Relay;
 			sourceTree = "<group>";
@@ -3226,6 +3229,7 @@
 			9BF0BCCADAFECBAACB46C29F /* RelaySettingsView.swift in Sources */,
 			E119A3B4B3A1FDED3DDCAEDE /* RelayProviderSettings.swift in Sources */,
 			D84ECEC1BCA13B50CB53A6F5 /* AddRelayProviderView.swift in Sources */,
+			E5RLYLST0BF00000000000A1 /* RelayInstancesView.swift in Sources */,
 			SU000000000000000000GH07 /* SelfUpdate.swift in Sources */,
 			SS000000000000000000GH08 /* SelfUpdateSection.swift in Sources */,
 			BF000000000000000000GH01 /* BuildFallback.swift in Sources */,

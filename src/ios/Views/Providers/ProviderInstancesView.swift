@@ -23,14 +23,26 @@ struct ProviderInstancesView: View {
     @State private var pendingDeleteInstance: ProviderInstance?
 
     var body: some View {
-        List {
+        // [R78-中转站自己管自己] 先把所有「中转站」的 instance id 收成一个集合。
+        //
+        // 中转站在底层就是一个 ProviderInstance（双地址、线路模型都靠旁挂的
+        // relay 档案），所以它天然会出现在下面的分组里 —— 用户看到的是一条
+        // 地址对不上、底下还挂着一堆模型的怪条目。用户的要求是「自己管自己的」，
+        // 于是这里把它们整体过滤掉，另开一页 `RelayInstancesView`。
+        //
+        // 一次 `allProfiles()` 取快照，不要在 ForEach 里逐个 isRelay ——
+        // 那个函数每次都过一把锁，而 body 在滚动时会反复求值。
+        let relayIds = Set(RelayProfileStore.shared.allProfiles().map(\.instanceId))
+        let nonRelay = store.instances.filter { !relayIds.contains($0.id) }
+
+        return List {
             // [T-mimo-shadow-voice] EVERY instance appears under its providerType
             // section now (no voice-only exclusion) — a mixed vendor like MiMo
             // shows its text models here AND a shadow voice row below ("dual
             // visibility"). Pure-voice vendors (ElevenLabs etc.) still appear here
             // too; they just have no usable text models, which is expected.
             ForEach(ProviderType.allCases, id: \.self) { type in
-                let instancesOfType = store.instances.filter { $0.providerType == type }
+                let instancesOfType = nonRelay.filter { $0.providerType == type }
                 if !instancesOfType.isEmpty {
                     Section(type.displayName) {
                         ForEach(instancesOfType) { instance in
@@ -76,6 +88,7 @@ struct ProviderInstancesView: View {
             // credential/endpoint). Tapping opens the shadow detail (voice models
             // + a "disable this voice row" toggle).
             let shadows = store.shadowVoiceProviders()
+                .filter { !relayIds.contains($0.instanceId) }
             if !shadows.isEmpty {
                 Section("语音服务") {
                     if store.hasFoldedShadowDuplicates() {
@@ -99,7 +112,7 @@ struct ProviderInstancesView: View {
                 }
             }
 
-            if store.instances.isEmpty {
+            if nonRelay.isEmpty {
                 Section {
                     VStack(spacing: 8) {
                         Image(systemName: "key.slash")
@@ -136,7 +149,7 @@ struct ProviderInstancesView: View {
             RelayProfileStore.shared.healMissingProfiles(from: store.instances)
         }
         .toolbar {
-            if !store.instances.isEmpty {
+            if !nonRelay.isEmpty {
                 ToolbarItem(placement: .topBarLeading) {
                     EditButton()
                 }
@@ -279,6 +292,14 @@ struct ProviderInstancesView: View {
     // global store.instances order so the new order persists to disk and flows
     // through to SessionModelPicker.
     private func moveInstances(in type: ProviderType, from source: IndexSet, to destination: Int) {
+        // [R78-中转站自己管自己] 中转站不再出现在本页的任何 section 里，
+        // 所以「section 成员」的判定必须跟着排除它们 —— 否则中转站被算成
+        // 某个分组的成员、却没在界面上占位置，onMove 的下标会整体错位，
+        // 拖一次就跳到别的条目上。
+        //
+        // `all` 仍然用全量实例：重建全局顺序时要保住中转站原来的位置，
+        // 把它们挪来挪去没有任何意义（用户在别页管理它们）。
+        let relayIds = Set(RelayProfileStore.shared.allProfiles().map(\.instanceId))
         let all = store.instances
         // [T-ios-provider-reorder] The section's ForEach renders llmInstances
         // (voice-only providers filtered OUT into their own section), so the
@@ -289,7 +310,7 @@ struct ProviderInstancesView: View {
         // [T-mimo-shadow-voice] All instances of this type are section members
         // now (voice-only exclusion removed) — the section renders the full list.
         let isSectionMember: (ProviderInstance) -> Bool = {
-            $0.providerType == type
+            $0.providerType == type && !relayIds.contains($0.id)
         }
         let sectionIds = all.filter(isSectionMember).map(\.id)
         var reorderedSectionIds = sectionIds
