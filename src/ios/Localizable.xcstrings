@@ -129504,13 +129504,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 服务商"
+            "value" : "添加 AI 服务商"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 服務商"
+            "value" : "新增 AI 服務商"
           }
         }
       }

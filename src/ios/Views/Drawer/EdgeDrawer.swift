@@ -58,11 +58,24 @@ final class DrawerState: ObservableObject {
     /// 是否正在被手指拖动。用来在手势期间关掉动画，避免和手势打架。
     @Published var dragging = false
 
-    /// 抽屉宽度占屏幕宽度的比例上限。
-    /// 318pt 是定下来的：320pt 的屏幕上要留一点右边让用户看到还有内容，
-    /// 402pt 的 Pro Max 上 318 刚好能放下「标题 + 摘要 + 时间」三行不折。
-    static let widthFraction: CGFloat = 0.78
-    static let widthMax: CGFloat = 318
+    /// 抽屉展开后，**屏右侧留出的那一条**宽度（pt）。
+    ///
+    /// [R68] 原来是「抽屉占屏宽的 78%、上限 318」。用户给的参照
+    /// （WorkBuddy 手机端）右侧那条明显更窄 —— 能认出是聊天内容，
+    /// 但读不清。所以改成直接定「右侧留多少」：
+    ///
+    ///   抽屉宽 = 屏宽 − 54
+    ///
+    /// 这样 SE(320) 到 Pro Max(440) 上露出来的那条都是同一个宽度，
+    /// 大屏不会露一大块、小屏也不会只剩一条缝。
+    static let peekStrip: CGFloat = 54
+
+    /// 抽屉宽度上限。
+    ///
+    /// 「屏宽 − 54」在 Pro Max 上要 386pt，会话标题到右侧时间之间会空掉
+    /// 一大截，行看起来是散开的。348 是还能让「标题 + 摘要 + 时间」
+    /// 保持一行的上限，超过就按 348 定宽、右侧多留一点。
+    static let widthMax: CGFloat = 348
 
     /// 从屏幕左边缘起手多少点之内才算「拉抽屉」。
     ///
@@ -148,9 +161,9 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
 
     @StateObject private var state = DrawerState()
 
-    /// 抽屉宽度。用固定值而不是比例：抽屉里那些行高、内边距都是按 318
-    /// 排的，跟着屏幕宽度变会让文字折行位置跑掉。320pt 的老机型上会
-    /// 自动收窄，见 init。
+    /// 抽屉宽度。用固定值而不是比例：抽屉里那些行高、内边距都按
+    /// 「一个相当确定的宽度」排的，纯比例会让文字折行位置在机型之间跑掉。
+    /// 现在的算法是「屏宽减去右侧要留的那一条」，再受上限约束，见 init。
     private let drawerWidth: CGFloat
 
     /// 整屏宽度。抽屉态右侧要留一条「点空白关闭」的热区，宽度靠它算。
@@ -164,10 +177,19 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
          @ViewBuilder content: @escaping () -> Content) {
         self.totalWidth = width
 
-        // 固定 318。只有屏幕本身放不下（< 390）时才按比例收，
-        // 这时抽屉会略窄于设计值 —— 比让它溢出屏幕好。
-        let fixed: CGFloat = DrawerState.widthMax
-        self.drawerWidth = width >= fixed + 72 ? fixed : min(width * 0.82, fixed)
+        // [R68] 「屏宽 − 54」定宽，再受 348 上限约束。
+        //
+        //   393pt 机型（15/16/17）：393 − 54 = 339，右侧留 54；
+        //   402pt（16 Pro）      ：348（触顶），右侧留 54；
+        //   440pt（Pro Max）     ：348（触顶），右侧留 92；
+        //   320pt（SE）          ：320 − 54 = 266，右侧留 54。
+        //
+        // 最后那个 `max(…, 62%)` 只是兜底：正常机型上都轮不到它，
+        // 但万一把窗口拖得极窄（Mac 上的可缩放窗口），也不至于让
+        // 抽屉窄到标题都放不下。
+        let peek = DrawerState.peekStrip
+        let cap = DrawerState.widthMax
+        self.drawerWidth = max(min(width - peek, cap), width * 0.62)
 
         self.drawer = drawer
         self.content = content
@@ -175,63 +197,94 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
 
     var body: some View {
         ZStack(alignment: .leading) {
-            // ── 内容层 ──
+            // ── 抽屉层（最底下，静止不动）──
             //
-            // [R63-改模糊] 抽屉拉出时内容**变模糊**，不再缩小 + 变暗。
+            // [R67-抽屉沉底] 用户给的参照（截图 + 原话）：
+            //   「聊天界面在上面，抽屉在底下，从左往右滑是聊天界面在上边走，
+            //     露出抽屉，同时走快要到的时候就停，聊天界面有圆角，
+            //     越走圆角越大」
             //
-            // 原来那版是 `.scaleEffect(1 - 0.06 * progress)` + 一层
-            // `Color.black.opacity(0.32 * progress)`，观感是「整页缩了一下、
-            // 上面盖了块灰玻璃」—— 用户原话「聊天页人家就是整体页面会轻微
-            // 变模糊，咱们的不协调」。
+            // 所以抽屉必须**钉在 0 不动**。原来那版是抽屉自己从
+            // `-drawerWidth` 滑到 0（`offset(x: -drawerWidth * (1 - progress))`），
+            // 观感是「一块板从左边推上来」—— 动的是抽屉，聊天界面只是被顶开。
+            // 现在反过来：抽屉静止在底下，聊天界面像一张卡片被推走，露出它。
             //
-            // 参照物（WorkBuddy 手机端）的做法是：内容原地不动、只失焦，
-            // 遮罩几乎不可见。这样抽屉是「浮在真实界面之上」，而不是
-            // 「另一个界面盖上来」。两处改动：
-            //   1. 去掉 scaleEffect —— 缩放是「换了一屏」的信号，模糊才是
-            //      「同一屏被压到后面」的信号，两者同时用会互相打架；
-            //   2. 模糊半径跟着 progress 线性长到 4pt —— 4 是「明显失焦
-            //      但还能看出是什么」的临界值，再高就变成马赛克了。
-            content()
-                .blur(radius: 4 * state.progress)
-                // 内容仍然右移一个抽屉宽度：抽屉是「推进来的」，不是
-                // 「淡入的」。位移保留、缩放去掉，这两个是不同层级的信号。
-                .offset(x: drawerWidth * state.progress)
-                .disabled(state.isOpen)
-
-            // ── 遮罩层（独立，盖满全屏，点任意抽屉外区域关闭）──
-            //
-            // 之前遮罩挂在 content() 的 .overlay 里，跟着 content 一起被
-            // .disabled(state.isOpen) 禁用掉，onTapGesture 收不到点击，
-            // 于是「点抽屉外面收不回抽屉」，只能点抽屉右上角的 xmark。
-            //
-            // 独立成 ZStack 里的一层后：
-            //   · 不受 content 的 disabled 影响，点击永远有效；
-            //   · frame 铺满全屏，抽屉（drawerWidth 内）由抽屉层自己接住
-            //     点击，遮罩实际只盖「抽屉以外」的区域 —— 语义正好是
-            //     「点抽屉以外任意地方都收回」。
-            //
-            // [R63] 透明度 0.32 → 0.10。模糊已经承担了「压下去」的视觉，
-            // 再叠 0.32 的黑就变成两块效果互相抵消：模糊看不出来，
-            // 只剩一片发灰。现在只留一成暗，把亮度差补上，主体交给模糊。
-            if state.progress > 0.02 {
-                Color.black
-                    .opacity(0.10 * Double(state.progress))
-                    .contentShape(Rectangle())
-                    .onTapGesture { state.close() }
-                    .allowsHitTesting(true)
-                    .zIndex(1)
-            }
-
-            // ── 抽屉层 ──
+            // 层次也倒过来：抽屉 zIndex 0（最底），聊天界面 zIndex 1。
+            // 命中测试天然上层优先，所以抽屉露出来的那一条能正常点、
+            // 被卡片盖住的部分不会误触；完全收起时卡片盖满全屏，
+            // 抽屉那一层根本接不到触摸。
             drawer(state)
                 .frame(width: drawerWidth)
-                .offset(x: -drawerWidth * (1 - state.progress))
-                // 抽屉完全收起时不要参与命中测试，否则它的右边缘会
-                // 挡住内容区左侧 1pt，点击会莫名没反应。
+                // 收起过程中（progress 还在 0 附近）不参与命中：
+                // 否则动画刚起步那一瞬，露出的 1~2pt 会把聊天界面左边缘的
+                // 点击吃掉。
                 .allowsHitTesting(state.progress > 0.02)
-                // 必须高于遮罩层（zIndex 1），否则抽屉里的会话行、
-                // 齿轮、xmark 会被遮罩盖住点不到。
-                .zIndex(2)
+                .zIndex(0)
+
+            // ── 聊天界面（上层卡片）──
+            //
+            // 四个量都跟着 progress 走：
+            //   · 位移 `drawerWidth * progress` —— 上限就是抽屉宽度。
+            //     「走快要到的时候停」说的就是这个：走到抽屉宽度停住，
+            //     **屏幕右侧永远留一条**（= DrawerState.peekStrip）给用户
+            //     看到还有内容；
+            //   · 圆角 `24 * progress` —— 0 的时候是方正的一整屏，
+            //     一开始滑就长出圆角，越滑越圆，最后是一张完整的卡片。
+            //     圆角是「这是一张被推开的纸」的信号，比缩放或淡出都准确；
+            //   · 模糊 + 蒙底 —— 见下面 [R68]，越推越浅；
+            //   · 阴影跟着圆角一起长，把卡片和底下的抽屉分开 —— 没有它，
+            //     卡片边缘和抽屉背景颜色接近时会糊成一片，看不出层次。
+            //
+            // [R67] 曾经去掉过 R63 加的 blur，理由写的是「模糊和圆角打架、
+            // 参照里聊天内容是清晰的」。R68 用户重新给了参照并明确要求
+            // 「要和他一样模糊，就感觉字体越走越浅」—— 右侧露出的那一条
+            // 确实是虚的。所以补回来，但比 R63 的 4.0 弱：只到 2.5，
+            // 目的是把文字化开、不是把整屏糊掉。
+            content()
+                .blur(radius: 2.5 * state.progress)
+                // 「越走越浅」靠这层底色蒙出来。
+                //
+                // 不用 `.opacity(1 - k * progress)`：卡片是**不透明**的，
+                // 整张降透明度会把底下的东西（抽屉右缘、窗口底色）
+                // 透上来，浅色模式下卡片会变成一块脏灰。
+                // 蒙自己的底色只降内容对比度、不动卡片本身的底色，
+                // 观感才是「字变浅了」，而不是「卡片变薄了」。
+                //
+                // 蒙的是 `systemBackground` 而不是白：深色模式下蒙白会
+                // 把深色卡片糊成一片雾。
+                .overlay {
+                    Color(UIColor.systemBackground)
+                        .opacity(0.22 * state.progress)
+                        .allowsHitTesting(false)
+                }
+                // 先蒙再裁：蒙层在 clipShape 里面，圆角外面那圈不会被
+                // 糊成方角。
+                .clipShape(RoundedRectangle(cornerRadius: 24 * state.progress,
+                                            style: .continuous))
+                .shadow(color: .black.opacity(0.18 * Double(state.progress)),
+                        radius: 18 * state.progress,
+                        x: -8 * state.progress,
+                        y: 0)
+                .offset(x: drawerWidth * state.progress)
+                .disabled(state.isOpen)
+                // 抽屉开着时，点这张卡片收回。
+                //
+                // 原来这件事由一层铺满全屏的 `Color.black.opacity(0.10)`
+                // 遮罩承担。遮罩删掉的原因：抽屉现在在**底层**，
+                // 铺满全屏的遮罩会连露出来的抽屉一起盖住 —— 抽屉点不动，
+                // 而且整体被压暗一层（截图里抽屉是亮的）。
+                // 现在「点空白处关闭」挂在卡片本身上：点卡片 = 点抽屉外面。
+                //
+                // 放在 .disabled 之后：disabled 只作用在它包住的子树里，
+                // 这一层在它外面，所以开着的时候仍然收得到点击。
+                .overlay {
+                    if state.isOpen {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { state.close() }
+                    }
+                }
+                .zIndex(1)
 
             // ── 手势层 ──
             // 单独铺一层透明的 UIView 承载 UIPanGestureRecognizer。
@@ -252,6 +305,22 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             // 因为手势层自己是活的，所以看起来像「只有点击坏了」。
             EdgePanOverlay(state: state, drawerWidth: drawerWidth)
                 .frame(width: DrawerState.edgeSlop)
+                // [R67] 起手条跟着卡片一起往右走。
+                //
+                // 抽屉沉底之后，原来那条固定在 x=0…44 的手势带会一直压在
+                // **抽屉**左边 44pt 上，抽屉里的搜索框、会话行左半边就点不动了
+                // （这层是不透明命中，不是穿透，见下面那段警告）。
+                //
+                // 所以让它跟着卡片位移：收起时在 x=0（物理屏幕边缘，
+                // UIScreenEdgePanGestureRecognizer 要的正是这个位置），
+                // 展开时挪到 x=drawerWidth，正好压在卡片左边缘上 ——
+                // 抽屉整块都能点，而卡片左边缘那条不影响任何控件
+                // （聊天页左边缘基本没东西）。
+                //
+                // 展开状态下「往左拖回去」不靠这一层：那条路走的是挂在
+                // window 上的 closePan（不参与 hitTest，见
+                // EdgePanOverlay.updateUIView 里的注释）。
+                .padding(.leading, drawerWidth * state.progress)
                 // 手势层从导航栏下方开始，**不覆盖导航栏**。
                 //
                 // 为什么必须物理避让，而不是继续在 hitTest 里挖洞：
@@ -285,11 +354,15 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                 // 这里要的是「整屏左边缘都能起手」，键盘在不在与手感
                 // 无关，所以两个方向都忽略键盘 inset。
                 .ignoresSafeArea(.keyboard, edges: .vertical)
+                // [R67] 手势层要压在卡片之上（content 是 zIndex 1）。
+                // 抽屉已经沉到 zIndex 0，所以这一层不会再挡住抽屉 ——
+                // 它现在的位置跟着卡片走（见上面 padding(.leading)）。
+                .zIndex(2)
         }
         .environmentObject(state)
         // 抽屉出来就收键盘。
         //
-        // 为什么必须收：抽屉是盖在聊天界面上的侧栏，输入框在它下面。
+        // 为什么必须收：抽屉是聊天界面底下的一层，输入框在卡片上。
         // 键盘留着的话，屏幕下半截被键盘占住，抽屉的可视区域只剩一小条，
         // 而且键盘弹出期间系统还会压缩安全区 —— 两个效果叠起来，
         // 抽屉看起来「变小了」。
