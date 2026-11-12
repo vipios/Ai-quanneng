@@ -149,23 +149,12 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
 
     /// 当前窗口的安全区和尺寸（UIKit 实测值）。
     ///
-    /// 不从 SwiftUI 的 `GeometryReader` 读：`geo.safeAreaInsets` 在这棵树上
-    /// 拿到的是 0，当出血量用等于什么都没做。窗口的 `safeAreaInsets` /
-    /// `bounds` 不经过 SwiftUI 布局，不会被抹成 0。
-    /// 另外窗口安全区**不含键盘**，走 SwiftUI 的话键盘一弹 bottom 变 300 多，
-    /// 卡片会被撑到屏幕外。
+    /// 实现搬到 `DrawerWindow`（文件末尾）：抽屉底色、齿轮、卡片出血三处
+    /// 都要这组数，各写一份迟早漂。这里只留一个转发，调用点不用改。
     @MainActor
     private static func windowMetrics() -> (top: CGFloat, bottom: CGFloat,
                                              width: CGFloat, height: CGFloat)? {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
-        guard let scene,
-              let win = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first
-        else { return nil }
-        return (win.safeAreaInsets.top,
-                win.safeAreaInsets.bottom,
-                win.bounds.width,
-                win.bounds.height)
+        DrawerWindow.metrics()
     }
 
     var body: some View {
@@ -190,6 +179,19 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             drawer
                 .frame(width: drawerWidth)
                 .frame(maxHeight: .infinity)
+                // [R83] 高度钉成「窗口高 − 上下安全区」= 可见的那块矩形。
+                //
+                // 原来只有 `.frame(maxHeight: .infinity)`，意思是「用满父容器
+                // 提议的尺寸」。问题在于这条链上的提议并不等于可见区域：
+                // 卡片是 `frame(height: 整窗高)` 的硬尺寸，ZStack 按最大子视图
+                // 算出来也是整窗高，而抽屉层的原点又落在安全区顶 ——
+                // 于是抽屉实际占「59 … 59+932」，底下多出的一截跑到屏幕外，
+                // 顶上那 59pt 露出窗口底色。用户看到的就是
+                // 「背景没做到满屏，只做到状态栏下方」，齿轮也跟着被推出去半截。
+                //
+                // 取窗口实测值之后跟提议尺寸无关，iPhone 15 Pro Max（59/34）
+                // 和其他机型都不用改代码。取不到窗口时传 nil = 维持原行为。
+                .frame(height: m.map { $0.height - $0.top - $0.bottom })
                 // 收起过程中不参与命中：动画刚起步露出的 1~2pt
                 // 会把聊天界面左边缘的点击吃掉。
                 .allowsHitTesting(state.progress > 0.02)
@@ -592,5 +594,34 @@ private struct EdgePanOverlay: UIViewRepresentable {
             // 抽屉关着：必须往右拖。
             return velocity.x > 0
         }
+    }
+}
+
+// MARK: - 窗口实测值（抽屉这一层的唯一来源）
+
+/// 窗口的真实尺寸与安全区。
+///
+/// 为什么不读 `GeometryReader`：
+///   · `geo.safeAreaInsets` 在这棵树上拿到的是 0 —— 当出血量用等于没做；
+///   · 窗口的 `safeAreaInsets` / `bounds` 不经过 SwiftUI 布局，不会被抹成 0；
+///   · 窗口安全区**不含键盘**。走 SwiftUI 的话键盘一弹 bottom 变 300 多，
+///     卡片会被撑到屏幕外。
+///
+/// 15 Pro Max 上量到的是 top 59 / bottom 34（430×932），但这里一个都不写死：
+/// 写死就会在别的机型上错，而这类错是「多一截底色」而不是崩溃，最难发现。
+@MainActor
+enum DrawerWindow {
+
+    static func metrics() -> (top: CGFloat, bottom: CGFloat,
+                              width: CGFloat, height: CGFloat)? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        guard let scene,
+              let win = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first
+        else { return nil }
+        return (win.safeAreaInsets.top,
+                win.safeAreaInsets.bottom,
+                win.bounds.width,
+                win.bounds.height)
     }
 }

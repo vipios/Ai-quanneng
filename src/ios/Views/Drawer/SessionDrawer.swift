@@ -60,6 +60,38 @@ struct SessionDrawer: View {
     /// 搜索框焦点
     @FocusState private var searchFocused: Bool
 
+    // MARK: 底色 [R83]
+
+    /// 抽屉底色。浅色 #fbfbfd —— 只比纯白暗一点点，白卡片摆上去才有薄阴影；
+    /// 深色用 secondarySystemGroupedBackground。
+    ///
+    /// 单独提出来是因为它现在有三处要画（主体 + 上下两条补边），
+    /// 三处颜色必须逐字相同，否则补边会比主体亮一档、接缝反而更明显。
+    static var paper: Color {
+        Color(UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor.secondarySystemGroupedBackground
+                : UIColor(red: 0xfb / 255.0, green: 0xfb / 255.0, blue: 0xfd / 255.0, alpha: 1)
+        })
+    }
+
+    // `DrawerWindow.metrics()` 是 @MainActor 的（要问 UIWindow），
+    // 所以这三个都得跟着标，否则 Swift 6 严格并发下是编译错误。
+    @MainActor private static var topInset: CGFloat { DrawerWindow.metrics()?.top ?? 0 }
+    @MainActor private static var bottomInset: CGFloat { DrawerWindow.metrics()?.bottom ?? 0 }
+
+    /// 补到屏幕边缘的一条底色。
+    ///
+    /// `alignment: .top` 的补边要往上顶（-h），`.bottom` 往下压（+h）——
+    /// 方向反了就是「补边盖住内容」或者「补边跑到屏幕外」，两种都看不出原因。
+    @MainActor
+    private static func paperCap(_ height: CGFloat, up: Bool) -> some View {
+        paper
+            .frame(height: height)
+            .offset(y: up ? -height : height)
+            .allowsHitTesting(false)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
 
@@ -99,14 +131,20 @@ struct SessionDrawer: View {
         // 只用 background 忽略上下安全区，不给整个 VStack 加：内容（标题、
         // 搜索框、列表）必须待在安全区内，否则标题顶到状态栏底下、最后一行
         // 被 home indicator 压住。左右也不忽略 —— 右边要留 peek 那条给卡片。
-        .background(
-            Color(UIColor { trait in
-                trait.userInterfaceStyle == .dark
-                    ? UIColor.secondarySystemGroupedBackground
-                    : UIColor(red: 0xfb / 255.0, green: 0xfb / 255.0, blue: 0xfd / 255.0, alpha: 1)
-            })
-            .ignoresSafeArea(edges: .vertical)
-        )
+        .background(Self.paper)
+        .background(Self.paper.ignoresSafeArea(edges: .vertical))
+        // [R83] 上下各补一条同色，铺到屏幕边缘。
+        //
+        // 抽屉的布局帧是「安全区那块矩形」（15 Pro Max 上是 y 59…898），
+        // 状态栏那 59pt 和 home indicator 那 34pt 都不在里面。上面那句
+        // `.ignoresSafeArea` 在这棵树上没能把底色拉出去 —— 用户截图里顶上
+        // 那条白边就是它，原话「背景没做到满屏，只做到状态栏下方」。
+        //
+        // 所以不再指望安全区传播，直接拿窗口实测值画两条同色块：
+        // 一条往上顶 top，一条往下压 bottom。同色，接缝看不出来；
+        // 取不到窗口时高度为 0，等于没加。
+        .background(alignment: .top) { Self.paperCap(Self.topInset, up: true) }
+        .background(alignment: .bottom) { Self.paperCap(Self.bottomInset, up: false) }
         // 右下角悬浮齿轮，点它开原版 SettingsSheet。
         .overlay(alignment: .bottomTrailing) {
             settingsGear
