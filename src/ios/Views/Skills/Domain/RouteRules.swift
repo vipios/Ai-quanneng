@@ -312,6 +312,34 @@ enum RouteMode {
     ]
 
     static func name(_ id: String) -> String { names[id] ?? id }
+
+    /// 说话模式对**输出形状**的约束。
+    ///
+    /// 在此之前 `names` 是这张表里唯一的东西：判定出 `rev` 之后，注入块只多出
+    /// 「说话模式 逆向专家模式」这七个字，模型没有任何依据知道该换个说法。
+    /// 也就是说设置页那 7 个模式里，除「自动」，其余 6 个在行为上完全等价 ——
+    /// 用户看着是选项，实际不起作用。
+    ///
+    /// 这里补的是**唯一的差异来源**。写法上刻意只约束形状，不写角色扮演：
+    /// 「先给结论再给证据」是可执行的，「你是一位资深逆向专家」只会让模型
+    /// 多写两段自我介绍。每条控制在一行内 —— 这段每轮都进上下文。
+    ///
+    /// `auto` 不在表里：自动模式的含义就是「不加额外约束」，
+    /// 给它写一句反而会把「按需切换」锁死成一种固定口径。
+    static let directives: [String: String] = [
+        "plain": "只给结论和可直接执行的东西，不复述背景、不列备选方案、不解释你打算怎么做。",
+        "dev": "给能直接跑的代码或命令，注明落盘路径和依赖；说明写进注释，不要单独铺一段散文。",
+        "rev": "先给结论（关键函数 / 偏移 / 校验点 / 结构性判断），再给支撑它的证据链；不要从头通读再慢慢推。",
+        "sec": "按攻击面组织：入口 → 可达路径 → 影响，每一步给可复现的验证命令，并标明该步的风险与副作用。",
+        "game": "直接给内存结构：基址、偏移、指针链、字段类型。少谈原理，先让用户能定位到那个值。",
+        "inject": "兼容优先：给出可直接塞进目标的最小实现，避开需要额外框架或运行时的写法，并说明注入点在哪。",
+    ]
+
+    /// 拿不到就没有额外约束 —— 调用点据此决定要不要出这一段。
+    static func directive(_ id: String) -> String? {
+        guard id != "auto" else { return nil }
+        return directives[id]
+    }
 }
 
 // MARK: - 设备档位（R31 §4）
@@ -415,7 +443,10 @@ enum DeviceContextBuilder {
         case .iphone:
             note = "目标机是 iPhone。型号 / 系统 / 架构 / 越狱形态 / 注入链 / 已装插件 —— 全部现场查，不预置。"
             hints = [
-                "查法：SSH 进去跑 uname -a、sysctl -n hw.memsize、dpkg -l、readlink /var/jb",
+                "查法：apple-device info 查机型/系统/内存，apple-device env 查越狱形态 —— 这两个跑在宿主 app 进程里，是真实 iOS 值",
+                "越狱形态只认 env 的 jailbreak 字段：none / trollstore / rootless / rootful。trollstore 是「签名提权」不是越狱，没有注入钩子",
+                "别用 shell 查越狱：shell 是 Alpine 假根，/var/jb、/var/mobile 在里面本来就不存在，uname / dpkg 查的也是容器不是 iOS",
+                "没有 /var/jb 不等于没越狱",
                 "数值会漂，别用上一轮的旧数字下判断",
             ]
         case .router:

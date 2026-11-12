@@ -32,6 +32,33 @@ extension AIChatViewModel {
         return _cachedTimeString
     }
 
+    /// 内置三元组目录，拼进 system prompt 的那一段。
+    ///
+    /// 为什么要现算而不是手写：这段是模型回答「你有什么技能」的唯一依据。
+    /// 手写「20 个域 / 8 套人格」看着没问题，但只要 RouteCatalogData 改了
+    /// 而这里忘了改，模型就会拿着一个过时数字对用户保证 —— 它已经这么
+    /// 干过一次（说成「26 类」）。从数据生成之后，改数据 = 改提示词本身。
+    ///
+    /// 不带每个域的描述：那是技能页的展示数据（detail 字段），几十个字符
+    /// 乘以 20 条，每轮都进上下文，代价远大于收益。名字 + 分类够模型
+    /// 回答「有哪些」，也够它判断该往哪个域靠。
+    private static var builtinTripletCatalog: String {
+        let catNames = DomainCatalog.categories.map(\.name).joined(separator: " / ")
+        let domains = DomainCatalog.all.map(\.name).joined(separator: "、")
+        let personas = PersonaCatalog.all
+            .filter { $0.id != "auto" }
+            .map(\.name)
+            .joined(separator: "、")
+        let modes = ModeCatalog.all
+            .filter { !$0.isDefault }
+            .map(\.name)
+            .joined(separator: "、")
+
+        return "     能力域 \(DomainCatalog.all.count) 个 / \(DomainCatalog.categories.count) 个分类（\(catNames)）：\(domains)\n"
+             + "     人格 \(PersonaCatalog.all.count - 1) 套（另有「自动路由」）：\(personas)\n"
+             + "     说话模式 \(ModeCatalog.all.count - 1) 个（另有「自动模式」）：\(modes)\n"
+    }
+
     /// [T-ctx-measure-outbound] The send-time capacity check runs before any
     /// agent loop has built this turn's system prompt, and a transcript written
     /// before calibration pairs existed seeds no fixed share. Without one the
@@ -130,6 +157,13 @@ extension AIChatViewModel {
             + "\n"
             + "Current time (approximate): \(approximateTimeString) (\(TimeZone.current.identifier)). "
             + "Device languages: \((UserDefaults.standard.object(forKey: "AppleLanguages") as? [String] ?? Locale.preferredLanguages).joined(separator: ", ")).\n\n"
+            // 越狱判断必须是宿主侧的。shell 里那个 / 是 Alpine 镜像，查什么都像「没越狱」。
+            + "Host filesystem vs the shell — read this before any jailbreak / injection / system-path judgement:\n"
+            + "  shell_execute runs an Alpine Linux fake rootfs. Its `/` is NOT the iOS filesystem: `/var/jb`, `/var/mobile`, `/Applications`, `/usr/lib/*.dylib`, `/bin/bash` there are Alpine's, so probing them says nothing about the device. "
+            + "Run `apple-device env` via shell_execute for the real verdict taken from the app process itself: `jailbreak` = none | trollstore | rootless | rootful, whether this app carries `platform-application`, and whether it is still sandboxed. "
+            + "Never report \"not jailbroken\" from a shell probe. And never equate \"no /var/jb\" with \"not jailbroken\": TrollStore has no /var/jb and is not a jailbreak — it is a platform-application signature that makes this app unsandboxed and lets it install any signed ipa, so treat `trollstore` as \"elevated, but no injection hooks\". "
+            + "Same for identity: `id` returning `uid=0` is Alpine's root INSIDE the container — the host app process runs as `mobile`. Shell root is not device root; `apple-device env` reports the real host uid. "
+            + "If `env` comes back with `confidence: low`, say the state is undetectable from inside this app instead of asserting there is no jailbreak.\n\n"
             + "Shared directory /var/ai/ (bidirectional read/write between shell and app):\n"
             + "  /var/ai/attachments/ — Media files (images, audio, video). Display inline with ![desc](minis://attachments/filename).\n"
             + "  /var/ai/workspace/   — Working files (scripts, data, configs). Link with [name](minis://workspace/filename).\n"
@@ -139,6 +173,16 @@ extension AIChatViewModel {
             + "  /var/ai/memory/GLOBAL.md    — Persistent global memory (read-only, user-maintained via Settings).\n"
             + "  /var/ai/memory/YYYY-MM-DD.md — Daily memory log.\n"
             + "  /var/ai/mounts/<name>/ — User-mounted external folders from iOS Files (e.g. an Obsidian vault, Downloads, another app's iCloud container). Presence and names vary per user. Check this directory first when the task references external/user files. Some mounts may be read-only; write tools will reject writes with a clear error.\n\n"
+            // 「技能」在这个产品里指两样东西，混起来会让用户以为设置页是摆设。
+            //
+            // 第 1 层的清单是从编译进去的数据现算的（见 builtinTripletCatalog），
+            // 不写死数字。写死的数字一漂就变成谎话 —— 模型曾经照着旧稿回答
+            // 「26 类」，实际是 20 个域。现算的清单改数据就自动跟着改。
+            + "Skills are two separate layers — never let one stand in for the other:\n"
+            + "  1. 三元组 (能力域 / 人格 / 说话模式): compiled into the app. Chosen per turn by the route engine and delivered to you as the 【本次自动判定】 block plus the persona body and the device context. They are NOT files and are NOT under /var/ai/skills/. This layer is what actually makes 渗透 / 逆向 / 免杀 / OSM style workflows work — it is the routing table and the persona text, not a SKILL.md. The full list, quoted from the compiled data:\n"
+            + Self.builtinTripletCatalog
+            + "  2. 技能包 (SKILL.md): /var/ai/skills/<name>/SKILL.md — imported/removed by the user, read on demand. That directory often holds only a couple of packages; its length says nothing about layer 1.\n"
+            + "  So when the user asks what skills you have, answer from the list above (name the domains / personas / modes), then mention the installed SKILL.md packages separately. Never conclude \"you have no specialist skill\" or \"only N skills\" from the skills directory alone, and never invent a count — the settings pages for those domains are not decorative.\n\n"
             + "The minis:// URL scheme:\n"
             + "  minis://attachments/file.png  →  /var/ai/attachments/file.png\n"
             + "  minis://workspace/data.csv    →  /var/ai/workspace/data.csv\n"

@@ -3,7 +3,7 @@
 //  MinisApp
 //
 //  Native offload handler for `apple-device`.
-//  Subcommands: info, battery, storage
+//  Subcommands: info, battery, storage, env
 //
 
 #import <Foundation/Foundation.h>
@@ -11,8 +11,19 @@
 #import "NativeOffloadUtils.h"
 #include "kernel/native_offload.h"
 #include <unistd.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <dlfcn.h>
+#include <sys/stat.h>
 #include <sys/utsname.h>
 #include <mach/mach.h>
+
+// SecTask* 在 Security.framework 里是未公开符号，而且这个工程没有显式链
+// Security.framework（Swift 那边靠 autolink 拿到，ObjC 这边没有），
+// 直接调会变成 undefined symbol。所以运行时 dlsym 取，少一个链接依赖。
+typedef struct __SecTask *SecTaskRef;
+typedef SecTaskRef (*SecTaskCreateFromSelfFn)(CFAllocatorRef);
+typedef CFTypeRef (*SecTaskCopyValueForEntitlementFn)(SecTaskRef, CFStringRef, CFErrorRef *);
 
 static NSString *const TOOL_NAME = @"apple-device";
 
@@ -27,6 +38,10 @@ static NSString *const HELP_TEXT =
      "             (default when no command given)\n"
      "  battery    Battery level and charging state\n"
      "  storage    Disk space information\n"
+     "  env        Host filesystem environment: jailbreak kind, TrollStore /\n"
+     "             platform-application entitlement, sandbox state.\n"
+     "             This reads REAL iOS paths from the app process — unlike\n"
+     "             the shell, whose / is an Alpine fake rootfs.\n"
      "\n"
      "OPTIONS:\n"
      "  --help, -h      Show this help message\n"
@@ -36,7 +51,8 @@ static NSString *const HELP_TEXT =
      "EXAMPLES:\n"
      "  apple-device                   (same as: apple-device info)\n"
      "  apple-device battery\n"
-     "  apple-device storage --compact\n";
+     "  apple-device storage --compact\n"
+     "  apple-device env\n";
 
 static NSString *thermal_state_string(NSProcessInfoThermalState state) {
     switch (state) {
@@ -225,6 +241,176 @@ static int cmd_storage(int stdout_fd, BOOL compact, BOOL quiet) {
     return NOFF_EXIT_SUCCESS;
 }
 
+// ── env ────────────────────────────────────────────────────────────
+//
+// 越狱/提权形态探测，跑在**宿主 app 进程**里，查的是真实 iOS 路径。
+//
+// 为什么必须有这个子命令：shell_execute 跑的是 iSH 里的 Alpine 假根，
+// 它的 `/` 是镜像文件渲染出来的，`/var/jb`、`/var/mobile`、`/Applications`
+// 在里面永远不存在。模型拿 shell 去查越狱，结论必然是「无越狱」——
+// 不管手机上装的是 TrollStore、Dopamine 还是什么都没装。
+//
+// 也不要把「没有 /var/jb」当成「没越狱」：TrollStore 根本不是越狱，
+// 它没有 /var/jb，但会把 app 的签名换成 platform-application，
+// 于是这个进程能读写 /var/mobile、能装任意签名的 ipa。
+
+/// stat() 的 errno 能区分「沙箱拒了」和「真的不存在」，这是可信度的关键：
+///   · stat 成功       → 确实有；
+///   · ENOENT          → 确实没有（可信）；
+///   · EPERM / EACCES  → 这条路径看不见，不能当成「不存在」。
+typedef struct {
+    BOOL exists;
+    BOOL denied;
+} NoffProbe;
+
+static NoffProbe noff_probe(NSString *path) {
+    NoffProbe result = {NO, NO};
+    struct stat st;
+    if (stat(path.fileSystemRepresentation, &st) == 0) {
+        result.exists = YES;
+        return result;
+    }
+    int err = errno;
+    result.denied = (err == EACCES || err == EPERM);
+    return result;
+}
+
+/// 能不能列目录 —— 沙箱外的目录列不动，这是「有没有被沙箱关着」最直接的证据。
+static BOOL noff_dir_listable(NSString *path) {
+    NSError *err = nil;
+    NSArray *items = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:path error:&err];
+    return items != nil && err == nil;
+}
+
+/// 本进程自己的签名权限。符号是 dlsym 取的，取不到就返回 NO。
+static BOOL noff_has_entitlement(NSString *name) {
+    static SecTaskCreateFromSelfFn createFromSelf = NULL;
+    static SecTaskCopyValueForEntitlementFn copyValue = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        void *handle = dlopen("/System/Library/Frameworks/Security.framework/Security",
+                              RTLD_LAZY);
+        if (!handle) return;
+        createFromSelf = (SecTaskCreateFromSelfFn)dlsym(handle, "SecTaskCreateFromSelf");
+        copyValue = (SecTaskCopyValueForEntitlementFn)dlsym(handle,
+                                                           "SecTaskCopyValueForEntitlement");
+    });
+    if (!createFromSelf || !copyValue) return NO;
+
+    SecTaskRef task = createFromSelf(kCFAllocatorDefault);
+    if (!task) return NO;
+
+    CFTypeRef value = copyValue(task, (__bridge CFStringRef)name, NULL);
+    BOOL granted = NO;
+    if (value) {
+        if (CFGetTypeID(value) == CFBooleanGetTypeID()) {
+            granted = CFBooleanGetValue((CFBooleanRef)value);
+        } else if (CFGetTypeID(value) == CFStringGetTypeID()) {
+            granted = CFStringGetLength((CFStringRef)value) > 0;
+        }
+        CFRelease(value);
+    }
+    CFRelease(task);
+    return granted;
+}
+
+static int cmd_env(int stdout_fd, BOOL compact, BOOL quiet) {
+    // ── 越狱痕迹 ──
+    // rootless（Dopamine / palera1n rootless）：越狱根挂在 /var/jb
+    NoffProbe jbVar     = noff_probe(@"/var/jb");
+    NoffProbe jbPreboot = noff_probe(@"/private/preboot/jb");
+    // rootful（unc0ver / checkra1n 一代）：直接改系统分区 / 装注入框架
+    NoffProbe cydia     = noff_probe(@"/Applications/Cydia.app");
+    NoffProbe bash      = noff_probe(@"/bin/bash");
+    NoffProbe sshd      = noff_probe(@"/usr/sbin/sshd");
+    NoffProbe substrate = noff_probe(@"/usr/lib/libsubstrate.dylib");
+    NoffProbe hooker    = noff_probe(@"/usr/lib/libhooker.dylib");
+    NoffProbe ellekit   = noff_probe(@"/usr/lib/libellekit.dylib");
+    // TrollStore 的安装助手
+    NoffProbe tsHelper  = noff_probe(@"/var/containers/Bundle/trollstorehelper");
+
+    BOOL rootless = jbVar.exists || jbPreboot.exists;
+    BOOL rootful  = cydia.exists || bash.exists || sshd.exists
+                 || substrate.exists || hooker.exists || ellekit.exists;
+
+    // ── 提权 / 沙箱状态 ──
+    BOOL canListVarMobile = noff_dir_listable(@"/var/mobile");
+    BOOL platformApp      = noff_has_entitlement(@"platform-application");
+    BOOL noSandbox        = noff_has_entitlement(@"com.apple.private.security.no-sandbox");
+    BOOL getTaskAllow     = noff_has_entitlement(@"get-task-allow");
+
+    NSString *jailbreak = @"none";
+    if (rootless) {
+        jailbreak = @"rootless";
+    } else if (rootful) {
+        jailbreak = @"rootful";
+    } else if (tsHelper.exists || platformApp || noSandbox) {
+        jailbreak = @"trollstore";
+    }
+
+    // 有没有被沙箱挡住过。挡住过就说明「没查不到」不等于「没有」，
+    // 这时候结论只能叫 low —— 不装懂。
+    BOOL denied = jbVar.denied || jbPreboot.denied || cydia.denied
+               || substrate.denied || hooker.denied || ellekit.denied;
+    NSString *confidence = denied ? @"low" : @"high";
+
+    NSString *note;
+    if (denied) {
+        note = @"At least one probe came back EPERM/EACCES instead of ENOENT: the sandbox "
+                "blocked the look inside, so \"not found\" here does NOT mean \"not there\". "
+                "Treat this answer as undetectable rather than as \"no jailbreak\"; install "
+                "through TrollStore (platform-application) to read the real state.";
+    } else if ([jailbreak isEqualToString:@"trollstore"]) {
+        note = @"TrollStore is NOT a jailbreak: no /var/jb, no root filesystem write access. "
+                "What it does give you is a platform-application signature, so this process "
+                "can read /var/mobile, install any signed ipa and repackage apps. Expect "
+                "jailbreak-only things (substrate/ellekit injection into other processes, "
+                "dpkg, sshd) to be absent.";
+    } else if ([jailbreak isEqualToString:@"none"]) {
+        note = @"No jailbreak artifacts on the real iOS filesystem, and no elevated "
+                "entitlement: this is a sandboxed app on a stock device.";
+    } else {
+        note = @"Jailbreak artifacts found on the real iOS filesystem; injection libraries "
+                "are listed under checks.";
+    }
+
+    NSMutableDictionary *checks = [NSMutableDictionary dictionary];
+    checks[@"var_jb"]              = @(jbVar.exists);
+    checks[@"private_preboot_jb"]  = @(jbPreboot.exists);
+    checks[@"cydia_app"]           = @(cydia.exists);
+    checks[@"bin_bash"]            = @(bash.exists);
+    checks[@"usr_sbin_sshd"]       = @(sshd.exists);
+    checks[@"libsubstrate"]        = @(substrate.exists);
+    checks[@"libhooker"]           = @(hooker.exists);
+    checks[@"libellekit"]          = @(ellekit.exists);
+    checks[@"trollstore_helper"]   = @(tsHelper.exists);
+    checks[@"list_var_mobile"]     = @(canListVarMobile);
+    checks[@"sandbox_denied_probe"] = @(denied);
+
+    NSMutableDictionary *ents = [NSMutableDictionary dictionary];
+    ents[@"platform-application"] = @(platformApp);
+    ents[@"com.apple.private.security.no-sandbox"] = @(noSandbox);
+    ents[@"get-task-allow"] = @(getTaskAllow);
+
+    const char *dyldInsert = getenv("DYLD_INSERT_LIBRARIES");
+
+    NSMutableDictionary *data = [NSMutableDictionary dictionary];
+    data[@"jailbreak"] = jailbreak;
+    data[@"confidence"] = confidence;
+    data[@"is_sandboxed"] = @(!(noSandbox || canListVarMobile));
+    data[@"uid"] = @((int)getuid());
+    data[@"entitlements"] = ents;
+    data[@"checks"] = checks;
+    data[@"dyld_insert_libraries"] = dyldInsert
+        ? [NSString stringWithUTF8String:dyldInsert]
+        : (id)[NSNull null];
+    data[@"shell_rootfs"] = @"alpine (iSH fake root) — its / is NOT the iOS filesystem";
+    data[@"note"] = note;
+
+    noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"env", data), compact, quiet);
+    return NOFF_EXIT_SUCCESS;
+}
+
 static int device_handler(int argc, char **argv,
                            int stdin_fd, int stdout_fd, int stderr_fd) {
     if (noff_has_flag(argc, argv, "--help") || noff_has_flag(argc, argv, "-h")) {
@@ -251,12 +437,14 @@ static int device_handler(int argc, char **argv,
         return cmd_battery(stdout_fd, compact, quiet);
     } else if ([subcmd isEqualToString:@"storage"]) {
         return cmd_storage(stdout_fd, compact, quiet);
+    } else if ([subcmd isEqualToString:@"env"]) {
+        return cmd_env(stdout_fd, compact, quiet);
     }
 
     noff_emit_help(stderr_fd, HELP_TEXT);
     NSDictionary *err = noff_json_error(TOOL_NAME, subcmd,
                                          NOFF_ERR_INVALID_ARGS,
-                                         [NSString stringWithFormat:@"Unknown command '%@'. Valid commands: info, battery, storage. Use --help for details.", subcmd]);
+                                         [NSString stringWithFormat:@"Unknown command '%@'. Valid commands: info, battery, storage, env. Use --help for details.", subcmd]);
     noff_emit_json(stdout_fd, err, compact, quiet);
     return NOFF_EXIT_INVALID_ARGS;
 }
