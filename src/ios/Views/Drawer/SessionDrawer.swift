@@ -172,6 +172,7 @@ struct SessionDrawer: View {
     ///
     /// 不能用白底细线：抽屉底色 #fbfbfd 本来就白，再贴一个白气泡，
     /// 齿轮几乎没有存在感，用户找不到设置入口。
+    @MainActor
     private var settingsGear: some View {
         Button {
             onOpenSettings()
@@ -185,7 +186,13 @@ struct SessionDrawer: View {
         }
         .buttonStyle(.plain)
         .padding(.trailing, 14)
-        .padding(.bottom, 16)
+        // [R83] 底边距取「安全区底 + 16」，不是写死 16。
+        //
+        // 抽屉的帧底要么落在安全区底（898），要么落在屏幕底（932），
+        // 取决于容器的原点在哪 —— 写死 16 的那一版在后者上会正好压住
+        // home indicator，用户看到的就是「齿轮被吞了一半」。
+        // 用实测底部安全区兜住两种情形：34+16 = 50，离屏幕底足够远。
+        .padding(.bottom, max(16, Self.bottomInset + 16))
         .accessibilityLabel("设置")
     }
 
