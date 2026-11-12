@@ -800,81 +800,60 @@ struct AddRelayProviderView: View {
             ProviderConfigStore.shared.addInstance(instance)
         }
 
-        // [R51-中转站设为默认模型] 保存后把这个中转站的模型设为
+        // [R51/R79-中转站设为默认模型] 保存后把这个中转站的模型设为
         // 新对话的默认选择。
         //
         // 为什么必须做：addInstance 对 apiKey 实例是异步拉模型的
         // （refreshModels 在后台 Task 里跑），拉到的条目不会自动
-        // 进默认组；defaultPrimaryGroupId 还指着旧组（或 nil）。
-        // 新建对话的模型解析链（createInitialBinding tier1 →
-        // defaultPrimaryGroupId）拿不到这个中转站的模型，顶栏就
-        // 显示「未选择模型」—— 用户必须手动去挑一次。
+        // 进默认组；新建对话的模型解析链（createInitialBinding tier1 →
+        // defaultPrimaryGroupId）拿不到这个中转站的模型，顶栏就会
+        // 显示「未选择模型」或上一个模型 —— 用户必须手动去挑一次。
         //
-        // 做法：等后台拉模型落地（轮询 store，最多 ~6 秒），然后
-        //
-        //   · 用户在中转站页选了「直连模型」（lanModel）→ 用它
-        //   · 没选 → 用该实例拉到的第一个文本模型
-        //
-        // 建一个单成员组挂到 defaultPrimaryGroupId。已有的默认组
-        // 不覆盖 —— 只在「现在没有默认组」时才设，避免抢用户
-        // 已经手动配好的默认。
-        //
-        // 拉模型失败（中转站不在线等）就放弃，不阻塞保存 ——
-        // 用户下次手动刷新模型后再说，行为与从前一致。
-        await seedDefaultModelGroup(for: instance, preferredModelId: lanModel)
+        // 传哪条线路的模型：按**保存这一刻**判定的线路给
+        // （在家给直连模型，在外给外网模型），优先级是
+        // 「本线路的 → 另一条线路的 → nil」。只影响新会话顶栏显示哪个
+        // 模型名；真实请求用哪个 model 由 `RelayProfileStore.overrideModelId`
+        // 按当时的线路决定，与该组无关。
+        let preferred = isLan ? (lanModel ?? wanModel) : (wanModel ?? lanModel)
+        await seedDefaultModelGroup(for: instance, preferredModelId: preferred)
 
         onSaved?(instance.id)
         dismiss()
     }
 
-    /// [R51] 保存中转站后，把它的模型挂成新对话的默认选择。
+    /// [R79] 保存中转站后，把它变成「新会话默认模型」。
     ///
-    /// 只在「当前没有默认组」时生效；已有默认组说明用户配过，不抢。
-    /// 等待 addInstance 的后台 refreshModels 落地最多 ~6 秒
-    /// （0.3s × 20 次），超时就用现有条目（可能为空 = 放弃）。
+    /// 这里只留两件事：等后台拉模型落地、然后交给
+    /// `ProviderConfigStore.makeDefaultGroup`。
+    ///
+    /// **不再判断「已有默认组就不动」**：用户保存 / 编辑中转站这个动作
+    /// 本身就是「我要用它」的表态。继续守着旧默认组，结果就是他明明
+    /// 选好了模型，新建对话却还是别的模型。要换回来，在「AI 中转站」
+    /// 列表页点一下「设为默认」即可。
+    ///
+    /// 等待 addInstance 的后台 refreshModels 最多 ~6 秒
+    /// （0.3s × 20 次）；超时就用手上已有的条目（可能为空 = 放弃）。
     private func seedDefaultModelGroup(for instance: ProviderInstance,
                                        preferredModelId: String?) async {
         let store = ProviderConfigStore.shared
 
-        // 已有默认组：用户配置过，不覆盖。
-        if store.defaultPrimaryGroupId != nil { return }
-
         // 等后台模型拉取落地（addInstance 里 fire-and-forget 的 Task）。
-        var entries: [ModelEntry] = []
         for _ in 0..<20 {
-            entries = store.modelEntries.filter {
+            let ready = store.modelEntries.contains {
                 $0.providerInstanceId == instance.id && !$0.isHidden
             }
-            if !entries.isEmpty { break }
+            if ready { break }
             try? await Task.sleep(nanoseconds: 300_000_000)
         }
 
-        // 用户在中转站页选的「直连模型」优先；没选就用第一个文本模型。
-        let chosen: ModelEntry?
-        if let preferred = preferredModelId {
-            chosen = entries.first { $0.model.id == preferred }
-        } else {
-            chosen = entries.first { entry in
-                guard let m = entry.model.modalityOverride else { return true }
-                return !m.contains(.imageOutput) && !m.contains(.audioOutput)
-                    && !m.contains(.videoOutput)
-            } ?? entries.first
-        }
-        guard let entry = chosen else {
+        guard let group = store.makeDefaultGroup(for: instance.id,
+                                                preferredModelId: preferredModelId) else {
             Logger(subsystem: "app.minis", category: "RelaySetup").info(
                 "[RelayDefault] instance=\(instance.label) 拉不到模型条目，跳过默认组设置")
             return
         }
-
-        let group = ModelGroup(
-            name: instance.label,
-            memberEntryIds: [entry.id],
-            strategy: .fallback
-        )
-        store.addGroup(group)
-        store.defaultPrimaryGroupId = group.id
         Logger(subsystem: "app.minis", category: "RelaySetup").info(
-            "[RelayDefault] instance=\(instance.label) 已设为默认组 entry=\(entry.model.id)")
+            "[RelayDefault] instance=\(instance.label) 已设为默认组 group=\(group.id.prefix(8)) member=\(group.memberEntryIds.first ?? "-")")
     }
 }
 

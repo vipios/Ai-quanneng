@@ -2195,6 +2195,92 @@ final class ProviderConfigStore: ObservableObject {
         config.modelGroups.first { $0.id == id }
     }
 
+    // MARK: - 会话默认模型（新建对话会自动选中哪个）
+
+    /// 找「成员全部来自同一个实例」的组。
+    ///
+    /// 中转站就是靠它给每个实例留一个默认组（保存时自动建、之后复用），
+    /// 所以「这个实例是不是新会话的默认」= `defaultPrimaryGroupId == singleInstanceGroup(for:)?.id`。
+    ///
+    /// 只认「全部成员同源」：混了多个实例的组是用户自己配的候选池
+    /// （策略/上下文限制都在上面调过），不能当成某个实例的默认组去改写成员。
+    func singleInstanceGroup(for instanceId: String) -> ModelGroup? {
+        let prefix = instanceId + "/"
+        return config.modelGroups.first { group in
+            !group.memberEntryIds.isEmpty
+                && group.memberEntryIds.allSatisfy { $0.hasPrefix(prefix) }
+        }
+    }
+
+    /// 让某个实例的模型成为「新建对话的默认选择」。
+    ///
+    /// 为什么收口到这里：这段逻辑原来写在 `AddRelayProviderView.save()` 里，
+    /// 而真正读它的是另一处（`AIChatViewModel.createInitialBinding` 的 tier=1）。
+    /// 两边各写一份判断，就会打架 —— 原来的实现里有句
+    /// 「已有默认组就不动」，用户明明刚在中转站里选好模型，新会话却还是
+    /// 别的模型，看起来就是「我设了没用」。
+    ///
+    /// 现在「谁当默认」只有这一个函数说了算。保存中转站、在列表页点
+    /// 「设为默认」，走的都是它。
+    ///
+    /// 选条目：优先 `preferredModelId`；对不上（`/v1/models` 返回的 id 与用户
+    /// 填的不完全一致，或那条这次没被列出来）就退到第一个文本模型 ——
+    /// 以前这种情况直接放弃，正是「模型选了不生效」的另一半原因。
+    ///
+    /// - Returns: 最终成为默认的组；该实例下一条可用模型都没有时返回 nil，不改动现状。
+    @discardableResult
+    func makeDefaultGroup(for instanceId: String, preferredModelId: String? = nil) -> ModelGroup? {
+        let entries = config.modelEntries.filter {
+            $0.providerInstanceId == instanceId && !$0.isHidden
+        }
+        guard let entry = Self.pickDefaultEntry(entries, preferred: preferredModelId) else { return nil }
+
+        if var existing = singleInstanceGroup(for: instanceId) {
+            // 复用：只换成员。名字、策略、思考档、上下文限制都是用户
+            // 可能在「模型组」里调过的，重建成新组会把这些一起丢掉。
+            existing.memberEntryIds = [entry.id]
+            updateGroup(existing, orderReason: "relay-default")
+            if config.defaultPrimaryGroupId != existing.id {
+                defaultPrimaryGroupId = existing.id
+            }
+            return existing
+        }
+
+        let group = ModelGroup(
+            name: instance(for: instanceId)?.label ?? AppLocalized("Default Model"),
+            memberEntryIds: [entry.id],
+            strategy: .fallback
+        )
+        addGroup(group)
+        defaultPrimaryGroupId = group.id
+        return group
+    }
+
+    /// 从一批条目里挑「默认该用哪一条」。
+    ///
+    /// `static` 且不读实例状态：调用方常在一个「等后台 refreshModels 落地」
+    /// 的循环里反复调它，不希望每次求值都牵动 `self`。
+    static func pickDefaultEntry(_ entries: [ModelEntry], preferred: String?) -> ModelEntry? {
+        guard !entries.isEmpty else { return nil }
+
+        if let preferred = preferred?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !preferred.isEmpty,
+           let hit = entries.first(where: { $0.baseModel.id == preferred }) {
+            return hit
+        }
+
+        // 没有指定、或指定的那条不在列表里：取第一个「文本」模型。
+        // 图像 / 语音 / 视频输出的模型当默认，用户发一句话就报错，
+        // 这是 tier=3 早就在遵守的口径，这里保持一致。
+        let textEntries = entries.filter { entry in
+            guard let modality = entry.model.modalityOverride else { return true }
+            return !modality.contains(.imageOutput)
+                && !modality.contains(.audioOutput)
+                && !modality.contains(.videoOutput)
+        }
+        return textEntries.first ?? entries.first
+    }
+
     // MARK: - Agent Loop Models
 
     var agentLoopModelEntryIds: [String] {
