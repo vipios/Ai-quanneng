@@ -394,13 +394,100 @@ Skills use three loading levels:
 Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, etc. The skill should only contain what an AI agent needs to do the job.
 """
 
+    /// 在这台手机上装命令行工具的技能。
+    ///
+    /// 为什么值得内置：这个环境跟用户熟悉的 Debian/macOS 都不一样 ——
+    /// 只有 busybox，没有 bash/python/node/gcc，包名规则也是 Alpine 那一套。
+    /// 模型凭训练记忆猜包名（`python3-pandas`、`apt install`）必然失败，
+    /// 失败后往往一头扎进「换源 / 升级 / 重装」的试错里，把环境搞得更糟。
+    ///
+    /// 正文里每条都是这台机器上验证过的事实，不是通用建议：
+    /// 版本、缺哪些命令、镜像已在国内、pip 已放开 PEP 668、
+    /// 以及 `minis-mcp-cli` 自己用的那套 apk 命令写法。
+    private static let alpineToolchainVersion = "1.0.0"
+    private static let alpineToolchainContent = """
+---
+name: alpine-toolchain
+version: 1.0.0
+description: 在这个 App 的 Alpine 环境里安装、验证命令行工具（python、node、gcc、git、ffmpeg 等）。当任务需要一个 shell 里没有的命令，或者 apk/pip 报错时使用。
+---
+
+# 在这台手机上装工具链
+
+## 环境事实（先读，别猜）
+
+- Alpine Linux 3.21，aarch64，以 `root` 登录
+- 基础镜像是最小集：只有 busybox。**没有** bash、python、node、gcc、git、curl
+- shell 是 `ash`（busybox），不是 bash。需要 bash 时 App 会按需装，也可以自己 `apk add bash`
+- apk 源已指向国内镜像，**不要**手动改 `/etc/apk/repositories`，也别说"先换源"
+- pip 已配置清华源并放开 PEP 668（`/etc/pip/pip.conf`），装完 python 后 `pip install` 直接可用
+- 工作目录 `/var/ai`，用户能在 App 里看到这里的文件
+
+## 装之前
+
+1. `command -v <工具名>` 确认真没有。不要用 `<工具> --version` 探测 —— 没装的时候这句只会报错，装了的时候又慢
+2. 大包先看体积：`apk info -s <包名>`。手机上装几十上百 MB 的东西，先跟用户说一声大概多大、要等一会儿
+3. 包名用 Alpine 的命名，跟 Debian/Ubuntu 不一样。不确定就先 `apk search <关键字>`
+
+## 常用装法
+
+```
+apk add --no-cache bash
+apk add --no-cache python3 py3-pip
+apk add --no-cache nodejs npm
+apk add --no-cache git
+apk add --no-cache build-base          # gcc + make + musl-dev，编译 C 扩展用
+apk add --no-cache ffmpeg
+```
+
+Python 第三方包（Alpine 上很多包有预编译版，优先用它，比 pip 编译快得多）：
+
+```
+apk add --no-cache py3-numpy py3-pandas py3-pillow py3-requests
+pip install <包名>                      # 没有 apk 版时再用 pip
+```
+
+## 装完必须验证
+
+```
+command -v <工具名> && <工具名> --version | head -1
+```
+
+只回一句"装好了"不算完成。装成功但动态库缺失（`Error loading shared library ...`）在这个环境里很常见，必须真的跑一次。
+
+## 已知的坑
+
+- `apk add` 报 `TEMPFAIL` 或 `temporary error`：网络抖动。等几秒重试一次，或先 `apk update`。不要立刻换源，源是对的
+- 报 `unable to select packages`：包名错。用 `apk search` 找准确名字
+- 装完命令找不到：`echo $PATH` 看一眼，必要时用绝对路径 `/usr/bin/<命令>`
+- **不要执行裸的 `apk upgrade`**（不带包名）。全量升级会替换 busybox / musl，而这个环境跑在 App 内的伪造文件系统上，换掉底层库有让整个 shell 起不来的风险。要升级就 `apk upgrade <指定包>`
+- 编译类任务（`pip install` 需要编译、`npm install` 带原生模块）先装 `build-base`，否则会报 `gcc: not found` 或 `Python.h: No such file`
+
+## 交付
+
+装完用一句话告诉用户：装了什么、占多大、现在能做什么。不要把 apk 的输出整段贴出来。
+"""
+
     private func installBundledSkills() {
-        let bundledId = "skill-creator"
-        if let existing = skills.first(where: { $0.id == bundledId }) {
-            // Upgrade if the bundled version is newer
-            guard existing.version < Self.skillCreatorVersion else { return }
+        installBundledSkill(id: "skill-creator",
+                            version: Self.skillCreatorVersion,
+                            content: Self.skillCreatorContent)
+        installBundledSkill(id: "alpine-toolchain",
+                            version: Self.alpineToolchainVersion,
+                            content: Self.alpineToolchainContent)
+    }
+
+    /// 装一个内置技能。已存在且版本不旧于内置版本时什么都不做 ——
+    /// 否则每次启动都会覆盖用户自己改过的正文。
+    ///
+    /// `id` 必须等于 `slugify(SKILL.md 里的 name)`，因为 importSkill 是按
+    /// 解析出来的 name 生成 id 的，对不上就会出现「每次启动都装一遍，
+    /// 装完列表里还是两个同名的」。
+    private func installBundledSkill(id: String, version: String, content: String) {
+        if let existing = skills.first(where: { $0.id == id }) {
+            guard existing.version < version else { return }
         }
-        _ = try? importSkill(content: Self.skillCreatorContent, source: .bundled)
+        _ = try? importSkill(content: content, source: .bundled)
     }
 
     // MARK: - One-time Migration: re-sync skills with bundled files
