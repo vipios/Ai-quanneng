@@ -1,4 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  启动屏：欢迎语 + 一行技能标签。
+
+  ⚠️ 这个文件不能删，也不能去掉 INFOPLIST_KEY_UILaunchStoryboardName。
+  iOS 11 之后，没有启动 storyboard 的 App 会走「兼容模式」：
+  整个界面被塞进一个小尺寸画布里居中，四周留黑边 —— 那不是「没有启动屏」，
+  而是整个 App 都变小了。
+
+  ⚠️ 启动屏是**静态快照**，系统截一次图就锁住，动画在这里做不出来。
+
+  2026-11-10 用户要求：
+    · 标题改成「欢迎使用全能AI」
+    · 副标题换成 AI 的技能词
+    · 去掉原来那三个圆点（它们是「正在启动」的暗示，但启动屏根本动不了，
+      留着是误导）
+
+  布局：整块（标题 + 技能行）作为一个整体在屏幕上垂直居中。
+  技能行 centerY = view 中心 + 20，是因为整块的中心比技能行的中心高约
+  20.5pt（标题 27 + 间距 14 + 技能行 16 = 57pt，技能行中心在整块
+  往下 20.5pt 处）。去掉圆点之后如果还让技能行本身居中，整块会明显偏上。
+
+  文案不要写太长 —— 技能行 13pt、单行 tailTruncation，长过屏宽会被截断。
+-->
 <document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="24506" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
     <device id="retina6_12" orientation="portrait" appearance="light"/>
     <dependencies>
@@ -17,32 +40,14 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="●" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="dot-1-id" userLabel="Dot1">
-                                <rect key="frame" x="172" y="451" width="8" height="10"/>
-                                <fontDescription key="fontDescription" type="system" pointSize="8"/>
-                                <color key="textColor" systemColor="labelColor"/>
+                            <label opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="欢迎使用全能AI" textAlignment="center" lineBreakMode="middleTruncation" baselineAdjustment="alignBaselines" minimumFontSize="18" translatesAutoresizingMaskIntoConstraints="NO" id="GJd-Yh-RWb" userLabel="Title">
+                                <rect key="frame" x="96.5" y="397.5" width="200" height="27"/>
+                                <fontDescription key="fontDescription" type="boldSystem" pointSize="22"/>
                                 <nil key="highlightedColor"/>
                             </label>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="●" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="dot-2-id" userLabel="Dot2">
-                                <rect key="frame" x="188" y="451" width="8" height="10"/>
-                                <fontDescription key="fontDescription" type="system" pointSize="8"/>
-                                <color key="textColor" systemColor="labelColor"/>
-                                <nil key="highlightedColor"/>
-                            </label>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="●" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="dot-3-id" userLabel="Dot3">
-                                <rect key="frame" x="204" y="451" width="8" height="10"/>
-                                <fontDescription key="fontDescription" type="system" pointSize="8"/>
-                                <color key="textColor" systemColor="labelColor"/>
-                                <nil key="highlightedColor"/>
-                            </label>
-                            <label opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Open Minis" textAlignment="center" lineBreakMode="middleTruncation" baselineAdjustment="alignBaselines" minimumFontSize="18" translatesAutoresizingMaskIntoConstraints="NO" id="GJd-Yh-RWb">
-                                <rect key="frame" x="148.66666666666666" y="401" width="96" height="22"/>
-                                <fontDescription key="fontDescription" type="boldSystem" pointSize="18"/>
-                                <nil key="highlightedColor"/>
-                            </label>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Your Private On-Device Agent is starting" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="ioh-oc-Fxv">
-                                <rect key="frame" x="111" y="431" width="171.66666666666663" height="17"/>
-                                <fontDescription key="fontDescription" type="system" pointSize="14"/>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="写作 · 编程 · 翻译 · 分析 · 绘图 · 搜索" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="ioh-oc-Fxv" userLabel="Skills">
+                                <rect key="frame" x="46" y="438.5" width="301" height="16"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="13"/>
                                 <color key="textColor" systemColor="secondaryLabelColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
@@ -50,20 +55,16 @@
                         <viewLayoutGuide key="safeArea" id="Bcu-3y-fUS"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstItem="GJd-Yh-RWb" firstAttribute="centerX" secondItem="Bcu-3y-fUS" secondAttribute="centerX" id="cX3-title-sa"/>
+                            <!-- 技能行水平居中 -->
                             <constraint firstItem="ioh-oc-Fxv" firstAttribute="centerX" secondItem="Bcu-3y-fUS" secondAttribute="centerX" id="0mo-ik-j59"/>
-                            <constraint firstItem="ioh-oc-Fxv" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="LhO-Af-Md8"/>
-                            <constraint firstItem="GJd-Yh-RWb" firstAttribute="bottom" secondItem="ioh-oc-Fxv" secondAttribute="top" constant="-12" id="cY1-title-slogan"/>
-                            <!-- Dot2 centered horizontally -->
-                            <constraint firstItem="dot-2-id" firstAttribute="centerX" secondItem="Bcu-3y-fUS" secondAttribute="centerX" id="dot2-cx"/>
-                            <!-- Dot spacing: 1-2-3 with 8pt gaps -->
-                            <constraint firstItem="dot-2-id" firstAttribute="leading" secondItem="dot-1-id" secondAttribute="trailing" constant="8" id="dot12-sp"/>
-                            <constraint firstItem="dot-3-id" firstAttribute="leading" secondItem="dot-2-id" secondAttribute="trailing" constant="8" id="dot23-sp"/>
-                            <!-- All dots same centerY -->
-                            <constraint firstItem="dot-1-id" firstAttribute="centerY" secondItem="dot-2-id" secondAttribute="centerY" id="dot1-cy"/>
-                            <constraint firstItem="dot-3-id" firstAttribute="centerY" secondItem="dot-2-id" secondAttribute="centerY" id="dot3-cy"/>
-                            <!-- Dots 8pt below slogan -->
-                            <constraint firstItem="dot-2-id" firstAttribute="top" secondItem="ioh-oc-Fxv" secondAttribute="bottom" constant="15" id="dots-below"/>
+                            <!-- 整块垂直居中：技能行比中心低 20（见文件头的算式） -->
+                            <constraint firstItem="ioh-oc-Fxv" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" constant="20" id="LhO-Af-Md8"/>
+                            <!-- 技能行不要长过屏幕：左右各留 32 -->
+                            <constraint firstItem="ioh-oc-Fxv" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="Bcu-3y-fUS" secondAttribute="leading" constant="32" id="skills-lead"/>
+                            <constraint firstItem="Bcu-3y-fUS" firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="ioh-oc-Fxv" secondAttribute="trailing" constant="32" id="skills-trail"/>
+                            <!-- 标题在技能行上方 14 -->
+                            <constraint firstItem="GJd-Yh-RWb" firstAttribute="centerX" secondItem="Bcu-3y-fUS" secondAttribute="centerX" id="cX3-title-sa"/>
+                            <constraint firstItem="ioh-oc-Fxv" firstAttribute="top" secondItem="GJd-Yh-RWb" secondAttribute="bottom" constant="14" id="cY1-title-slogan"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -73,20 +74,11 @@
         </scene>
     </scenes>
     <resources>
-        <systemColor name="labelColor">
-            <color red="0.0" green="0.0" blue="0.0" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
-        </systemColor>
         <systemColor name="secondaryLabelColor">
             <color red="0.23529411764705882" green="0.23529411764705882" blue="0.2627450980392157" alpha="0.59999999999999998" colorSpace="custom" customColorSpace="sRGB"/>
         </systemColor>
         <systemColor name="systemBackgroundColor">
             <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-        </systemColor>
-        <systemColor name="systemGray2Color">
-            <color red="0.68235294117647061" green="0.68235294117647061" blue="0.69803921568627447" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
-        </systemColor>
-        <systemColor name="systemGray3Color">
-            <color red="0.78039215686274510" green="0.78039215686274510" blue="0.80000000000000004" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
         </systemColor>
     </resources>
 </document>
