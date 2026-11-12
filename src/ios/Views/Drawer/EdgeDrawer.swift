@@ -241,6 +241,27 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             // 确实是虚的。所以补回来，但比 R63 的 4.0 弱：只到 2.5，
             // 目的是把文字化开、不是把整屏糊掉。
             content()
+                // [R76-上下各缺一条] 聊天卡片要**铺满到屏幕上下边缘**。
+                //
+                // DrawerContainer 是放在 ContentView 的 GeometryReader 里的，
+                // 而那个 GeometryReader 遵守安全区 —— 交给这张卡片的高度
+                // 是「屏幕高 − 状态栏 − home indicator」。于是卡片不是贴边的
+                // 一整块，而是上下各缩进一条：上面那条露出窗口底色，下面那条
+                // 也是。抽屉拉开变成卡片之后，这两条就把「卡片浮在屏幕中间」
+                // 的感觉做实了 —— 用户看到的原话是「上面缺一条，下面缺一条」。
+                //
+                // 只忽略**垂直**方向：
+                //   · 垂直：卡片要顶到屏幕顶边、压到 home indicator，
+                //     这样它才是一张和屏幕等高的纸；
+                //   · 水平不能忽略：右侧要留 `peekStrip` 那条给「点空白关闭」，
+                //     左边要刚好停在抽屉宽度上，一旦横向铺满，
+                //     卡片的偏移量就和抽屉宽度对不上了。
+                //
+                // 里面的 NavigationStack 不会因此跑到状态栏底下：导航栏和
+                // 列表的 inset 取的是 **window 的安全区**，不跟着这个 frame 走，
+                // 所以返回键、标题的位置一个点都不会动，只是卡片底色
+                // 和圆角跟着铺到了屏幕边缘。
+                .ignoresSafeArea(edges: .vertical)
                 .blur(radius: 2.5 * state.progress)
                 // 「越走越浅」靠这层底色蒙出来。
                 //
@@ -496,6 +517,7 @@ private struct EdgePanOverlay: UIViewRepresentable {
                         window.addGestureRecognizer(g)
                     }
                 }
+                bindSystemPopGesture(in: window)
                 return
             }
 
@@ -514,6 +536,60 @@ private struct EdgePanOverlay: UIViewRepresentable {
                                                action: #selector(handle(_:)))
             configure(close, on: window)
             closePan = close
+
+            bindSystemPopGesture(in: window)
+        }
+
+        /// 让系统的「右滑返回」让位给抽屉。
+        ///
+        /// [R77-右滑先退回列表] 用户报：在对话页右滑，会先退到原版的
+        /// 会话列表页，再滑一次才出抽屉。要的是「在对话页右滑直接出抽屉」。
+        ///
+        /// 为什么只靠 `InteractivePopGestureDisabler` 不管用，两条：
+        ///
+        ///   1. **它根本找不到导航控制器**。那个 disabler 是用
+        ///      `.background()` 挂在 NavigationStack 上的，而 background
+        ///      在导航栈**外面** —— 从它沿响应链 `next` 往上走，走的是
+        ///      「background → hosting view → 窗口」，永远碰不到
+        ///      UINavigationController（那个在 NavigationStack 里面）。
+        ///      找不到就静默返回，一个手势都没关掉。
+        ///
+        ///   2. **就算找到了也会被系统重新打开**。UINavigationController
+        ///      在栈深变化时（push 完一个页面）会把
+        ///      `interactivePopGestureRecognizer.isEnabled` 重置回 true。
+        ///      我们启动时关一次，用户一进对话页它就又活了 —— 正好是
+        ///      用户看到的那个时机。
+        ///
+        /// 所以这里用两层，缺一不可：
+        ///   · `isEnabled = false` —— 直接关掉，最干净；
+        ///   · `require(toFail:)` —— 建立**永久的失败依赖**：系统返回手势
+        ///     必须先等我们的 pan 失败，才允许它自己识别。这个关系挂在
+        ///     手势对象上，UIKit 重置 `isEnabled` 不会清掉，所以 push 完
+        ///     再滑，仍然是我们的 pan 先赢。
+        ///
+        /// 只处理**主栈**（rootViewController 及其 children），不往里递归
+        /// `presentedViewController`：设置页是 sheet 弹出来的、自带一个
+        /// NavigationStack，把它的返回手势也关掉会让用户在里面退不回去。
+        private func bindSystemPopGesture(in window: UIWindow) {
+            guard let open = openPan, let close = closePan else { return }
+            for nav in Self.navigationControllers(in: window.rootViewController) {
+                guard let pop = nav.interactivePopGestureRecognizer else { continue }
+                pop.isEnabled = false
+                pop.require(toFail: open)
+                pop.require(toFail: close)
+            }
+        }
+
+        /// 递归收集主栈里的所有 UINavigationController（只走 children，
+        /// 不走 presented —— 理由见 `bindSystemPopGesture`）。
+        private static func navigationControllers(in vc: UIViewController?) -> [UINavigationController] {
+            guard let vc else { return [] }
+            var out: [UINavigationController] = []
+            if let nav = vc as? UINavigationController { out.append(nav) }
+            for child in vc.children {
+                out += navigationControllers(in: child)
+            }
+            return out
         }
 
         private func configure(_ g: UIPanGestureRecognizer, on window: UIWindow) {

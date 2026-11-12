@@ -108,11 +108,31 @@ struct SessionDrawer: View {
         // 一档，白卡片摆上去对比不够，整块看着发闷。设计稿 :root 里
         // --bg 是 #f2f2f7 但那说的是「手机外框」，抽屉本身铺的是 .drawer
         // 的 #fbfbfd —— 只比纯白暗一点点，卡片才有那层薄阴影可看。
-        .background(Color(UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor.secondarySystemGroupedBackground
-                : UIColor(red: 0xfb / 255.0, green: 0xfb / 255.0, blue: 0xfd / 255.0, alpha: 1)
-        }))
+        // [R76-上下各缺一条] 底色必须**铺进上下安全区**。
+        //
+        // 抽屉的父容器（ContentView 的 GeometryReader → DrawerContainer）
+        // 是遵守安全区布局的，所以抽屉这一层的 frame 上下各被切掉一截：
+        // 上面是状态栏（44/59pt），下面是 home indicator（34pt）。
+        // 那两截露出来的是窗口底色（纯白 #fff），而抽屉底色是 #fbfbfd ——
+        // 只差一点点白，于是屏幕上就是「上面缺一条、下面缺一条」，
+        // 一条比周围略白的窄带贴在抽屉上下两端（深色模式下更明显）。
+        //
+        // 修法只让**背景**忽略安全区，不给整个 VStack 加：
+        //   · 内容（标题、搜索框、列表）必须继续待在安全区内，否则标题
+        //     会被顶到状态栏底下、最后一行会被 home indicator 压住；
+        //   · 只有底色需要出血，`.ignoresSafeArea(edges: .vertical)`
+        //     正好只补上下两条，左右不动（右侧要留 peek 那条给卡片）。
+        //
+        // 不加 `.edges: .all` 的原因：左右一旦也忽略，抽屉底色会往左
+        // 吃掉横屏时的左安全区、往右可能压到 peek 条上，得不偿失。
+        .background(
+            Color(UIColor { trait in
+                trait.userInterfaceStyle == .dark
+                    ? UIColor.secondarySystemGroupedBackground
+                    : UIColor(red: 0xfb / 255.0, green: 0xfb / 255.0, blue: 0xfd / 255.0, alpha: 1)
+            })
+            .ignoresSafeArea(edges: .vertical)
+        )
         // [R28-设置入口右下角] 设置入口从导航栏 `.topBarLeading` 挪到这里：
         // 抽屉右下角一枚悬浮齿轮，点它直接开原版 SettingsSheet。
         //
