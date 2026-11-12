@@ -248,6 +248,114 @@ final class RelayProfileStore {
         return storage[instanceId] != nil
     }
 
+    // MARK: - [R66-档案丢失自愈] 实例在、档案不在
+
+    /// 这个实例**看起来**是不是一台中转站 —— 不看档案，只看实例本身。
+    ///
+    /// 为什么需要它：中转站的双地址 / 线路模型住在 `relay-profiles.json`
+    /// 这个旁挂文件里，而**备份、iCloud 同步、「导出服务商」JSON 都只带
+    /// provider-config.json，不带它**。于是「换设备 / 恢复备份 / 导入服务商」
+    /// 之后会出现一种很隐蔽的半截状态：
+    ///   · ProviderInstance 还在，发消息照常通（回落到实例自己的 customBaseURL）
+    ///   · 档案全丢 → 内网直连 / 在外走域名 / 两条线路各自选模型全部失效
+    ///   · 详情页的「编辑」按钮也消失（它的显示条件就是「有档案」）
+    /// 界面上只表现为「少了一个按钮」，用户根本想不到是数据丢了。
+    ///
+    /// 判定口径刻意收得很窄，只认**内网地址**：
+    ///   · 私网 IPv4（10/8、172.16/12、192.168/16）、127.0.0.1、localhost
+    ///   · 且必须是 apiKey + OpenAI/Anthropic 兼容类型
+    /// 公网域名的自定义服务商（api.deepseek.com 之类）不会被误判成中转站。
+    ///
+    /// `.openAIResponses` 也要认：详情页的「API 格式」开关会把 .openAI 改写成
+    /// .openAIResponses（id 不变），中转站用户切过一次格式就会被漏掉。
+    static func looksLikeRelay(_ instance: ProviderInstance) -> Bool {
+        guard instance.credentialType == .apiKey else { return false }
+        switch instance.providerType {
+        case .openAI, .openAIResponses, .anthropic:
+            break
+        default:
+            return false
+        }
+        guard let url = instance.effectiveCustomBaseURL else { return false }
+        return isPrivateHost(url)
+    }
+
+    /// URL 里的主机名是不是内网地址。
+    static func isPrivateHost(_ url: String) -> Bool {
+        // 不引 URLComponents：用户可能填 `192.168.1.88:8080`（没写协议），
+        // URLComponents 会把整串当 path，这里手工抠 host 更稳。
+        var s = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let range = s.range(of: "://") {
+            s = String(s[range.upperBound...])
+        }
+        // 去掉 path / query / fragment
+        for sep in ["/", "?", "#"] {
+            if let i = s.firstIndex(of: Character(sep)) {
+                s = String(s[..<i])
+            }
+        }
+        // 去掉 user:pass@
+        if let at = s.lastIndex(of: "@") {
+            s = String(s[s.index(after: at)...])
+        }
+        // 去掉端口（IPv6 的 [::1]:8080 这种先不处理 —— 家用中转站不是 v6 字面量）
+        if let colon = s.lastIndex(of: ":") {
+            s = String(s[..<colon])
+        }
+        guard !s.isEmpty else { return false }
+        if s == "localhost" { return true }
+
+        let parts = s.split(separator: ".")
+        guard parts.count == 4,
+              let a = Int(parts[0]), let b = Int(parts[1]),
+              (0...255).contains(a), (0...255).contains(b) else { return false }
+        if a == 10 { return true }
+        if a == 192 && b == 168 { return true }
+        if a == 172 && (16...31).contains(b) { return true }
+        if a == 127 { return true }
+        return false
+    }
+
+    /// 把「实例在、档案不在」的中转站补回档案（只补能确定的部分）。
+    ///
+    /// 补出来的档案：homeURL = 实例自己的 customBaseURL，awayURL 空，
+    /// 线路 .auto（空 away 时 `effectiveURL()` 会自动回落到 homeURL，
+    /// 所以补完的请求行为和补之前完全一致 —— 不会因为自愈反而发不出消息），
+    /// 线路模型留空（不覆盖，走 App 原版 model）。
+    ///
+    /// 在外地址补不出来（那本来就是只存在档案里的东西），留在空位上，
+    /// 用户点「编辑」填一次就有了。
+    ///
+    /// 返回补了几条；0 表示没有需要处理的（调用方据此跳过落盘）。
+    @discardableResult
+    func healMissingProfiles(from instances: [ProviderInstance]) -> Int {
+        var healed = 0
+        for inst in instances {
+            guard Self.looksLikeRelay(inst) else { continue }
+            lock.lock()
+            let exists = storage[inst.id] != nil
+            lock.unlock()
+            guard !exists else { continue }
+            guard let home = inst.effectiveCustomBaseURL else { continue }
+
+            let kind: RelayProtocolKind = (inst.providerType == .anthropic) ? .anthropic : .openAI
+            upsert(RelayProviderProfile(
+                instanceId: inst.id,
+                homeURL: home,
+                awayURL: "",
+                routeMode: .auto,
+                protocolKind: kind,
+                lastResolvedIsLan: nil,
+                lastResolvedAt: nil,
+                appendV1Suffix: inst.appendV1Suffix,
+                lanModel: nil,
+                wanModel: nil
+            ))
+            healed += 1
+        }
+        return healed
+    }
+
     /// 同步取生效地址。**必须同步** —— 请求构造路径上不能 async。
     /// 与 `ProviderInstance.requestBaseURL` 走的是同一个镜像表。
     nonisolated func effectiveURL(for instanceId: String) -> String? {

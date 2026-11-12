@@ -145,12 +145,35 @@ struct AddRelayProviderView: View {
 
     /// [R52-编辑模式] 用已有档案回填表单。
     private func loadForEdit(instanceId: String) {
-        guard let p = RelayProfileStore.shared.profile(for: instanceId) else {
-            saveError = "找不到这条中转站的档案。"
+        // [R66-档案丢了也能编辑] 原来是先 `guard let p = profile(...) else { 报错 return }`。
+        // 问题是档案（relay-profiles.json）不在备份 / iCloud 同步 / 「导出服务商」
+        // 的覆盖范围里：换设备、恢复备份之后实例还在、档案没了，详情页那条
+        // 「编辑」按钮却仍然给出来了（见 ProviderInstanceDetailView 的
+        // showsRelayEditor）—— 那就必须打得开，否则按钮点了报一句
+        // 「找不到档案」，比没有按钮更糟。
+        //
+        // 档案不在时从实例回填能确定的部分：标签、地址（就是实例自己的
+        // customBaseURL）、协议、是否追加 /v1。在外地址只存在档案里，
+        // 补不出来，留空让用户填；填完保存一次，档案就重建了。
+        guard let inst = ProviderConfigStore.shared.instance(for: instanceId) else {
+            saveError = "找不到这条中转站。"
             return
         }
-        let inst = ProviderConfigStore.shared.instance(for: instanceId)
-        label = inst?.label ?? ""
+        label = inst.label
+        appendV1 = inst.appendV1Suffix
+        protocolKind = (inst.providerType == .anthropic) ? .anthropic : .openAI
+        // API Key 不回填明文（钥匙串里只存了密文，取回不回填原文），
+        // 留空 = 不修改；用户要改就重填。
+        apiKey = ""
+
+        guard let p = RelayProfileStore.shared.profile(for: instanceId) else {
+            homeURL = inst.effectiveCustomBaseURL ?? ""
+            awayURL = ""
+            routeMode = .auto
+            lanModel = nil
+            wanModel = nil
+            return
+        }
         homeURL = p.homeURL
         awayURL = p.awayURL
         protocolKind = p.protocolKind
@@ -158,9 +181,6 @@ struct AddRelayProviderView: View {
         appendV1 = p.effectiveAppendV1
         lanModel = p.lanModel
         wanModel = p.wanModel
-        // API Key 不回填明文（钥匙串里只存了密文，取回不回填原文），
-        // 留空 = 不修改；用户要改就重填。
-        apiKey = ""
     }
 
     private var canSave: Bool {

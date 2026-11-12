@@ -43,6 +43,16 @@ struct ProviderInstanceDetailView: View {
         store.instance(for: instanceId)
     }
 
+    /// 「编辑（中转站）」这个入口要不要显示。
+    ///
+    /// 两条判据取并集，理由见 toolbar 里的注释：档案在 → 一定是中转站；
+    /// 档案不在但实例长得像 → 也当中转站处理，否则档案一丢按钮就跟着消失。
+    private var showsRelayEditor: Bool {
+        if RelayProfileStore.shared.isRelay(instanceId) { return true }
+        guard let inst = instance else { return false }
+        return RelayProfileStore.looksLikeRelay(inst)
+    }
+
     var body: some View {
         Group {
             if let instance = instance {
@@ -56,7 +66,17 @@ struct ProviderInstanceDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // [R52-编辑中转站] 中转站实例显示「编辑」，点进去改地址/Key/模型。
-            if RelayProfileStore.shared.isRelay(instanceId) {
+            //
+            // [R66-档案丢了也要有按钮] 原来只认 `isRelay(instanceId)`，
+            // 也就是「relay-profiles.json 里有这条」。问题在于那份档案
+            // 不在备份 / iCloud 同步 / 「导出服务商」的覆盖范围里 ——
+            // 换设备或恢复备份之后实例还在、档案没了，条件为 false，
+            // 按钮直接消失，用户看到的就是「你的没有编辑」。
+            //
+            // 现在加一条退路：档案不在，但实例本身长得像中转站
+            // （内网 base URL + apiKey + 兼容类型）也显示。
+            // 点进去的表单会从实例字段回填，保存一次就把档案补回来。
+            if showsRelayEditor {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showEditRelay = true

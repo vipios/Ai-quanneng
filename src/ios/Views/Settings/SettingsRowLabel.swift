@@ -23,6 +23,9 @@ import SwiftUI
 enum SettingsRowId: String, CaseIterable {
     // AI 服务商
     case providers          = "providers"
+    // [R65] 「添加 AI 中转站」从服务商页的加号菜单搬到了这里，
+    // 位置就在「AI 服务商」下面，图标样式也跟它对齐。
+    case addRelay           = "addRelay"
     case modelGroups        = "modelGroups"
     case tokenUsage         = "tokenUsage"
     // 设备管理

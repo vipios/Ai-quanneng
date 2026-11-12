@@ -6,8 +6,8 @@ import UniformTypeIdentifiers
 struct ProviderInstancesView: View {
     @ObservedObject private var store = ProviderConfigStore.shared
     @State private var showAddProvider = false
-    // [T-minis-relay] 「添加 AI 中转站」弹窗
-    @State private var showAddRelay = false
+    // [R65] 「添加 AI 中转站」已搬到设置页，这里的弹窗状态一并删掉 ——
+    // 状态留着而弹窗不挂，就是一段永远不会被触发的死代码。
     @State private var showImportFile = false
     @State private var importMessage: String?
     @State private var showImportResult = false
@@ -119,6 +119,22 @@ struct ProviderInstancesView: View {
         }
         .navigationTitle("AI 服务商")
         .navigationBarTitleDisplayMode(.inline)
+        // [R66-补回丢失的中转站档案] 见 RelayProfileStore.healMissingProfiles。
+        //
+        // 中转站的双地址 / 线路模型存在 relay-profiles.json 里，而那份文件
+        // 不在备份、不在 iCloud 同步、也不在「导出服务商」里 —— 换设备或恢复
+        // 备份之后只剩实例，双地址整套功能静默失效、详情页的「编辑」也没了。
+        //
+        // 这里进列表时补一次（只补能确定的部分：内网地址 + 协议），
+        // 补完就不会再补（有档案就跳过），所以不是每次都写盘。
+        // 放在列表页而不是 store.init 里，是为了不碰 provider 配置的载入顺序 ——
+        // 那条路径上有 DB 权威载入、iCloud 合并和降级恢复，加一行写盘进去不值当。
+        .onAppear {
+            // 补一次就够：有档案的会被跳过，所以这不是每次都写盘。
+            // 不用管返回值 —— 补出来的档案不改变这一页的任何像素，
+            // 它只让详情页的「编辑」和双地址功能重新可用。
+            RelayProfileStore.shared.healMissingProfiles(from: store.instances)
+        }
         .toolbar {
             if !store.instances.isEmpty {
                 ToolbarItem(placement: .topBarLeading) {
@@ -132,17 +148,10 @@ struct ProviderInstancesView: View {
                     } label: {
                         Label(AppLocalized("Add Provider"), systemImage: "plus")
                     }
-                    // [R42] 「添加 AI 中转站」和「导入服务商」换了位置。
-                    //
-                    // 原来的顺序是「添加服务商 / 导入服务商 / 添加中转站」，
-                    // 中转站排在最下面。但在这台机器上，中转站是主路（服务商
-                    // 那条基本不用），排在第三位要多扫两行才找得到。换到第二位
-                    // 之后，「添加 / 导入」这种一次性的动作退到最后。
-                    Button {
-                        showAddRelay = true
-                    } label: {
-                        Label(AppLocalized("Add AI Relay"), systemImage: "network")
-                    }
+                    // [R65-中转站入口搬走] 「添加 AI 中转站」不再挂在这个加号
+                    // 菜单里，已经搬到设置页「AI 服务商」下面（那儿还有图标，
+                    // 比塞在 Menu 里显眼）。这里只留「添加服务商 / 导入服务商」
+                    // 两个一次性的动作，外加 iCloud 强制同步。
                     Button {
                         showImportFile = true
                     } label: {
@@ -165,11 +174,6 @@ struct ProviderInstancesView: View {
         .sheet(isPresented: $showAddProvider) {
             NavigationStack {
                 AddProviderView()
-            }
-        }
-        .sheet(isPresented: $showAddRelay) {
-            NavigationStack {
-                AddRelayProviderView()
             }
         }
         .fileImporter(isPresented: $showImportFile, allowedContentTypes: [.json]) { result in
