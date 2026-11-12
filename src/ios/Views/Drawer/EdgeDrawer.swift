@@ -1,6 +1,6 @@
 //
 //  EdgeDrawer.swift
-//  全能AI - 左边缘抽屉容器
+//  全能AI - 侧滑抽屉容器
 //
 //  改造点：原版 iPhone 是 NavigationStack 的「列表页 → push 对话」，
 //  列表和对话是两个全屏页面，来回要 push/pop。这里给内容层外面加一层：
@@ -13,26 +13,33 @@
 //  原版在对话页从屏幕左边缘右滑，会触发 NavigationStack 的
 //  interactivePopGestureRecognizer —— 也就是返回上一页。
 //
-//  抽屉用的也是「屏幕左边缘 + 向右滑」，两者天然抢同一次触摸。
-//  这里的选择是：**抽屉赢**。
+//  抽屉也要吃右滑，两者天然抢同一次触摸。这里的选择是：**抽屉赢**。
 //     · `InteractivePopGestureDisabler`（见 ContentView+Drawer.swift）
 //       在抽屉挂着的时候把系统返回手势关掉；
 //     · 返回仍然可用 —— 走导航栏左上角的 `‹` 按钮，那是系统原生的，
 //       一行没改。
 //
-//  为什么不是「两者共存、按速度或位移区分」：这两个手势的起手区域
-//  完全重合（屏幕左边缘），任何阈值区分都会在某一档手感下变得
-//  时灵时不灵。定死归属比调参数可靠。
-//
 //  ============================================================
-//  手势优先级（三层，写死）
+//  手势规则（R75 起：全屏，不再是「只有左边缘」）
 //  ------------------------------------------------------------
-//      1. 抽屉开着时 —— 只有「拖回」和「点遮罩关闭」有效，内容区不吃手势
-//      2. 抽屉关着时 —— 只有从屏幕左边缘 44pt 内起手才算拉抽屉
-//      3. 任何情况下 —— 水平位移必须明显大于垂直位移，否则让给滚动
+//      1. 抽屉关着 —— 屏幕**任意位置**向右滑 → 拉出抽屉
+//      2. 抽屉开着 —— 屏幕**任意位置**向左滑 → 收回抽屉
+//      3. 点卡片（右侧露出来的那部分）→ 收回抽屉
+//      4. 两种情况都要求：水平速度明显大于垂直（1.3 倍），否则让给滚动
+//      5. 起手点在状态栏 + 导航栏那一段 → 完全不接管，让给系统
 //
-//  第 3 条是关键。少了它，在列表里上下滚动会被误判成拉抽屉，或者反过来
-//  想拉抽屉时列表跟着滚。
+//  第 4 条是关键。少了它，在列表里上下滚动会被误判成拉抽屉，或者反过来
+//  想拉抽屉时列表跟着滚。用 1.3 倍而不是 1 倍，是因为斜着划（45°）
+//  在长列表里太常见了。
+//
+//  第 5 条也是必须的：全屏手势会盖住左上角的返回键 `‹`，还会碰状态栏
+//  下拉通知中心。物理上没法只挖个洞（手势不参与 hitTest，谈不上遮挡），
+//  所以在 shouldBegin 里按起手点排除。
+//
+//  **实现上有一件事必须记住**：所有 pan 都挂在 `UIWindow` 上，不挂在
+//  任何一个 UIView 上。原因是 `UIGestureRecognizer` 不参与 hitTest ——
+//  挂 window 就能做到「全屏判定 + 一个像素都不挡」，挂在某个 UIView 上
+//  则必须让那个 view 吃掉触摸，结果是所有按钮都点不动。
 //
 //  另一个刻意设计：手势只跟手，不跟动画。拖到一半松手才决定吸附方向
 //  （超过 40% 就往完展开 / 收回，否则看速度方向）。这样不会有「拖一下
@@ -77,27 +84,20 @@ final class DrawerState: ObservableObject {
     /// 保持一行的上限，超过就按 348 定宽、右侧多留一点。
     static let widthMax: CGFloat = 348
 
-    /// 从屏幕左边缘起手多少点之内才算「拉抽屉」。
-    ///
-    /// 44pt 覆盖了绝大多数单手握持时拇指能自然够到的范围，同时还没到
-    /// 「吃掉内容点击」的程度 —— 聊天页左边缘这条 44pt 里几乎不放
-    /// 可点控件，误伤成本很低。
-    ///
-    /// 注意：这个值同时也是「系统返回手势被关掉之后」的安全余量。
-    /// 系统返回手势的识别区约 20pt，44 把它整个包住了。
-    static let edgeSlop: CGFloat = 44
-
     /// 吸附判定：拖过这个比例就往「展开」吸，否则往「收起」吸。
     static let settleThreshold: CGFloat = 0.4
 
-    /// 系统导航栏高度。手势层要在垂直方向让出这一段。
+    /// 导航栏的内容高度（不含状态栏）。
     ///
-    /// 44 是 UINavigationBar 的标准内容高度（不含状态栏）。
-    /// 手势层的父容器由 ContentView 的 GeometryReader 给出、未 ignoresSafeArea，
-    /// 坐标原点正好在安全区顶部 = 导航栏顶边，所以本地 0…44 就是导航栏。
+    /// [R75] 手势改成全屏之后，这个值不再用来「给手势层让位」——
+    /// 判定改在 `shouldBegin` 里做，坐标是 window 坐标：
     ///
-    /// 刻意不在这里加 `safeAreaInsets.top`：那是窗口坐标里的量，
-    /// 加到视图坐标上会变成跨坐标系相加的错。
+    ///     起手点 y < window.safeAreaInsets.top + 44  →  不接管
+    ///
+    /// `safeAreaInsets.top` 是状态栏（刘海机 59pt / 非刘海 20pt），加 44
+    /// 正好到导航栏底边，左上角返回键 `‹` 整块热区都归系统。
+    ///
+    /// 44 是 UINavigationBar 的标准内容高度，iOS 上一直没变过。
     static let navBarHeight: CGFloat = 44
 
     var isOpen: Bool { progress > 0.5 }
@@ -149,7 +149,7 @@ final class DrawerState: ObservableObject {
 
 // MARK: - 容器
 
-/// 把「内容」和「抽屉」叠在一起，并接管左边缘手势。
+/// 把「内容」和「抽屉」叠在一起，并接管全屏侧滑手势。
 ///
 /// 用法：
 /// ```swift
@@ -266,97 +266,82 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                         x: -8 * state.progress,
                         y: 0)
                 .offset(x: drawerWidth * state.progress)
+                // 抽屉开着时，这张卡片**彻底退出命中链**。
+                //
+                // 只写 `.disabled(state.isOpen)` 不够：`disabled` 只保证
+                // 「控件不响应」，视图本身仍然参与命中，落在卡片布局范围
+                // 里的触摸会被它吃掉、不再往下传给抽屉。
+                //
+                // `.offset` 在 SwiftUI 里会同时移动渲染和命中区域，所以
+                // 卡片实际可命中的部分是 (drawerWidth … 屏宽)，正常人点不到
+                // 左边抽屉；但设备旋转、分屏、或系统在动画中间做一次命中
+                // 快照时，边界会有一帧对不齐。显式关掉最省心。
+                .allowsHitTesting(!state.isOpen)
                 .disabled(state.isOpen)
-                // 抽屉开着时，点这张卡片收回。
-                //
-                // 原来这件事由一层铺满全屏的 `Color.black.opacity(0.10)`
-                // 遮罩承担。遮罩删掉的原因：抽屉现在在**底层**，
-                // 铺满全屏的遮罩会连露出来的抽屉一起盖住 —— 抽屉点不动，
-                // 而且整体被压暗一层（截图里抽屉是亮的）。
-                // 现在「点空白处关闭」挂在卡片本身上：点卡片 = 点抽屉外面。
-                //
-                // 放在 .disabled 之后：disabled 只作用在它包住的子树里，
-                // 这一层在它外面，所以开着的时候仍然收得到点击。
-                .overlay {
-                    if state.isOpen {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture { state.close() }
-                    }
-                }
                 .zIndex(1)
 
-            // ── 手势层 ──
-            // 单独铺一层透明的 UIView 承载 UIPanGestureRecognizer。
-            // 不用 SwiftUI 的 DragGesture 是因为它拿不到「起手点在不在屏幕
-            // 左边缘」—— DragGesture 只给相对位移，而我们需要绝对坐标来判断
-            // 是否从边缘起手。混用 UIKit 手势识别器是这里最省事的做法。
+            // ── 点空白关闭（独立一层）──
             //
-            // 这一层必须**只占左边缘那一条**，不能铺满全屏。
+            // [R74-抽屉点不动] 这一层原来挂在上面 content() 的 `.overlay` 里，
+            // 结果抽屉里的会话行、齿轮、搜索框全都点不动，一点就收回抽屉。
             //
-            // 之前试过全屏 frame + allowsHitTesting(true)，靠
-            // `PassthroughView.point(inside:)` 在远离左边缘处返回 false 来
-            // 放行触摸。这在纯 UIKit 里成立（hitTest 会跳过返回 nil 的
-            // subview 继续找兄弟），但这里不成立：ZStack 里的其它内容由
-            // SwiftUI 画在 layer 上，不是能接住 hitTest 的兄弟 UIView。
-            // 于是 nil 没有东西可回退，这一次触摸被直接丢弃。
+            // 原因：`.overlay` 挂在 `.offset` **之后**，而 SwiftUI 的 overlay
+            // 是按父视图的**布局 frame** 定位的，不跟随 offset 的视觉位移。
+            // content 的布局 frame 是全屏，所以那层 `Color.clear` 实际铺满了
+            // 整屏 —— 左边露出来的抽屉也在它底下。触摸先到它，被它的
+            // onTapGesture 接住，执行 close()，看起来就是「点聊天界面就回来了」。
             //
-            // 症状：边缘右滑拉抽屉一切正常，但整页所有按钮都点不动。
-            // 因为手势层自己是活的，所以看起来像「只有点击坏了」。
+            // 现在改成 ZStack 里独立一层，**左侧显式空出抽屉宽度**：
+            //   · 左段 drawerWidth 宽 → allowsHitTesting(false)，触摸继续往下
+            //     落到 zIndex 0 的抽屉上，抽屉内部一切正常；
+            //   · 右段（卡片可见的那部分 + 右侧留的那一条）→ 接住点击并关闭。
+            //
+            // 这样既不依赖「offset 会不会移动命中区域」这个容易踩坑的行为，
+            // 也保住了「点卡片收回抽屉」的手感。
+            //
+            // zIndex 3 保证它压在最上面（卡片 1、手势宿主 2）。
+            //
+            // 手势完全不在这里竞争：三个 pan 都挂在 window 上，不参与
+            // hitTest，也就不用管谁在上面。「往左拖收回」走的是 closePan。
+            if state.isOpen {
+                HStack(spacing: 0) {
+                    Color.clear
+                        .frame(width: drawerWidth)
+                        .allowsHitTesting(false)
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { state.close() }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .zIndex(3)
+            }
+
+            // ── 手势层（不可见的宿主）──
+            //
+            // [R75-全屏拖拽] 用户原话：
+            //   「在聊天界面的时候滑动屏幕任意位置向右滑动都出来抽屉，
+            //     然后在任意位置向左滑动，聊天界面再回来」
+            //
+            // 所以「拉出」和「收回」都不能再限定在屏幕左边缘那一条上，
+            // 手势全部挂到 `window` 上。
+            //
+            // 为什么挂 window：`UIGestureRecognizer` **不参与 hitTest**。
+            // UIKit 的命中测试只问 UIView（`hitTest` / `point(inside:)`），
+            // 手势是跟在触摸流上旁听的 —— 触摸照样送到它该去的地方，
+            // 手势只是「顺便」判断这次滑动够不够格。
+            //
+            // 之前那版把 pan 挂在 ZStack 里的一张透明 UIView 上，想让它在
+            // 全屏范围接管，就必须让 `point(inside:)` 返回 true，结果是
+            // 那层把所有点击吃掉：抽屉里的会话行、齿轮、输入框全点不动。
+            // （那层还不敢铺满全屏，于是「拉出」只能退化成左边缘 44pt。）
+            // 挂 window 一次性解决两件事：全屏判定 + 一个像素都不挡。
+            //
+            // 这一层本身缩到 1×1 且 `allowsHitTesting(false)`，唯一职责是
+            // 当个能拿到 window 的宿主：`makeUIView` 阶段 window 还是 nil，
+            // 靠 `didMoveToWindow` 回调补挂手势。
             EdgePanOverlay(state: state, drawerWidth: drawerWidth)
-                .frame(width: DrawerState.edgeSlop)
-                // [R67] 起手条跟着卡片一起往右走。
-                //
-                // 抽屉沉底之后，原来那条固定在 x=0…44 的手势带会一直压在
-                // **抽屉**左边 44pt 上，抽屉里的搜索框、会话行左半边就点不动了
-                // （这层是不透明命中，不是穿透，见下面那段警告）。
-                //
-                // 所以让它跟着卡片位移：收起时在 x=0（物理屏幕边缘，
-                // UIScreenEdgePanGestureRecognizer 要的正是这个位置），
-                // 展开时挪到 x=drawerWidth，正好压在卡片左边缘上 ——
-                // 抽屉整块都能点，而卡片左边缘那条不影响任何控件
-                // （聊天页左边缘基本没东西）。
-                //
-                // 展开状态下「往左拖回去」不靠这一层：那条路走的是挂在
-                // window 上的 closePan（不参与 hitTest，见
-                // EdgePanOverlay.updateUIView 里的注释）。
-                .padding(.leading, drawerWidth * state.progress)
-                // 手势层从导航栏下方开始，**不覆盖导航栏**。
-                //
-                // 为什么必须物理避让，而不是继续在 hitTest 里挖洞：
-                // 这层是 ZStack 里的一张透明 UIView，盖在系统导航栏上方。
-                // `hitTest` 返回 nil 想「放行」，但 SwiftUI 的内容不是它的
-                // 兄弟 UIView（是画在同一层 hosting view 里的），nil 没有
-                // 接收者可以回退 —— 触摸被直接丢弃，而不是穿透。
-                // 于是返回键热区（x≈0~50）只剩 x>44 那一小条能点到，
-                // 用户看到的就是「只有一个固定的小点能按」。
-                //
-                // 让出导航栏后，左上角返回键整块热区恢复成系统原样：
-                // 图标四周都能按，和原版一致。代价只是导航栏那 44pt 高的
-                // 左边缘不能再起手拉抽屉 —— 那本来就该让给返回按钮。
-                //
-                // 数值用视图坐标：本容器由 ContentView 的 GeometryReader
-                // 包着、没有 ignoresSafeArea，坐标原点就在安全区顶部，
-                // 所以导航栏恰好占本地 0…44，不需要再加状态栏高度。
-                //
-                // ⚠️ padding 必须在 `maxHeight: .infinity` **之前**：
-                // 反过来写的话，内层已经撑满父高，padding 再把整体顶高 44，
-                // 超出的部分会被 ZStack 垂直居中，顶部反而多盖回来一截。
-                // 先 padding 后撑满，父级只会给内层分配 (高 − 44)。
-                .padding(.top, DrawerState.navBarHeight)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                // 忽略键盘安全区。
-                //
-                // 键盘弹起时 SwiftUI 会把安全区底部上移，这个手势层的
-                // 高度跟着被压短 —— 键盘上方那一段左边缘就变成死区，
-                // 「有键盘时左滑拉不出抽屉」。
-                //
-                // 这里要的是「整屏左边缘都能起手」，键盘在不在与手感
-                // 无关，所以两个方向都忽略键盘 inset。
-                .ignoresSafeArea(.keyboard, edges: .vertical)
-                // [R67] 手势层要压在卡片之上（content 是 zIndex 1）。
-                // 抽屉已经沉到 zIndex 0，所以这一层不会再挡住抽屉 ——
-                // 它现在的位置跟着卡片走（见上面 padding(.leading)）。
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
                 .zIndex(2)
         }
         .environmentObject(state)
@@ -398,73 +383,28 @@ private func dismissKeyboard() {
                                     to: nil, from: nil, for: nil)
 }
 
-/// 透明的 UIKit 视图，只做一件事：识别左边缘右滑 / 抽屉内左滑。
+/// 不可见的 UIKit 宿主，只做一件事：把三个 pan 挂到 window 上。
 private struct EdgePanOverlay: UIViewRepresentable {
 
     @ObservedObject var state: DrawerState
     let drawerWidth: CGFloat
 
     func makeUIView(context: Context) -> UIView {
-        let v = PassthroughView()
+        let v = HostView()
         v.backgroundColor = .clear
-        v.isUserInteractionEnabled = true
-        // 初次创建时抽屉是收起的，边缘窄带宽度立刻生效。
-        v.edgeSlop = DrawerState.edgeSlop
-        v.activeWidth = 0
-
-        let pan = UIScreenEdgePanGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handle(_:))
-        )
-        // 换成边缘手势，而不是普通 pan。
+        // 关键：自己**不接触摸**。
         //
-        // 这是「手感」的真正来源，不是调阈值能解决的：
-        //
-        // 原来用普通 UIPanGestureRecognizer，它要等手指移动超过系统内部
-        // 的最小距离（约 10pt）才进入 .began，然后再调 delegate 判断
-        // 起手点。所以从按下到抽屉开始动，中间永远有一段死区 ——
-        // 觉就是「不灵敏、不丝滑」。
-        //
-        // 原版左滑返回用的是 UIScreenEdgePanGestureRecognizer：
-        // UIKit 在**触摸按下那一刻**就知道这次落点在不在屏幕边缘，
-        // 不满足就直接不认，满足就立刻开始 —— 没有那段死区。
-        // 换过来之后，起手判定交给系统，我们也不用再反推起手点。
-        pan.edges = .left
-        pan.delegate = context.coordinator
-        // 不和内容区的滚动手势抢：真正要接管时由 delegate 决定。
-        pan.cancelsTouchesInView = false
-        v.addGestureRecognizer(pan)
-        context.coordinator.edgePan = pan
-
-        // 兜底手势。
-        //
-        // UIScreenEdgePanGestureRecognizer 只认落点在屏幕物理边缘
-        // ~20pt 内的触摸。手指落点落在 20~44pt（edgeSlop）之间时，
-        // 边缘手势直接不认 —— 这次滑动就丢了。拇指自然落点经常
-        // 在这个区间，于是「滑了好几遍才出来」。
-        //
-        // 兜底：加一个普通 UIPanGestureRecognizer，由 shouldBegin 判断
-        //   · 起手点（location - translation）在 edgeSlop 带内
-        //   · 方向往右（拉出）
-        // 两个手势不会重复触发：边缘手势 begin 后，兜底手势的
-        // shouldRecognizeSimultaneouslyWith 返回 false 会自然让位；
-        // 反过来兜底先 begin，边缘手势也会被同样的互斥挡住。
-        let fallback = UIPanGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handle(_:))
-        )
-        fallback.delegate = context.coordinator
-        fallback.cancelsTouchesInView = false
-        v.addGestureRecognizer(fallback)
-        context.coordinator.fallbackPan = fallback
+        // 手势全挂在 window 上，跟这个 view 没关系；它留着只为了
+        // 「知道什么时候进 window」。所以这里绝不能是可交互的，
+        // 否则又会变成那层挡住所有点击的透明板。
+        v.isUserInteractionEnabled = false
 
         context.coordinator.host = v
-        // 进 window 的时机补挂 closePan（makeUIView 阶段 window 还是 nil）。
-        // 用 weak 捕获避免视图和 coordinator 互相持有 —— 两者生命周期
-        // 本来就绑在一起，但闭包是强引用，不 weak 会一起漏。
+        // 进 window 的时机补挂手势：makeUIView 阶段 window 还是 nil，
+        // `updateUIView` 之后也不一定再被调用（抽屉状态没变就不会）。
         let coord = context.coordinator
         v.onWindowAvailable = { [weak coord] in
-            coord?.syncClosePan()
+            coord?.syncWindowPans()
         }
         return v
     }
@@ -472,28 +412,9 @@ private struct EdgePanOverlay: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {
         context.coordinator.width = drawerWidth
         context.coordinator.state = state
-
-        // 「拖回」手势按宿主 window 挂（window 可能变，所以每次更新都核对一遍）。
-        //
-        // 它挂的是 window 而不是这个 UIView，所以**不涉及**下面
-        // activeWidth 那个陷阱：window 上的手势不参与 hitTest，
-        // 抽屉里的按钮一个都不会被挡。
-        context.coordinator.syncClosePan()
-
-        // 这里**不要**去给 PassthroughView.activeWidth 赋值。
-        //
-        // 看着很自然的写法是：抽屉开着就 activeWidth = drawerWidth，
-        // 让 point(inside:) 返回 true，用户就能从屏幕任意位置往左拖回去。
-        // 结论是不能这么干：EdgePanOverlay 在 ZStack 最上层，
-        // point(inside:) 一旦全返回 true，这层就把所有触摸吃掉了 ——
-        // 遮罩的 onTapGesture 收不到、抽屉里的会话行/齿轮/按钮全点不动，
-        // 抽屉彻底废掉。hitTest 返回自己之后触摸不会转给兄弟视图，
-        // 这不是 cancelsTouchesInView = false 能解决的（那个只影响
-        // 「手势识别成功后是否取消 touchesBegan」）。
-        //
-        // 「从中间往左拖回去」这件事改由 window 上的 closePan 承担，
-        // 这才是它该待的地方（手势不参与 hitTest）。所以 activeWidth
-        // 永远保持 0，这层只负责「关着时从左边缘拉出」。
+        // window 可能被换掉（SwiftUI 偶尔会把 hosting view 搬到另一个
+        // window，比如弹 sheet），所以每次更新都核对一遍。
+        context.coordinator.syncWindowPans()
         uiView.backgroundColor = .clear
     }
 
@@ -505,95 +426,55 @@ private struct EdgePanOverlay: UIViewRepresentable {
         Coordinator(state: state, width: drawerWidth)
     }
 
-    /// 只有触摸落在「实际可交互区域」时才让 UIKit 认这个手势。
-    ///
-    /// `PassthroughView.hitTest` 返回 nil 让触摸穿透到下面的内容 ——
-    /// 但手势识别器是加在这层上的，一旦穿透就不再收到触摸。
-    /// 所以这里换了个思路：视图本身可命中，但只在自己「该管」的区域
-    /// 返回自己，其余返回 nil。判断逻辑放在 `point(inside:)` 里。
-    final class PassthroughView: UIView {
-        var activeWidth: CGFloat = 0          // >0 表示抽屉开着，整片可接管
-        var edgeSlop: CGFloat = DrawerState.edgeSlop
+    /// 只负责「报告自己进了 window」的宿主视图。
+    final class HostView: UIView {
 
-        /// 进入 window 后回调一次。
+        /// 进入 window 后回调。
         ///
         /// `updateUIView` 在视图刚创建那一刻就会跑，那时 `window` 还是
-        /// nil（SwiftUI 还没把它挂进层级），`syncClosePan` 里的
-        /// `guard let window = host?.window` 会直接返回 —— 手势挂不上。
-        /// 而 `updateUIView` 之后不一定再被调（抽屉状态没变化就不会）。
-        /// 所以接一个「进 window」的时机补挂，否则第一次打开抽屉时
-        /// 拖不动，要等下一次状态变化才正常。
+        /// nil，`syncWindowPans` 里的 `guard let window = host?.window`
+        /// 会直接返回 —— 手势挂不上。而 `updateUIView` 之后不一定再被调，
+        /// 所以必须接一个「进 window」的时机。
         var onWindowAvailable: (() -> Void)?
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
             if window != nil { onWindowAvailable?() }
         }
-
-        /// 这一点是否落在顶部导航栏区域内。
-        ///
-        /// 先把触点转到**窗口坐标**，再和窗口自己的
-        /// `safeAreaInsets.top + 44`（状态栏 + 导航栏标准高度）比较。
-        /// 同一坐标系内相减，结果不随视图被摆在哪而漂移。
-        func isInNavBar(_ point: CGPoint) -> Bool {
-            guard let win = window else { return false }
-            let inWindow = convert(point, to: win)
-            return inWindow.y < win.safeAreaInsets.top + 44
-        }
-
-        /// 导航栏区域直接穿透（返回 nil），把触摸完整交给系统
-        /// 返回键 / 系统手势。
-        ///
-        /// 只在 `point(inside:)` 里「挖洞」是不够的：point(inside:) 返回
-        /// false 后 UIKit 仍可能继续命中这个视图的其它部分，边缘手势照样在
-        /// window 层被触发，所以返回键始终点不干净。
-        /// hitTest 返回 nil 是更彻底的一层：视图直接退出命中链，落在
-        /// 导航栏里的 tap 落到系统返回键，抽屉手势完全不参与。
-        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-            if isInNavBar(point) {
-                return nil
-            }
-            return super.hitTest(point, with: event)
-        }
-
-        override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-            if activeWidth > 0 {
-                // 抽屉开着：整片都可接管（用于拖回）
-                return true
-            }
-            // 抽屉关着：只有左边缘一条窄带
-            return point.x <= edgeSlop
-        }
     }
 
+    /// 三个 pan 的调度中心。
+    ///
+    /// 全部挂在 `UIWindow` 上，**常驻**、不跟开合增删。
+    ///
+    /// 为什么不做「开着就挂、关了就摘」：progress 是连续值，手指把抽屉
+    /// 拖到 0.02 以下时 `updateUIView` 会跑，一摘手势 UIKit 立刻发
+    /// `.cancelled` —— 手势被打断，用户拖到一半会感觉「卡住不跟手」。
+    /// 在阈值附近来回微调更明显，摘、挂、摘、挂，一路 cancelled。
+    ///
+    /// 常驻的代价几乎为零：手势不参与 hitTest，抽屉关着时它们唯一的
+    /// 开销是每次触摸多跑几次 `shouldBegin`，而那里第一件事就是看
+    /// progress 和方向。少一个状态，就少一类「摘挂时机」的 bug。
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
 
         var state: DrawerState
         var width: CGFloat
-        /// 屏幕物理边缘手势（零死区，优先）。
+
+        /// 屏幕物理边缘的「拉出」手势。
+        ///
+        /// `UIScreenEdgePanGestureRecognizer` 在**触摸按下那一刻**就知道
+        /// 落点在不在屏幕边缘，不满足直接不认，满足立刻开始 —— 没有普通
+        /// pan 那段「要移动 10pt 才进入 .began」的死区。所以边缘起手的
+        /// 零死区手感靠它，屏幕中间那大片靠 openPan。
         weak var edgePan: UIScreenEdgePanGestureRecognizer?
-        /// 兜底普通 pan：接管落点在边缘带内但不在最边缘的滑动。
-        weak var fallbackPan: UIPanGestureRecognizer?
-        /// 抽屉开着时的「拖回」手势。
-        ///
-        /// 它挂在 `UIWindow` 上，不在 `PassthroughView` 上。
-        ///
-        /// 为什么不挂在手势层上：手势层是 ZStack 里的一张透明 UIView，
-        /// 它一旦接管整屏就成了「挡住所有点击的那一层」（`point(inside:)`
-        /// 全 true 的后果，见 `PassthroughView` 里那段注释）。抽屉开着时
-        /// 想让它接管全屏拖回，代价是抽屉里的会话行、齿轮全点不动。
-        ///
-        /// 挂 window 则绕开这件事：`UIGestureRecognizer` **不参与 hitTest**。
-        /// UIKit 命中测试只问 UIView（`hitTest`/`point(inside:)`），
-        /// 手势是跟在触摸流上旁听的 —— 触摸照样送到它该去的地方，
-        /// 手势只是「顺便」判断这次滑动够不够格。所以
-        ///   · 抽屉里点会话行 → 正常点，pan 因为位移不够不 begin；
-        ///   · 抽屉里往上滚列表 → pan 被 `abs(v.x) > abs(v.y)` 拦下，滚动正常；
-        ///   · 手指往左拖 → pan begin，抽屉跟手收回。
-        /// 再加 `cancelsTouchesInView = false`，即使识别成功也不取消
-        /// 底层视图的 touches，按钮绝不受影响。
+
+        /// 全屏「拉出」手势：屏幕任意位置右滑都出抽屉。
+        weak var openPan: UIPanGestureRecognizer?
+
+        /// 全屏「收回」手势：抽屉开着时任意位置左滑都收回去。
         weak var closePan: UIPanGestureRecognizer?
-        weak var host: PassthroughView?
+
+        weak var host: UIView?
 
         private var startProgress: CGFloat = 0
 
@@ -602,48 +483,57 @@ private struct EdgePanOverlay: UIViewRepresentable {
             self.width = width
         }
 
-        /// 按宿主视图所在的 window 挂好「拖回」手势。**常驻**，不跟开合增删。
-        ///
-        /// 为什么不做「开着就挂、关了就摘」：progress 是连续值，手指把抽屉
-        /// 拖到 0.02 以下时 `updateUIView` 会跑，一摘手势 UIKit 立刻发
-        /// `.cancelled` —— 手势被打断，用户拖到一半会感觉「卡住不跟手」。
-        /// 在阈值附近来回微调更明显，摘、挂、摘、挂，一路 cancelled。
-        ///
-        /// 常驻的代价几乎为零：手势不参与 hitTest（见 closePan 那段注释），
-        /// 抽屉关着时它唯一的开销是每次触摸多跑一次 `shouldBegin`，
-        /// 而那里面第一件事就是看 progress 够不够。少一个状态，
-        /// 就少一类「摘挂时机」的 bug。
-        func syncClosePan() {
+        /// 把三个手势挂到宿主所在的 window 上。
+        func syncWindowPans() {
             guard let window = host?.window else { return }
 
-            if let existing = closePan {
-                // 窗口换了（SwiftUI 偶尔会把 hosting view 搬到另一个
-                // window，比如弹 sheet）就把手势跟着搬过去，否则它会
-                // 留在旧 window 上，拖动没有任何反应。
-                if existing.view !== window {
-                    existing.view?.removeGestureRecognizer(existing)
-                    window.addGestureRecognizer(existing)
+            if let e = edgePan, let o = openPan, let c = closePan {
+                // window 换了就把三个手势一起搬过去，否则它们会留在
+                // 旧 window 上，拖动没有任何反应。
+                if e.view !== window || o.view !== window || c.view !== window {
+                    for g in [e as UIGestureRecognizer, o, c] {
+                        g.view?.removeGestureRecognizer(g)
+                        window.addGestureRecognizer(g)
+                    }
                 }
                 return
             }
 
-            let pan = UIPanGestureRecognizer(target: self,
-                                             action: #selector(handle(_:)))
-            pan.delegate = self
-            pan.cancelsTouchesInView = false
-            window.addGestureRecognizer(pan)
-            closePan = pan
+            let edge = UIScreenEdgePanGestureRecognizer(target: self,
+                                                        action: #selector(handle(_:)))
+            edge.edges = .left
+            configure(edge, on: window)
+            edgePan = edge
+
+            let open = UIPanGestureRecognizer(target: self,
+                                              action: #selector(handle(_:)))
+            configure(open, on: window)
+            openPan = open
+
+            let close = UIPanGestureRecognizer(target: self,
+                                               action: #selector(handle(_:)))
+            configure(close, on: window)
+            closePan = close
+        }
+
+        private func configure(_ g: UIPanGestureRecognizer, on window: UIWindow) {
+            g.delegate = self
+            // 识别成功也不取消底层视图的 touches —— 按钮绝不受影响。
+            g.cancelsTouchesInView = false
+            window.addGestureRecognizer(g)
         }
 
         /// 视图拆掉时务必把手势摘干净。
         ///
         /// window 是长命的（比这个 UIView 活得久），不摘的话它上面会一直
-        /// 留着一个 target 已经释放的 pan —— UIKit 里 target 是 weak 的，
+        /// 留着 target 已经释放的 pan —— UIKit 里 target 是 weak 的，
         /// 不会崩，但那个 pan 仍会在每次触摸时跑一遍 shouldBegin。
         func teardown() {
-            if let pan = closePan {
-                pan.view?.removeGestureRecognizer(pan)
+            for g in [edgePan as UIGestureRecognizer?, openPan, closePan] {
+                if let g { g.view?.removeGestureRecognizer(g) }
             }
+            edgePan = nil
+            openPan = nil
             closePan = nil
         }
 
@@ -658,7 +548,6 @@ private struct EdgePanOverlay: UIViewRepresentable {
                 state.dragging = true
 
             case .changed:
-                // 只有在抽屉「该跟手」的时候才更新进度。
                 // 把 translation 归一化成 0…1 的进度增量。
                 let delta = translation / max(width, 1)
                 var p = startProgress + delta
@@ -680,8 +569,8 @@ private struct EdgePanOverlay: UIViewRepresentable {
 
         // MARK: UIGestureRecognizerDelegate
 
-        /// 两个 pan（边缘 + 兜底）互斥：谁先 begin 另一个就让位，
-        /// 避免同一次滑动被识别两次造成进度跳变。
+        /// 三个 pan 互斥：谁先 begin 另一个就让位，避免同一次滑动被
+        /// 识别两次造成进度跳变。
         ///
         /// 注意这里**连系统手势也一起返回 false**。系统返回手势
         /// （interactivePopGestureRecognizer）在抽屉挂着的时候会被
@@ -693,76 +582,68 @@ private struct EdgePanOverlay: UIViewRepresentable {
             false
         }
 
-        /// 决定这次拖动到底算不算「拉/收抽屉」。这是整个手势体验的核心。
+        /// 决定这次拖动到底算不算「拉 / 收抽屉」。这是整个手势体验的核心。
         ///
         /// 三个手势共用这一段判定（不再各写一支）：
-        ///   · edgePan     屏幕物理边缘 → 只能「拉出」
-        ///   · fallbackPan 边缘带内任意位置 → 只能「拉出」
-        ///   · closePan    抽屉开着时全屏 → 只能「收回」
+        ///   · edgePan  屏幕物理边缘 → 只能「拉出」
+        ///   · openPan  屏幕任意位置 → 只能「拉出」
+        ///   · closePan 屏幕任意位置 → 只能「收回」
         /// 前两个的差别只在起手点，方向判定完全一样，分开写必然有一支漏改。
         func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
-            guard let pan = g as? UIPanGestureRecognizer, let view = pan.view else { return false }
+            guard let pan = g as? UIPanGestureRecognizer,
+                  let window = host?.window else { return false }
 
-            // 另一个 pan 已经在跟手时，这个不重复接。
-            // （同一次触摸多个手势都会收到 shouldBegin，先 begin 的赢。）
-            // 不能拿 `closePan` 参与这个互斥 —— 它是常驻的，且
-            // `shouldBegin` 之后自己的 state 会变成 .began，
-            // 一旦把它算进来，第二次触摸就会被自己挡住。
+            // 同一次触摸三个 pan 都会收到 shouldBegin，先 begin 的赢。
+            //
+            // closePan 不参与这个互斥：它和另外两个由 `progress` 天然互斥
+            // （开着才干活 / 关着才干活），而 `shouldBegin` 之后自己的
+            // state 会变成 .began，一旦把它算进来，第二次触摸就会被自己挡住。
             if pan !== closePan {
-                for other in [edgePan, fallbackPan] where other != nil && other !== pan {
+                for other in [edgePan, openPan] where other != nil && other !== pan {
                     if let o = other, o.state == .began || o.state == .changed { return false }
                 }
             }
 
-            let v = pan.velocity(in: view)
-
-            // 起手点在导航栏区域（返回键 ‹ 那一行）时，不接管 ——
-            // 让系统返回键用。手势层物理上已经让出导航栏了（见
-            // ContentView+Drawer 的 .padding(.top)），但 closePan 挂在
-            // window 上是全屏的，没有那层保护，必须自己判一次。
-            if let host = host {
-                let startY = pan.location(in: host).y - pan.translation(in: host).y
-                if host.isInNavBar(CGPoint(x: 0, y: startY)) { return false }
-            }
-
-            // 垂直位移大于水平时一律让给内容区滚动。
+            // 坐标统一用 **window 坐标**。
             //
-            // 这条对 closePan 尤其重要：抽屉里那一列会话是纵向滚动的，
-            // 斜着划时手势必须让位，否则想滚列表结果把抽屉收回去了。
-            guard abs(v.x) > abs(v.y) else { return false }
+            // 手势挂在 window 上，`pan.location(in: window)` 就是屏幕坐标，
+            // 不再受「宿主 view 被摆在哪」影响 —— 原来那版靠
+            // `location(in: host) - translation(in: host)` 反推起手点，
+            // 一旦 view 被 padding 到别处就得跟着改，是个易碎点。
+            let velocity = pan.velocity(in: window)
+            let startY = pan.location(in: window).y - pan.translation(in: window).y
+
+            // 状态栏 + 导航栏那一段不接管。
+            //
+            // 左上角是系统返回键 `‹`，顶部是状态栏下拉（通知中心），
+            // 那一片的所有滑动都让给系统。`safeAreaInsets.top` 是状态栏
+            // （刘海机 59pt / 非刘海 20pt），加 44 正好到导航栏底边。
+            if startY < window.safeAreaInsets.top + DrawerState.navBarHeight { return false }
+
+            // 方向判定：水平速度必须**明显**大于垂直。
+            //
+            // 1.3 倍，不是 1.0。聊天页和抽屉里都是纵向长列表，斜着划时
+            // 列表必须赢 —— 只写 `abs(x) > abs(y)` 的话，一次 45° 的
+            // 斜划就会把抽屉拉出来，观感是「想滚一下，界面却动了」。
+            guard abs(velocity.x) > abs(velocity.y) * 1.3 else { return false }
 
             if pan === closePan {
-                // 抽屉关着时这个手势不干活（它常驻挂 window，
-                // 关着的时候全屏都是它的判定区，不拦就会把
-                // 聊天页里的横向滑动全吃掉）。
+                // 抽屉关着时这个手势不干活：它常驻挂 window、全屏都是
+                // 判定区，不拦就会把聊天页里所有横向滑动吃掉。
                 guard state.progress > 0.02 else { return false }
                 // 抽屉开着：只认「往左拖」（收回去）。
-                return v.x < 0
+                return velocity.x < 0
             }
 
-            // 两个「拉出」手势在抽屉开着时一律不接管。
+            // 两个「拉出」手势在抽屉开着 / 正在动时一律不接管。
             //
-            // 抽屉张着的时候左边缘被抽屉自己盖住，用户在那一带往左拖
-            // 想收起 —— 如果 edgePan 这时还接，它会判成「往右才接」
-            // 而返回 false，同时互斥逻辑已经把 closePan 挤掉，
-            // 结果就是「从左边缘往左拖，抽屉纹丝不动」。
-            // 关着时只有拉出、开着时只有收回，职责不重叠。
+            // 抽屉张着的时候，用户在抽屉里往右划（比如横向滚动一行
+            // 附件缩略图）不能被当成「再拉一次」；而「往左拖收回」由
+            // closePan 负责，职责不重叠。
             guard state.progress <= 0.02 else { return false }
 
             // 抽屉关着：必须是往右拖。
-            //
-            // 兜底 pan 要多判一个「起手点在边缘带内」：
-            // 它没有 edges 过滤，全屏都会收到回调。用
-            // `location - translation` 反推起手点（pan 进入 .began 时
-            // translation 还很小，误差可忽略），不在 edgeSlop 带内
-            // 就让给内容区 —— 否则聊天页中间往右滑也会拉开抽屉。
-            if pan === fallbackPan {
-                let loc = pan.location(in: view)
-                let startX = loc.x - pan.translation(in: view).x
-                guard startX <= DrawerState.edgeSlop else { return false }
-            }
-
-            return v.x > 0
+            return velocity.x > 0
         }
     }
 }
