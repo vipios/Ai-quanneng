@@ -388,6 +388,12 @@ enum SelfUpdate {
         /// 有默认值：`probe` 里构造只带版本事实、不测速，`race` 最后
         /// 才把实测结果填进来。默认值让两处构造都不用改签名。
         var measuredSpeed: Double = 0
+        /// [R82] 按实测速度排好序的线路，快的在前。
+        ///
+        /// 为什么要整份排序而不是只留赢家：下载阶段还会卡。原先只带一条
+        /// 线路，那条一卡整次更新就失败，用户看到的是「这条线路太慢，已
+        /// 自动放弃」。有了排序，下载可以依次往下试。
+        var ranking: [Line] = []
     }
 
     /// 全部线路同时打，第一个拿到有效 release 的胜出。
@@ -470,6 +476,22 @@ enum SelfUpdate {
             bestLine = fact.line
         }
 
+        // [R82] 整份排序，交给下载阶段依次重试。
+        //
+        // 排序规则：测出速度的按速度从高到低；测不出速度的（0）
+        // 排在后面、保持池内顺序 —— 它们不是「更慢」，是「未知」，
+        // 真轮到它们的时候仍然值得一试，但没理由排在有实测值的线路前面。
+        let measuredLines = measured
+            .filter { $0.1 > 0 }
+            .sorted { $0.1 > $1.1 }
+            .map { $0.0 }
+        let untested = lines.filter { l in !measuredLines.contains(where: { $0.id == l.id }) }
+        // 一条都没测出速度时，把「API 探通过的那条」排到最前面：
+        // 它是唯一有正面证据的线路，比池内顺序更值得先试。
+        let ranking = measuredLines.isEmpty
+            ? [fact.line] + untested.filter { $0.id != fact.line.id }
+            : measuredLines + untested
+
         // 把「版本事实」和「下载线路」重新组合成一个 Win：
         // tag / 资产 / 大小 / updated_at 都来自 fact，
         // line 换成实测最快的那条（下载地址由 downloadURL 用它拼）。
@@ -481,7 +503,8 @@ enum SelfUpdate {
                    ipaName: fact.ipaName, ipaURL: fact.ipaURL, ipaSize: fact.ipaSize,
                    assetUpdatedAt: fact.assetUpdatedAt, buildLabel: fact.buildLabel,
                    remoteVersion: fact.remoteVersion,
-                   measuredSpeed: bestSpeed)
+                   measuredSpeed: bestSpeed,
+                   ranking: ranking)
     }
 
     /// 用指定线路前缀 + asset 直链组地址，拉前 256KB 实测速度（B/s）。
@@ -623,7 +646,51 @@ enum SelfUpdate {
         win: Win,
         onProgress: @escaping @Sendable (Double, Int64) -> Void
     ) async throws -> URL {
-        guard let url = downloadURL(for: win) else {
+        guard let raw = win.ipaURL, !raw.isEmpty else {
+            throw SelfUpdateError.noAsset
+        }
+
+        // [R82-换线路重试] 从「一条线路下到底」改成「按实测速度依次试」。
+        //
+        // 之前竞速选出的那条线路一旦在下载阶段卡住，整次更新就结束了 ——
+        // 用户的原话是「这个线路没有一次更新成功的，不是自动判定哪个最快吗」。
+        // 测速只拉 256KB，握手时间占大头，选出来的「最快」本来就有误差；
+        // 把一次测速当成一锤子买卖，遇到抖动就必然失败。所以下载阶段允许换。
+        //
+        // 最多试 3 条：一条 80MB，试太多等于让用户干等同一个结果。
+        let order = win.ranking.isEmpty ? [win.line] : win.ranking
+        let attempts = Array(order.prefix(3))
+
+        var lastError: any Error = SelfUpdateError.allLinesFailed("没有可用线路")
+        for (i, line) in attempts.enumerated() {
+            // 换线路时先把进度归零，并给界面一个「在换、不是失败」的信号。
+            if i > 0 { onProgress(-3, win.ipaSize) }
+            do {
+                return try await attemptDownload(line: line, rawURL: raw,
+                                                 expectedSize: win.ipaSize,
+                                                 name: win.ipaName,
+                                                 onProgress: onProgress)
+            } catch {
+                // 让出主线程那种取消不是线路问题，不重试，直接往上抛。
+                if error is CancellationError { throw error }
+                lastError = error
+            }
+        }
+
+        throw SelfUpdateError.allLinesFailed(
+            (lastError as? any LocalizedError)?.errorDescription ?? lastError.localizedDescription
+        )
+    }
+
+    /// 用**单条**线路下一次。成功时返回 Documents/Updates/ 里的最终路径。
+    private static func attemptDownload(
+        line: Line,
+        rawURL: String,
+        expectedSize: Int64,
+        name: String?,
+        onProgress: @escaping @Sendable (Double, Int64) -> Void
+    ) async throws -> URL {
+        guard let url = URL(string: line.prefix + rawURL) else {
             throw SelfUpdateError.noAsset
         }
 
@@ -635,15 +702,14 @@ enum SelfUpdate {
 
         let delegate = ProgressDelegate(
             onProgress: onProgress,
-            onStall: {
-                // 看门狗判定卡死：先给界面一个明确的信号（-2 = 卡死），
-                // 再由 delegate 自己取消正在跑的下载任务。
-                onProgress(-2, 0)
-            }
+            // 卡死不再直接往界面报「失败」：取消任务会让 await 抛错，
+            // 由 `download` 的循环决定换哪条线路，并统一发 -3。
+            // 这里若抢先发 -2，界面会闪一下「这次更新失败了」再被改回来。
+            onStall: {}
         )
         // [R55] 兜底总量用 release 里的 asset.size —— 代理不返回
         // Content-Length 时，进度用它来算百分比，不会一直转圈。
-        delegate.setExpectedFallback(win.ipaSize)
+        delegate.setExpectedFallback(expectedSize)
 
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = req.timeoutInterval
@@ -684,18 +750,37 @@ enum SelfUpdate {
         }
 
         // 巡检从这一刻就开始计时：哪怕连接阶段一个字节都不来，
-        // 25 秒后也会判定卡死并取消 —— 正是用户截图里那个状态。
+        // initialGrace 之后也会判定卡死并取消，交给上层换线路。
         delegate.startWatchdog(queue: DispatchQueue(label: "SelfUpdate.watchdog"))
 
-        // 只用 `download(for:)` 发一次任务。
+        // [R82-进度永远是 0 的根因] 这里必须自己发 downloadTask，
+        // 不能用 `session.download(for:)` 那个 async 便捷方法。
+        //
+        // 那个方法内部自带一个 task 级 delegate，`didWriteData` **不会**
+        // 转给我们这个 session delegate。三件事因此同时发生，正是用户
+        // 报的现象：
+        //   · 进度条全程 0（回调一次都没来过，totalBytes 只剩标题里那个 77MB）
+        //   · 看门狗等不到「有进展」，25 秒准时把正在好好下载的任务掐掉
+        //     →「这条线路太慢，已自动放弃」，于是没有一次更新成功
+        //   · 偶尔网快、在 25 秒内下完 → 文件是好的，但进度还是 0
+        //
+        // 自己发任务就绕开了那层内部 delegate，回调必定走我们这里。
         // 曾经在这里先 downloadTask(with:) 拿句柄、再 download(for:)，
-        // 那会发两个任务、下两遍 77MB —— 不要那么写。
-        let (tmp, resp) = try await session.download(for: req)
-        delegate.stop()
+        // 那会发两个任务、下两遍 77MB —— 现在只用下面这一个 task。
+        let task = session.downloadTask(with: req)
+        let tmp: URL = try await withCheckedThrowingContinuation { cont in
+            delegate.attachContinuation(cont)
+            task.resume()
+        }
         delegate.stopWatchdog()
+        delegate.stop()
 
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw SelfUpdateError.http((resp as? HTTPURLResponse)?.statusCode ?? 0)
+        // 自己发任务之后，状态码从 task.response 读；`resp` 那个元组已经没有了。
+        guard let http = task.response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode)
+        else {
+            try? FileManager.default.removeItem(at: tmp)
+            throw SelfUpdateError.http((task.response as? HTTPURLResponse)?.statusCode ?? 0)
         }
 
         // [R60-下载结果校验] 校验拿到的**真的是那个 ipa**，不是一张 HTML。
@@ -720,17 +805,17 @@ enum SelfUpdate {
         // 为什么容差 1%：极少数代理会做 gzip 传输，落盘大小与 asset.size
         // 可能有细微差别；但这个包是 ipa（zip 容器，本身已压缩），
         // 代理再压也压不动，1% 足够宽松，同时又能挡住「几 KB 的 HTML 页」。
-        if win.ipaSize > 0 {
+        if expectedSize > 0 {
             // 用 resourceValues 而不是 attributesOfItem[.size]：后者返回
             // `Any`，实际是 NSNumber，`as? Int64` 桥接不一定成立（会静默
             // 得到 0，等于校验被跳过）。`fileSize` 是明确的 Int?。
             let actual = (try? tmp.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
             if actual > 0 {
-                let diff = abs(Int64(actual) - win.ipaSize)
-                let tolerance = max(Int64(64 * 1024), win.ipaSize / 100)
+                let diff = abs(Int64(actual) - expectedSize)
+                let tolerance = max(Int64(64 * 1024), expectedSize / 100)
                 if diff > tolerance {
                     try? FileManager.default.removeItem(at: tmp)
-                    throw SelfUpdateError.badPayload(got: Int64(actual), expected: win.ipaSize)
+                    throw SelfUpdateError.badPayload(got: Int64(actual), expected: expectedSize)
                 }
             }
         }
@@ -738,8 +823,8 @@ enum SelfUpdate {
         // 挪到 Documents/Updates/ 下，文件名保持 release 里的原样。
         // 放 tmp 里会被系统随时清掉，用户还没点安装就没了。
         let dir = try updatesDir()
-        let name = win.ipaName ?? "QuanNengAI.ipa"
-        let dest = dir.appendingPathComponent(name)
+        let fileName = name ?? "QuanNengAI.ipa"
+        let dest = dir.appendingPathComponent(fileName)
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.moveItem(at: tmp, to: dest)
         return dest
@@ -824,6 +909,8 @@ enum SelfUpdateError: LocalizedError {
     /// [R60-下载结果校验] 下回来的东西大小对不上，多半是代理返回了
     /// 重定向页 / 错误页而不是 ipa 本体。见 `download` 里那段注释。
     case badPayload(got: Int64, expected: Int64)
+    /// [R82] 依次试过的线路全部失败，`detail` 是最后一条线路的失败原因。
+    case allLinesFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -839,6 +926,8 @@ enum SelfUpdateError: LocalizedError {
             let g = ByteCountFormatter.string(fromByteCount: got, countStyle: .file)
             let e = ByteCountFormatter.string(fromByteCount: expected, countStyle: .file)
             return "下载到的文件不完整（\(g) / 应为 \(e)），像是代理返回了错误页。换个网络再试一次"
+        case .allLinesFailed(let detail):
+            return "3 条线路都没下成（\(detail)）。换个网络再试一次，或者稍后再点"
         }
     }
 }
@@ -860,6 +949,9 @@ private final class ProgressDelegate: NSObject, URLSessionDownloadDelegate, @unc
     private let onProgress: @Sendable (Double, Int64) -> Void
     private let lock = NSLock()
     private var stopped = false
+    /// [R82] 一次下载的等待者。任务结束时由 `finish(_:)` 唤醒，
+    /// 而且只唤醒一次 —— 重复 resume 一个 continuation 会直接崩。
+    private var continuation: CheckedContinuation<URL, any Error>?
     /// 兜底进度用的「预期总量」。代理（ghfast/ghproxy 等）经常不返回
     /// Content-Length，`totalBytesExpectedToWrite` 恒为 -1，拿它算进度
     /// 永远得 0。这里记最后一次已知总量，配合 download 侧在响应里读
@@ -881,6 +973,9 @@ private final class ProgressDelegate: NSObject, URLSessionDownloadDelegate, @unc
     private var lastGrowthAt = Date()
     /// 两次增长之间允许的最大间隔（秒）。
     private static let stallLimit: TimeInterval = 25
+    /// 第一次巡检的宽限（秒）。连接 + 重定向 + TLS 握手都在这段里，
+    /// 一条线路头几秒没有任何字节是正常的，不该判它卡死。
+    private static let initialGrace: TimeInterval = 30
     private var watchdog: DispatchSourceTimer?
     /// 巡检到卡死时回调。由 download 侧接到进度上报上。
     private let onStall: @Sendable () -> Void
@@ -906,9 +1001,13 @@ private final class ProgressDelegate: NSObject, URLSessionDownloadDelegate, @unc
         lock.lock()
         guard watchdog == nil else { lock.unlock(); return }
         let t = DispatchSource.makeTimerSource(queue: queue)
-        // 第一次检查放在 stallLimit 之后：刚开始那 25 秒是正常的
-        // 连接 + 握手时间，不该被打断。之后每 2 秒巡一次。
-        t.schedule(deadline: .now() + Self.stallLimit, repeating: 2)
+        // 第一次检查放在 initialGrace 之后：连上、握手、首字节都在这段里。
+        // 之后每 2 秒巡一次，判据是「距离上次实质增长超过 stallLimit」。
+        //
+        // [R82] 这个巡检现在才真正有意义：进度回调修好之后，
+        // 只要数据在动 `lastGrowthAt` 就会被刷新；它判出的「没增长」
+        // 是真没增长，不会是「回调根本没来」造成的误判。
+        t.schedule(deadline: .now() + Self.initialGrace, repeating: 2)
         t.setEventHandler { [weak self] in
             guard let self else { return }
             self.lock.lock()
@@ -965,6 +1064,32 @@ private final class ProgressDelegate: NSObject, URLSessionDownloadDelegate, @unc
         lock.lock(); stopped = true; lock.unlock()
     }
 
+    // MARK: [R82] 把任务结果交回 async 调用方
+
+    /// 必须在 `task.resume()` **之前**调用 —— 先挂等待者再发任务，
+    /// 否则回调可能早于等待者到达，`finish` 找不到人唤醒，
+    /// 那个 `await` 就会一直挂着等到资源超时。
+    func attachContinuation(_ c: CheckedContinuation<URL, any Error>) {
+        lock.lock(); continuation = c; lock.unlock()
+    }
+
+    /// 唤醒等待者，且只唤醒一次。
+    ///
+    /// 一次正常下载会先后触发 `didFinishDownloadingTo` 和
+    /// `didCompleteWithError`，两个都该收尾。取走 continuation 后置 nil，
+    /// 第二次进来就是空操作 —— 这比用标志位简单，也不会漏。
+    private func finish(_ result: Result<URL, any Error>) {
+        lock.lock()
+        let c = continuation
+        continuation = nil
+        lock.unlock()
+        guard let c else { return }
+        switch result {
+        case .success(let url): c.resume(returning: url)
+        case .failure(let error): c.resume(throwing: error)
+        }
+    }
+
     /// [R55] 下载开始后、或响应头已知但没 Content-Length 时，给一个
     /// 「预期总量」用于兜底进度（通常是 asset.size，见 Win.ipaSize）。
     func setExpectedFallback(_ total: Int64) {
@@ -997,7 +1122,10 @@ private final class ProgressDelegate: NSObject, URLSessionDownloadDelegate, @unc
             stopped = true
             lock.unlock()
             if !already {
-                onProgress(-2, 0)
+                // [R82] 只取消，不往界面报「失败」。
+                // 取消会让 await 抛错，由 `download` 的循环决定换线路，
+                // 并由它统一发 -3。这里再发一个 -2，界面会先闪一次
+                // 「这次更新失败」再被改回来。
                 session.invalidateAndCancel()
             }
             return
@@ -1016,8 +1144,34 @@ private final class ProgressDelegate: NSObject, URLSessionDownloadDelegate, @unc
     func urlSession(_ session: URLSession,
                     downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
-        // download(for:) 的 async 版本会自己取这个文件，
-        // 这个 delegate 方法只是协议要求，不用做事。
-        _ = location
+        // [R82] 这个回调返回之后，系统会立刻删掉 `location`，
+        // 所以必须**当场**把文件搬到自己能控制的路径，不能只存个 URL
+        // 回头再取 —— 之前 `download(for:)` 版本里这里什么都不做，
+        // 是因为那个 async 方法自己搬；现在任务是我们自己发的。
+        let dst = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SelfUpdate-\(UUID().uuidString).ipa")
+        do {
+            try? FileManager.default.removeItem(at: dst)
+            try FileManager.default.moveItem(at: location, to: dst)
+            finish(.success(dst))
+        } catch {
+            finish(.failure(error))
+        }
+    }
+
+    /// 任务结束（正常或出错）。
+    ///
+    /// 正常结束时 `didFinishDownloadingTo` 已经把 continuation 用掉了，
+    /// 这里就是空操作；它真正的作用是兜住**没拿到文件就结束**的情况
+    /// （取消、断网、HTTP 层失败）—— 不兜的话 `await` 会一直挂到
+    /// `timeoutIntervalForResource` 之后还没人叫醒。
+    func urlSession(_ session: URLSession,
+                    task: URLSessionTask,
+                    didCompleteWithError error: (any Error)?) {
+        if let error {
+            finish(.failure(error))
+        } else {
+            finish(.failure(SelfUpdateError.cancelled))
+        }
     }
 }

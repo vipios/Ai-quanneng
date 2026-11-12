@@ -49,6 +49,8 @@ struct SelfUpdateSection: View {
     @State private var downloading = false
     @State private var progress: Double = 0
     @State private var totalBytes: Int64 = 0
+    /// [R82] 「换线路」那句提示。只在自动换线时出现，有字节进来就收掉。
+    @State private var lineNote = ""
     // [R81-下载进度条] 下面三个只为一个目的：把「还要多久」算给用户看。
     // 光有一个百分比，80MB 下两分钟里数字爬得很慢，看着像卡住了。
     @State private var speedBytesPerSec: Double = 0
@@ -246,6 +248,12 @@ struct SelfUpdateSection: View {
     @ViewBuilder
     private var downloadProgressBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // [R82] 自动换线时先说明一句，否则进度归零看着像重头开始。
+            if !lineNote.isEmpty {
+                Text(lineNote)
+                    .font(.caption2)
+                    .foregroundStyle(Color(.secondaryLabel))
+            }
             if progress >= 0 {
                 ProgressView(value: min(max(progress, 0), 1))
                     .progressViewStyle(.linear)
@@ -386,6 +394,7 @@ struct SelfUpdateSection: View {
         speedBytesPerSec = 0
         lastTickAt = nil
         lastTickBytes = 0
+        lineNote = ""
 
         let outcome = await SelfUpdate.check()
         result = outcome.result
@@ -410,15 +419,25 @@ struct SelfUpdateSection: View {
             // background threads is not allowed」并在真机上表现为界面卡住。
             let file = try await SelfUpdate.download(win: win) { p, total in
                 Task { @MainActor in
-                    // [R59] p == -2：看门狗判定这条线路卡死了，已经取消下载。
-                    // 不能把 -2 写进 progress（会让百分比变成 -200%），
-                    // 直接把状态切成失败并给出可读的说明。
-                    if p == -2 {
-                        progress = 0
-                        downloading = false
-                        result = .failed(reason: "这条线路太慢，已自动放弃。稍后重试会自动重新选最快的线路")
+                    // [R82] p == -3：这条线路卡死了，正在换下一条。
+                    // 这**不是**失败 —— 进度归零继续留着进度条，另外给一句话
+                    // 说明，否则用户看到 0% 会以为重头开始下、白等了。
+                    //
+                    // 原来的 -2 分支（判定卡死就直接报失败）已经删掉：
+                    // 那时下载只走一条线路，卡住就没退路；现在会自动换线，
+                    // 报「失败」等于把还能继续的过程说成结束了。
+                    if p == -3 {
+                        // 置 -1 而不是 0：0% 的空进度条正是「卡住了」的观感，
+                        // 而这一刻是在换线路、还没开始收字节，用不确定态更诚实。
+                        progress = -1
+                        speedBytesPerSec = 0
+                        lastTickAt = nil
+                        lastTickBytes = 0
+                        lineNote = "这条线路卡住了，换下一条继续"
                         return
                     }
+                    // 真的开始有字节了，把那句提示收掉。
+                    if p > 0 { lineNote = "" }
                     progress = p
                     if total > 0 { totalBytes = total }
                     // [R81] 速度采样。用 totalBytes 而不是闭包里的 total：
