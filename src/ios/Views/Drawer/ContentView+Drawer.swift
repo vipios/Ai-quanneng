@@ -52,8 +52,17 @@ extension ContentView {
     /// 这里刻意不再套一层 GeometryReader —— 外层 `body` 已经是
     /// `GeometryReader { geo in ... }`，再嵌一层的话内层读到的是「建议尺寸」
     /// 而不是分配尺寸，里面的 NavigationStack 会塌成 0 高（对话页整屏空白）。
-    func stackLayoutWithDrawer(width: CGFloat) -> some View {
-        DrawerContainer(width: width) { drawerState in
+    ///
+    /// [R78-上下各缺一条] `insets` 也一并从那个外层 geo 传进来。
+    ///
+    /// 聊天卡片要铺到屏幕上下边缘，而 DrawerContainer 自己是遵守安全区布局的
+    /// （交给它的是「屏幕高 − 状态栏 − home indicator」）。把它撑出去只能靠
+    /// **等量的负 padding**，那就必须知道安全区到底多少 —— 外层 `geo` 是唯一
+    /// 知道真实值的地方，这里再套一层 GeometryReader 会同时踩上面那个坑。
+    /// 另外 geo 的安全区自带键盘：键盘弹起时 top/bottom 一起变，负 padding
+    /// 和 content 的 padding 仍然互相抵消，卡片不会因为键盘而错位。
+    func stackLayoutWithDrawer(width: CGFloat, insets: EdgeInsets) -> some View {
+        DrawerContainer(width: width, insets: insets) { drawerState in
             SessionDrawer(
                 sessions: sessions,
                 folders: folders,

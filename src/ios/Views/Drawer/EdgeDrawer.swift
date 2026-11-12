@@ -153,10 +153,13 @@ final class DrawerState: ObservableObject {
 ///
 /// 用法：
 /// ```swift
-/// DrawerContainer(width: geo.size.width, drawer: { SessionDrawer(...) }) {
+/// DrawerContainer(width: geo.size.width, insets: geo.safeAreaInsets,
+///                 drawer: { SessionDrawer(...) }) {
 ///     stackLayout
 /// }
 /// ```
+/// `insets` 必须传**父容器那个** GeometryReader 的安全区，它决定聊天卡片
+/// 能不能正好铺到屏幕上下边缘（见 body 里的 [R78] 注释）。
 struct DrawerContainer<Drawer: View, Content: View>: View {
 
     @StateObject private var state = DrawerState()
@@ -169,13 +172,21 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
     /// 整屏宽度。抽屉态右侧要留一条「点空白关闭」的热区，宽度靠它算。
     private let totalWidth: CGFloat
 
+    /// 父容器（ContentView 的 GeometryReader）当前的安全区。
+    ///
+    /// [R78-上下各缺一条] 只用来把聊天卡片撑到屏幕上下边缘，见 body 里
+    /// 那段 [R78] 注释。必须和父容器**完全相等**，负 padding 才能正好抵消。
+    private let insets: EdgeInsets
+
     private let drawer: (DrawerState) -> Drawer
     private let content: () -> Content
 
     init(width: CGFloat,
+         insets: EdgeInsets = EdgeInsets(),
          @ViewBuilder drawer: @escaping (DrawerState) -> Drawer,
          @ViewBuilder content: @escaping () -> Content) {
         self.totalWidth = width
+        self.insets = insets
 
         // [R68] 「屏宽 − 54」定宽，再受 348 上限约束。
         //
@@ -240,66 +251,85 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             // 「要和他一样模糊，就感觉字体越走越浅」—— 右侧露出的那一条
             // 确实是虚的。所以补回来，但比 R63 的 4.0 弱：只到 2.5，
             // 目的是把文字化开、不是把整屏糊掉。
-            content()
-                // [R76-上下各缺一条] 聊天卡片要**铺满到屏幕上下边缘**。
-                //
-                // DrawerContainer 是放在 ContentView 的 GeometryReader 里的，
-                // 而那个 GeometryReader 遵守安全区 —— 交给这张卡片的高度
-                // 是「屏幕高 − 状态栏 − home indicator」。于是卡片不是贴边的
-                // 一整块，而是上下各缩进一条：上面那条露出窗口底色，下面那条
-                // 也是。抽屉拉开变成卡片之后，这两条就把「卡片浮在屏幕中间」
-                // 的感觉做实了 —— 用户看到的原话是「上面缺一条，下面缺一条」。
-                //
-                // 只忽略**垂直**方向：
-                //   · 垂直：卡片要顶到屏幕顶边、压到 home indicator，
-                //     这样它才是一张和屏幕等高的纸；
-                //   · 水平不能忽略：右侧要留 `peekStrip` 那条给「点空白关闭」，
-                //     左边要刚好停在抽屉宽度上，一旦横向铺满，
-                //     卡片的偏移量就和抽屉宽度对不上了。
-                //
-                // 里面的 NavigationStack 不会因此跑到状态栏底下：导航栏和
-                // 列表的 inset 取的是 **window 的安全区**，不跟着这个 frame 走，
-                // 所以返回键、标题的位置一个点都不会动，只是卡片底色
-                // 和圆角跟着铺到了屏幕边缘。
-                .ignoresSafeArea(edges: .vertical)
-                .blur(radius: 2.5 * state.progress)
-                // 「越走越浅」靠这层底色蒙出来。
-                //
-                // 不用 `.opacity(1 - k * progress)`：卡片是**不透明**的，
-                // 整张降透明度会把底下的东西（抽屉右缘、窗口底色）
-                // 透上来，浅色模式下卡片会变成一块脏灰。
-                // 蒙自己的底色只降内容对比度、不动卡片本身的底色，
-                // 观感才是「字变浅了」，而不是「卡片变薄了」。
-                //
-                // 蒙的是 `systemBackground` 而不是白：深色模式下蒙白会
-                // 把深色卡片糊成一片雾。
-                .overlay {
-                    Color(UIColor.systemBackground)
-                        .opacity(0.22 * state.progress)
-                        .allowsHitTesting(false)
-                }
-                // 先蒙再裁：蒙层在 clipShape 里面，圆角外面那圈不会被
-                // 糊成方角。
-                .clipShape(RoundedRectangle(cornerRadius: 24 * state.progress,
-                                            style: .continuous))
-                .shadow(color: .black.opacity(0.18 * Double(state.progress)),
-                        radius: 18 * state.progress,
-                        x: -8 * state.progress,
-                        y: 0)
-                .offset(x: drawerWidth * state.progress)
-                // 抽屉开着时，这张卡片**彻底退出命中链**。
-                //
-                // 只写 `.disabled(state.isOpen)` 不够：`disabled` 只保证
-                // 「控件不响应」，视图本身仍然参与命中，落在卡片布局范围
-                // 里的触摸会被它吃掉、不再往下传给抽屉。
-                //
-                // `.offset` 在 SwiftUI 里会同时移动渲染和命中区域，所以
-                // 卡片实际可命中的部分是 (drawerWidth … 屏宽)，正常人点不到
-                // 左边抽屉；但设备旋转、分屏、或系统在动画中间做一次命中
-                // 快照时，边界会有一帧对不齐。显式关掉最省心。
-                .allowsHitTesting(!state.isOpen)
-                .disabled(state.isOpen)
-                .zIndex(1)
+            // [R78-上下各缺一条·真因] 卡片必须自己是一块**整屏的板**。
+            //
+            // R76 那版只写了 `content().ignoresSafeArea(edges: .vertical)`，
+            // 真机上一点用都没有 —— 用户截图里那两条还在，而且宽度正好
+            // 是状态栏 59pt 和 home indicator 34pt。原因两条：
+            //
+            //   1. `.ignoresSafeArea` 只在「这棵子树自己挨着安全区边缘」时
+            //      才把 frame 撑出去。这里的子树是 NavigationStack，它内部
+            //      会按 safeArea 再布一次导航栏 / 列表，外层 frame 撑没撑
+            //      出去，看画面根本分辨不出来 —— 白底是它自己画的，
+            //      裁在哪儿由它的布局决定。
+            //   2. 紧跟其后的 `.clipShape` 按**布局 frame** 裁剪。
+            //      frame 没出去，裁出来就还是安全区那一块：
+            //      上沿停在状态栏下沿、下沿停在 home indicator 上沿，
+            //      中间露出来的正是抽屉底色 #fbfbfd —— 那两条窄带。
+            //
+            // 所以换个做法，把卡片做成真的整屏板：
+            //   · 底座 `Color(systemBackground)` 负责撑满、负责底色；
+            //   · `content()` 自己上下加 padding，退回原来的安全区位置 ——
+            //     NavigationStack / 导航栏 / 返回键 / 列表 inset 一个点不动；
+            //   · 外面再用**等量的负 padding** 把整个 ZStack 撑到屏幕上下边缘。
+            //
+            // `insets` 必须来自父容器那个 GeometryReader，不能在这里另读：
+            // 负 padding 只有在「值完全等于父容器被切掉的那一截」时才会
+            // 正好抵消 —— 多一点会露出窗口底色，少一点又缺一条。
+            //
+            // 只借垂直方向：右侧要留 `peekStrip` 那条给「点空白关闭」，
+            // 左边要刚好停在抽屉宽度上，横向一旦铺满，
+            // 卡片的偏移量就和抽屉宽度对不上了。
+            //
+            // 对齐用 `.top` 而不是默认的居中：ZStack 里底座是撑满的、
+            // content 是被 padding 收窄的，居中会让 content 上下各浮 30pt，
+            // 导航栏跟着掉下去。`.top` + top padding 才落回原位。
+            ZStack(alignment: .top) {
+                Color(UIColor.systemBackground)
+                content()
+                    .padding(.top, insets.top)
+                    .padding(.bottom, insets.bottom)
+            }
+            .padding(.top, -insets.top)
+            .padding(.bottom, -insets.bottom)
+            .blur(radius: 2.5 * state.progress)
+            // 「越走越浅」靠这层底色蒙出来。
+            //
+            // 不用 `.opacity(1 - k * progress)`：卡片是**不透明**的，
+            // 整张降透明度会把底下的东西（抽屉右缘、窗口底色）
+            // 透上来，浅色模式下卡片会变成一块脏灰。
+            // 蒙自己的底色只降内容对比度、不动卡片本身的底色，
+            // 观感才是「字变浅了」，而不是「卡片变薄了」。
+            //
+            // 蒙的是 `systemBackground` 而不是白：深色模式下蒙白会
+            // 把深色卡片糊成一片雾。
+            .overlay {
+                Color(UIColor.systemBackground)
+                    .opacity(0.22 * state.progress)
+                    .allowsHitTesting(false)
+            }
+            // 先蒙再裁：蒙层在 clipShape 里面，圆角外面那圈不会被
+            // 糊成方角。
+            .clipShape(RoundedRectangle(cornerRadius: 24 * state.progress,
+                                        style: .continuous))
+            .shadow(color: .black.opacity(0.18 * Double(state.progress)),
+                    radius: 18 * state.progress,
+                    x: -8 * state.progress,
+                    y: 0)
+            .offset(x: drawerWidth * state.progress)
+            // 抽屉开着时，这张卡片**彻底退出命中链**。
+            //
+            // 只写 `.disabled(state.isOpen)` 不够：`disabled` 只保证
+            // 「控件不响应」，视图本身仍然参与命中，落在卡片布局范围
+            // 里的触摸会被它吃掉、不再往下传给抽屉。
+            //
+            // `.offset` 在 SwiftUI 里会同时移动渲染和命中区域，所以
+            // 卡片实际可命中的部分是 (drawerWidth … 屏宽)，正常人点不到
+            // 左边抽屉；但设备旋转、分屏、或系统在动画中间做一次命中
+            // 快照时，边界会有一帧对不齐。显式关掉最省心。
+            .allowsHitTesting(!state.isOpen)
+            .disabled(state.isOpen)
+            .zIndex(1)
 
             // ── 点空白关闭（独立一层）──
             //

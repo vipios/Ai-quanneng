@@ -583,7 +583,7 @@ struct ContentView: View {
                     //
                     // 宽度用外层这个 geo 直接传：再套一层 GeometryReader 会让
                     // 里面的 NavigationStack 拿不到尺寸约束，塌成 0 高。
-                    stackLayoutWithDrawer(width: geo.size.width)
+                    stackLayoutWithDrawer(width: geo.size.width, insets: geo.safeAreaInsets)
                 }
             }
             .overlay(alignment: .top) {
