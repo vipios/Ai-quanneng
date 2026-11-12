@@ -1151,7 +1151,8 @@ private struct SkillBrowserWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         // Use mobile UA so GitHub serves mobile-friendly pages with standard URL routing
-        config.applicationNameForUserAgent = "MinisApp Mobile Safari"
+        // UA 会拼进 HTTP 请求头，只能是 ASCII，所以这里用拼音品牌名而不是「全能AI」
+        config.applicationNameForUserAgent = "QuanNengAI Mobile Safari"
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
         webView.allowsBackForwardNavigationGestures = true

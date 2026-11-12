@@ -1426,7 +1426,7 @@ extension AIChatViewModel {
     /// nothing exists there.
     nonisolated static func readImageFailureText(pathArg: String, resolved: Bool, fileSize: Int?) -> String {
         guard resolved else {
-            return "Error: '\(pathArg)' is not a readable Minis path. Use a path under /var/ai/ (e.g. /var/ai/workspace/chart.png) or a minis:// URL."
+            return "Error: '\(pathArg)' is not a readable 全能AI path. Use a path under /var/ai/ (e.g. /var/ai/workspace/chart.png) or a minis:// URL."
         }
         guard let size = fileSize else {
             return "Error: No file at '\(pathArg)'. If a command in this same turn creates it, read it in the next turn after that command has finished."

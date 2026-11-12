@@ -54,7 +54,7 @@ extension ConfigRegistry {
         r.register(AppStorageBoolField(
             path: UserAskSettings.notifyInBackgroundPath,
             displayName: "Notify about questions in the background",
-            description: "Post a notification when the assistant asks while Minis is in the background.",
+            description: "Post a notification when the assistant asks while 全能AI is in the background.",
             userDefaultsKey: UserAskSettings.notifyInBackgroundKey,
             defaultValue: UserAskSettings.defaultNotifyInBackground
         ))
@@ -1665,7 +1665,7 @@ extension ConfigRegistry {
         r.register(AppStorageBoolField(
             path: "background.continuedProcessing",
             displayName: "Prefer continued background processing (iOS 26+)",
-            description: "Use iOS 26's continued-processing task instead of the location keep-alive to keep the Live Activity refreshing, for runs started in the foreground. Shows a Minis task status on screen while the task runs. Off by default.",
+            description: "Use iOS 26's continued-processing task instead of the location keep-alive to keep the Live Activity refreshing, for runs started in the foreground. Shows a 全能AI task status on screen while the task runs. Off by default.",
             userDefaultsKey: "continuedProcessingPreferred",
             defaultValue: false
         ))

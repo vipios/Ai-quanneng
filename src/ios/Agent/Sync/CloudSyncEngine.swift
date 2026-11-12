@@ -83,7 +83,7 @@ final class SyncLogStore: ObservableObject {
     /// message content is never included. Safe for sharing with developers.
     func exportSanitizedReport() -> String {
         var lines: [String] = []
-        lines.append("=== MinisApp iCloud Sync Diagnostic Log ===")
+        lines.append("=== 全能AI iCloud Sync Diagnostic Log ===")
         lines.append("Exported: \(ISO8601DateFormatter().string(from: Date()))")
         lines.append("Entries: \(entries.count)")
         lines.append("")

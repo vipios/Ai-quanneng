@@ -992,7 +992,7 @@ final class OpenRouterVoiceProvider: VoiceProvider {
     /// Same attribution headers the models request already sends.
     override func applyVoiceAuth(_ request: inout URLRequest) {
         super.applyVoiceAuth(&request)
-        request.setValue("https://github.com/OpenMinis/OpenMinis", forHTTPHeaderField: "HTTP-Referer")
+        request.setValue("https://github.com/vipios/Ai-quanneng", forHTTPHeaderField: "HTTP-Referer")
         request.setValue("全能AI App", forHTTPHeaderField: "X-Title")
     }
 

@@ -50,7 +50,7 @@ enum OpenRouterModelsAPI {
         var request = URLRequest(url: URL(string: URLBuilding.join(baseURL, path))!)
         request.httpMethod = "GET"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("https://github.com/OpenMinis/OpenMinis", forHTTPHeaderField: "HTTP-Referer")
+        request.setValue("https://github.com/vipios/Ai-quanneng", forHTTPHeaderField: "HTTP-Referer")
         request.setValue("全能AI App", forHTTPHeaderField: "X-Title")
         logger.info("Fetching OpenRouter models \(path)")
 

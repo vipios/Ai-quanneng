@@ -23,7 +23,7 @@ import Foundation
 /// of its own.
 struct SaveEnvVarIntent: AppIntent {
     static var title: LocalizedStringResource = "Save Environment Variable to 全能AI"
-    static var description = IntentDescription("Saves text from Shortcuts, such as a received message, as the environment variable MINIS_SHORTCUT_OPT_ followed by the name suffix. Every Minis session can read it in the shell, saving the same name again updates it, and it can be deleted under Settings → Environment Variables.")
+    static var description = IntentDescription("Saves text from Shortcuts, such as a received message, as the environment variable MINIS_SHORTCUT_OPT_ followed by the name suffix. Every 全能AI session can read it in the shell, saving the same name again updates it, and it can be deleted under Settings → Environment Variables.")
     static var openAppWhenRun = false
 
     @Parameter(title: "Text",
@@ -41,7 +41,7 @@ struct SaveEnvVarIntent: AppIntent {
     // suffix field, so the action line reads as the whole variable name the
     // user will reference: "…as $MINIS_SHORTCUT_OPT_[Name Suffix]".
     static var parameterSummary: some ParameterSummary {
-        Summary("Save \(\.$text) to Minis as $MINIS_SHORTCUT_OPT_\(\.$suffix)")
+        Summary("Save \(\.$text) to 全能AI as $MINIS_SHORTCUT_OPT_\(\.$suffix)")
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {

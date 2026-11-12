@@ -775,7 +775,10 @@ struct MinisApp: App {
 
     private static let fileProviderDomain = NSFileProviderDomain(
         identifier: NSFileProviderDomainIdentifier("com.ai.app.files"),
-        displayName: "Minis"
+        // 「文件」App 里显示的位置名。原来是 Minis —— 用户点开「文件」
+        // 就能看到上游品牌名。identifier 是标识（不能改，改了等于换一个
+        // 域、老用户的目录要重挂），displayName 纯显示，改成品牌名。
+        displayName: "全能AI"
     )
 
     /// Bumped when we need to force-rebuild the FileProvider domain on next launch
