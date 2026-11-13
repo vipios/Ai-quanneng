@@ -168,7 +168,36 @@ struct NavBubble: ViewModifier {
 
 // MARK: - 左上角返回气泡
 
-/// 导航栏左上角的返回按钮：白圆气泡 + `chevron.left`。
+/// 气泡里那个图标：两条左端对齐、长度不等的圆头横线。
+///
+/// 参照图量的（气泡直径 127px = 40pt，即 3.175px/pt）：
+///   · 上横线 x 77–135、y 75–80 ⇒ 宽 18.6pt、厚 2pt
+///   · 下横线 x 77–115、y 101–107 ⇒ 宽 12.3pt、厚 2pt，左端和上横线对齐
+///   · 两线中心距 26.5px ⇒ 8.35pt（中间缝隙 6.35pt）
+///   · 上横线的水平中心正好落在圆心 ⇒ 整块居中，不是左顶格
+///
+/// 不用 SF Symbol：`line.3.horizontal` 是三条、`text.alignleft` 是四条，
+/// 两条的现成符号没有，画两条 Capsule 反而最准。
+struct NavTwoLineGlyph: View {
+
+    private static let lineWidth: CGFloat = 18.6
+    private static let shortLineWidth: CGFloat = 12.3
+    private static let thickness: CGFloat = 2
+    /// 两线中心距 8.35pt，扣掉两条线各半厚，就是 VStack 的间距。
+    private static let gap: CGFloat = 8.35 - thickness
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Self.gap) {
+            Capsule()
+                .frame(width: Self.lineWidth, height: Self.thickness)
+            Capsule()
+                .frame(width: Self.shortLineWidth, height: Self.thickness)
+        }
+        .foregroundStyle(ChatColors.primaryText)
+    }
+}
+
+/// 导航栏左上角的返回按钮：白圆气泡 + 两条横线的图标。
 ///
 /// 只在 iOS 26 以下用（调用方 `AIChatView.showsCustomBackButton` 统一判定）。
 /// 换掉系统返回按钮不会丢任何操作方式 —— 本项目的左边缘右滑早就被抽屉接管
@@ -187,11 +216,7 @@ struct NavBackBubbleButton: View {
         Button {
             dismiss()
         } label: {
-            Image(systemName: "chevron.left")
-                // 参照里箭头的大写高度和内文标题接近，17pt semibold 落在
-                // 40pt 圆里上下左右都留白均匀。
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(ChatColors.primaryText)
+            NavTwoLineGlyph()
                 .modifier(NavBubble())
         }
         .buttonStyle(.plain)
@@ -281,15 +306,22 @@ struct RelayStatusIcon: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Image(systemName: "desktopcomputer")
-                // 参照里图标 13×12px ⇒ 15×14pt，`desktopcomputer` 在 12pt
-                // 渲染出来正好这个尺寸。
+                // [参照图对齐 2026-11-13 第三轮] 12pt 不动。参照图逐像素量的：
+                // 显示器屏幕 47×36px、同一行的文字 cap 高 34px ⇒ 图标宽是文字
+                // cap 的 1.38 倍。`desktopcomputer` 在 12pt 下约 13pt 宽，配
+                // 11pt 的文字（cap 7.8）是 1.67 倍 —— 比参照略大但同一档。
+                // 之前配 9pt 文字时是 2.0 倍，看着才是「图标抢戏」。
                 .font(.system(size: 12))
                 .foregroundStyle(ChatColors.secondaryText)
             Circle()
                 .fill(online ? Self.onlineColor : Color.red)
                 .frame(width: 4, height: 4)
-                // 压在显示器右上角外侧，和参照一样半挂在线框上。
-                .offset(x: 3, y: -2)
+                // [参照图对齐 2026-11-13 第三轮] 上移量 2 → 1。参照里绿点只
+                // 比图标顶边高 2px（整颗图标 45px 高，即 4%，换算到 12pt 图标
+                // 上是半个点），我们突出去 2pt 才是「绿点压到标题」的直接原因：
+                // 等于把 -4pt 的行间距又吃掉 2pt。压到 1pt 后它只探头一点点，
+                // 和参照一样半挂在线框上。
+                .offset(x: 2, y: -1)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("中转站"))
@@ -325,6 +357,10 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
     /// 只用来摸到父级导航栏，不画任何东西。
     final class Probe: UIViewController {
 
+        /// viewDidAppear 之后补清一次：SwiftUI 的工具栏桥接会把 appearance
+        /// 再写一遍，那次写入可能落在我们上一次布局之后。
+        private var didCatchLatePush = false
+
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
             removeSeparator()
@@ -333,6 +369,11 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
             removeSeparator()
+            // 只补一次，不递归：清干净之后再调是空操作，没必要长期挂着
+            // async 在主队列上反复触发。
+            guard !didCatchLatePush else { return }
+            didCatchLatePush = true
+            DispatchQueue.main.async { [weak self] in self?.removeSeparator() }
         }
 
         override func viewDidLayoutSubviews() {
@@ -341,52 +382,90 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         }
 
         func removeSeparator() {
-            guard let bar = enclosingNavigationBar else { return }
+            guard let nav = enclosingNavigationController else { return }
+            let bar = nav.navigationBar
 
-            // 三份都要过：standard 管常态，scrollEdge 管列表贴顶，compact 管
-            // 横屏等窄高度。少一份就会在某个状态下把线漏出来。
-            //
-            // 用 copy() 造新实例再赋回去，而不是原地改：`UIBarAppearance` 是
-            // 引用类型，原地改完再赋同一个对象，UINavigationBar 有可能认为
-            // 「没变化」不刷新。
-            if bar.standardAppearance.shadowColor != .clear {
-                let a = (bar.standardAppearance.copy() as? UINavigationBarAppearance)
-                    ?? bar.standardAppearance
-                a.shadowColor = .clear
-                bar.standardAppearance = a
+            // ① 页面级（关键）：SwiftUI 的 `.toolbarBackground(_:for:)` 是把颜色
+            //    写进**导航项自己**的 appearance，而导航项上的优先级高于 bar 上
+            //    的默认值。上一版只清了 bar 那份，所以线一直在 —— 实测截图
+            //    y=80px 处那条 rgb(233,233,233) 就是它。
+            for item in Self.appearanceItems(of: nav) {
+                if let a = Self.cleared(item.standardAppearance) { item.standardAppearance = a }
+                if let a = Self.cleared(item.scrollEdgeAppearance) { item.scrollEdgeAppearance = a }
+                if let a = Self.cleared(item.compactAppearance) { item.compactAppearance = a }
             }
-            if let scroll = bar.scrollEdgeAppearance, scroll.shadowColor != .clear {
-                let a = (scroll.copy() as? UINavigationBarAppearance) ?? scroll
-                a.shadowColor = .clear
-                bar.scrollEdgeAppearance = a
-            }
-            if let compact = bar.compactAppearance, compact.shadowColor != .clear {
-                let a = (compact.copy() as? UINavigationBarAppearance) ?? compact
-                a.shadowColor = .clear
-                bar.compactAppearance = a
-            }
+
+            // ② bar 级：导航项没有自带 appearance 时才用这份默认值。
+            if let a = Self.cleared(bar.standardAppearance) { bar.standardAppearance = a }
+            if let a = Self.cleared(bar.scrollEdgeAppearance) { bar.scrollEdgeAppearance = a }
+            if let a = Self.cleared(bar.compactAppearance) { bar.compactAppearance = a }
+
+            // ③ 老 API 兜底：iOS 13 之前这条线是 `shadowImage` 画的，有些系统
+            //    版本在 appearance 清空后仍会回落到它，给一张空图。
+            if bar.shadowImage == nil { bar.shadowImage = UIImage() }
         }
 
-        /// 找到自己挂着的那个导航栏。
+        /// 把一份 appearance 的 `shadowColor` 清成透明。
         ///
-        /// 先走 VC 关系（SwiftUI 把 representable 的 VC 挂在宿主 VC 下面），
-        /// 拿不到再沿响应链往上摸一遍 —— 不同 iOS 版本里 SwiftUI 的容器层级
-        /// 不一样，只认 `navigationController` 有摸空的时候。
-        private var enclosingNavigationBar: UINavigationBar? {
+        /// 已经是透明、或者压根没有这份 appearance 就返回 nil，调用方据此跳过
+        /// 赋值 —— 避免每次布局都往 UIKit 里灌一遍新对象。
+        ///
+        /// 必须 copy 出新实例再赋回去：`UIBarAppearance` 是引用类型，原地改完
+        /// 再赋同一个对象，UIKit 有可能认为「没变化」而不重画。
+        private static func cleared(_ appearance: UINavigationBarAppearance?) -> UINavigationBarAppearance? {
+            guard let appearance, appearance.shadowColor != .clear else { return nil }
+            let copy = (appearance.copy() as? UINavigationBarAppearance) ?? appearance
+            copy.shadowColor = .clear
+            return copy
+        }
+
+        /// 当前页 + 可见页的导航项。两个都过：push/pop 动画中间它们可能不是
+        /// 同一个 VC。
+        private static func appearanceItems(of nav: UINavigationController) -> [UINavigationItem] {
+            var items: [UINavigationItem] = []
+            for vc in [nav.topViewController, nav.visibleViewController].compactMap({ $0 }) {
+                if !items.contains(where: { $0 === vc.navigationItem }) {
+                    items.append(vc.navigationItem)
+                }
+            }
+            return items
+        }
+
+        /// 找到自己挂着的那个导航控制器。
+        ///
+        /// 三条路依次试：VC 关系 → 响应链 → 从 window 根 VC 递归找主栈。
+        ///
+        /// 最后一条是保底，也是这个文件里最实用的一条：SwiftUI 给
+        /// representable 套的宿主 VC 有时既不认 `navigationController`，
+        /// 响应链上也摸不到（抽屉那边 `InteractivePopGestureDisabler` 就是
+        /// 这么静默失败一整版的）。视图一定在某个 window 里，从根 VC 往下
+        /// 递归 `children` 一定能摸到 —— 抽屉手势层用的就是这个办法。
+        private var enclosingNavigationController: UINavigationController? {
             if let nav = navigationController ?? parent?.navigationController {
-                return nav.navigationBar
+                return nav
             }
             var r: UIResponder? = view
             var hops = 0
             while let cur = r, hops < 32 {
                 if let nav = cur as? UINavigationController {
-                    return nav.navigationBar
+                    return nav
                 }
                 if let vc = cur as? UIViewController, let nav = vc.navigationController {
-                    return nav.navigationBar
+                    return nav
                 }
                 r = cur.next
                 hops += 1
+            }
+            guard let root = view.window?.rootViewController else { return nil }
+            return Self.nearestNavigationController(in: root)
+        }
+
+        /// 只在 `children` 里递归，不走 `presentedViewController`：设置页那类是
+        /// sheet，自带一套导航栈，动它会把人家自己的返回线也摘掉。
+        private static func nearestNavigationController(in vc: UIViewController) -> UINavigationController? {
+            if let nav = vc as? UINavigationController { return nav }
+            for child in vc.children {
+                if let nav = nearestNavigationController(in: child) { return nav }
             }
             return nil
         }

@@ -252,7 +252,12 @@ extension AIChatView {
         // 4 → 1 and group vertical padding 3 → 2 on legacy), so the stack's
         // total height — the thing the May-18/19/20 clip saga fought — is
         // unchanged and the top-clip fix does not regress.
-        return VStack(alignment: .leading, spacing: legacyLayout ? -4 : -2) {
+        // [参照图对齐 2026-11-13 第三轮] 外层间距 -4 → -1。
+        // 起因：标题提到 16pt 之后行盒变高，-4 的负间距让第 2 行顶到了标题
+        // 上，用户报「绿点压倒了全能ai字体」。参照图量的：标题降部底边到
+        // 小电脑图标顶边之间空了 18px、约 4.7pt，我们现在是负值（重叠）。
+        // 改 -1 后第 2 行整体下移 3pt，视觉间隙回到 ~4pt，和参照一致。
+        return VStack(alignment: .leading, spacing: legacyLayout ? -1 : -2) {
             Button {
                 if let s = titlePillSession { titlePillEditSession = s }
             } label: {
@@ -360,7 +365,10 @@ extension AIChatView {
                             Image(systemName: symbol)
                                 .resizable()
                                 .scaledToFit()
-                                .frame(height: ceil(UIFont.systemFont(ofSize: 9).capHeight))
+                                // [参照图对齐 2026-11-13 第三轮] 跟着这一行
+                                // 文字从 9 涨到 11pt（这里取的是字号的 cap
+                                // 高，用来把箭头缩成和旁边字母一样高）。
+                                .frame(height: ceil(UIFont.systemFont(ofSize: 11).capHeight))
                                 .foregroundStyle(Color.orange)
                                 // Match the row text's descender clearance so
                                 // the badge centers on the same visual band.
@@ -370,8 +378,16 @@ extension AIChatView {
                         Button {
                             showModelPicker = true
                         } label: {
+                            // [参照图对齐 2026-11-13 第三轮] 9 → 11pt。
+                            // 参照图逐像素量的：第 2 行文字 cap 高 34px，标题
+                            // cap 高 44px，比值 0.77；我们 9pt 配 16pt 只有
+                            // 0.56，肉眼看就是「一行小字」。按 0.77 折算，
+                            // 16pt 标题下这一行应该是 12pt，但 12 的行盒
+                            // （14.3pt）叠在 19pt 标题上会把整栈顶到 44pt
+                            // 导航带的边上（就是历史上标题被切、字形变 "?" 的
+                            // 那个 bug），所以取 11 —— 比例 0.69，够近也够安全。
                             Text("\(detail.providerLabel) · \(detail.modelName)")
-                                .font(.system(size: 9))
+                                .font(.system(size: 11))
                                 .foregroundStyle(ChatColors.secondaryText)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
@@ -423,7 +439,11 @@ extension AIChatView {
             .padding(.horizontal, 8)
             // [T-navbar-title-model-gap] 3 → 2 on legacy: part of the
             // height-neutral trade that funds the wider title→model gap.
-            .padding(.vertical, legacyLayout ? 2 : 3)
+            // [参照图对齐 2026-11-13 第三轮] 2 → 1：这一行字号抬到 11pt 后
+            // 行盒高了 2.4pt，加上外层间距的 +3，整栈会长到 ~40pt。44pt 的
+            // 导航带里再胖就有顶穿（标题上沿被切 / 字形变 "?"）的风险，这里
+            // 让回 2pt，整栈 ~38pt，余量还在。
+            .padding(.vertical, legacyLayout ? 1 : 3)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.red.opacity(0.35 * fallbackPulseOpacity))
@@ -463,6 +483,19 @@ extension AIChatView {
         // 参照的字号，又不会把三行顶出 44pt 的导航栏带（顶穿的表现是标题
         // 上沿被切、个别字形变成 "?"）。
         .padding(.top, legacyLayout ? 4 : 0)
+        // [参照图对齐 2026-11-13 第四轮] 整块再往下 6pt。
+        // 用户对比参照图报「咱们的离状态栏太近了，要和他一样的高度」，
+        // 4pt 之后又报「有点高了，再往下降一点」，所以 4 → 6。
+        // 为什么不用 padding(.top)：那一行改的是**布局高度**，`.principal`
+        // 在 44pt 带里是居中摆的，加 4pt padding 只会把整块顶高 4pt、内容
+        // 实际只下移 2pt，而且 39.4 + 4 = 43.4 已经贴到带的边，再往上顶就
+        // 会重演「标题上沿被切、字形变 ?」那个老 bug。
+        // `.offset` 只做绘制位移、不参与布局，位移量和填的数一模一样，想再
+        // 微调直接改这一个数。
+        // 6 是这一版的余量上限：实测 44pt 带内上下各剩约 6.3pt（截图上标题
+        // 墨迹顶 46px、带底 112px，两边各 11px），挪 6pt 后第 2 行的墨迹正好
+        // 落在带底上，再大就会真的越界被裁。
+        .offset(y: legacyLayout ? 6 : 0)
         // iOS 26+: fix height to match liquid-glass navbar; older OS: let it size naturally
         .modifier(NavTitleFrameModifier())
         // [T-navbar-title-fontsize] Lock the entire principal-toolbar
@@ -487,8 +520,8 @@ extension AIChatView {
     @ViewBuilder
     private var thinkingLevelBadge: some View {
         let level = vm.currentThinkingLevel
-        // Sits on nav-bar row 2 (the 9pt "provider · model" line). Kept a
-        // touch smaller than that text (8pt / 6px icon) so it stays the most
+        // Sits on nav-bar row 2 (the 11pt "provider · model" line). Kept a
+        // touch smaller than that text (10pt / 7px icon) so it stays the most
         // compact label in the title and never larger than the "is thinking…"
         // intensity pill in the message list.
         //
@@ -499,10 +532,13 @@ extension AIChatView {
         HStack(spacing: 2) {
             Image("ThinkingIcon")
                 .resizable()
-                .frame(width: 6, height: 6)
+                .frame(width: 7, height: 7)
                 .opacity(level.isEnabled ? 1.0 : 0.4)
+            // [参照图对齐 2026-11-13 第三轮] 8 → 10pt，图标 6 → 7pt：参照图里
+            // 那个 [💡关闭] pill 的字和左边「中转站 · 模型名」几乎一样大，
+            // 只小半号；我们原来是 9/8，差得太多，看着是两套字号。
             Text(level.displayName)
-                .font(.system(size: 8, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
         }
         .foregroundStyle(ChatColors.secondaryText)
         .padding(.horizontal, 4)
