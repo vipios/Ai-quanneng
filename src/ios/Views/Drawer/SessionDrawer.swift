@@ -23,20 +23,16 @@ struct SessionDrawer: View {
     /// 每帧都变，整棵抽屉会跟着每帧重算，而抽屉只用它做「关自己」一件事。
     @Environment(\.drawerClose) private var drawerClose
 
+    /// 窗口实测值。订阅它是因为值由 `WindowMetricsProbe` 在 layout **之后**
+    /// 才报上来 —— 首帧读不到，必须在那时重算一次，否则补边高度和齿轮底边距
+    /// 会一直停在「安全区为 0」的旧值，看起来就跟没改过一样。
+    @ObservedObject private var windowStore = WindowMetricsStore.shared
+
     /// 会话数据。由 ContentView 传进来，抽屉不自己读库 —— 两处各读一次
     /// 就会出现「列表已更新、抽屉还是旧的」。
     let sessions: [ChatSession]
     let folders: [ChatFolder]
     let groups: [SidebarGroup]
-
-    /// 上下两条安全区。由 `ContentView` 从根 `GeometryReader` 同步传进来，
-    /// 只用来画两条补边（把底色铺到屏幕边缘）。
-    ///
-    /// [R86] 之前订阅 `WindowMetricsStore` 自己去「量」，四套取法全没拿到这
-    /// 59pt（详见 `DrawerContainer` 的注释）。这个值 SwiftUI 本来就知道 ——
-    /// 抽屉里的内容正是被它推下去的 —— 直接问根 `GeometryReader` 要最省事。
-    let insets: EdgeInsets
-
     let currentSessionId: String?
 
     /// 产物数据源。折叠区和副标题里的产物总数都来自它。
@@ -84,10 +80,14 @@ struct SessionDrawer: View {
         })
     }
 
-    // 顶部补边的高度用 `insets.top`，底部用 `insets.bottom`。
-    // 都是直接读传进来的值，不再异步等一次测量 —— 首帧就是对的。
-    private var topInset: CGFloat { insets.top }
-    private var bottomInset: CGFloat { insets.bottom }
+    // `WindowMetricsStore` 是 @MainActor 的（数据来自 UIWindow），
+    // 所以下面这几个都得跟着标，否则 Swift 6 严格并发下是编译错误。
+    //
+    // 用实例属性而不是 static：这三个值必须在 body 里**被读到**，
+    // 渲染依赖才挂得上。写成 static 的话 body 里读的是静态值，
+    // 探针把真值报上来时这棵子树不会重算 —— 表现就是「改了跟没改一样」。
+    @MainActor private var topInset: CGFloat { windowStore.current?.top ?? 0 }
+    @MainActor private var bottomInset: CGFloat { windowStore.current?.bottom ?? 0 }
 
     /// 列表底部要给齿轮让出的高度：齿轮直径 60 + 齿轮底边距 16 + 余量 10。
     ///
