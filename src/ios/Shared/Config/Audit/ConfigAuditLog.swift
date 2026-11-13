@@ -176,7 +176,7 @@ final class ConfigAuditLog: ObservableObject {
     ///
     /// This database is deliberately separate from `minis.db` so the audit table
     /// never lands in a sync-dirty query — but that also left it out of
-    /// `ICloudBackupManager.walCheckpoint`, which covers minis.db and skills.db.
+    /// the iCloud-backup WAL checkpoint, which covers minis.db and skills.db.
     /// It runs in WAL mode with nothing ever checkpointing it, so a jetsam or
     /// crash can drop history that was only in the `-wal` sidecar.
     ///

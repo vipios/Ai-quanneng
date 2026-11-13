@@ -72,18 +72,6 @@ enum SelfUpdateResult: Equatable, Sendable {
 
 // MARK: - 下载结果
 
-/// 自动下载的进展。界面靠它显示徽标文字。
-///
-/// 独立于 `SelfUpdateResult`：检查是一次性结论，下载是持续过程，
-/// 混在一个枚举里会让「下载到 40% 时该显示什么」变得没法表达。
-enum SelfUpdateDownload: Equatable, Sendable {
-    case idle
-    /// 正在下载，0…1
-    case progress(Double, totalBytes: Int64)
-    /// 下好了，给本地文件地址
-    case finished(URL)
-    case failed(String)
-}
 
 // MARK: - 检查器
 

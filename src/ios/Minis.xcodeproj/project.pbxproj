@@ -19,7 +19,6 @@
 		52F76965817EDFB2E37E8220 /* InlineVoiceInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D1A2B7331C508B0D3E77D28 /* InlineVoiceInputView.swift */; };
 		57E63023C8A9A3C505DF411B /* VoiceActivityDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E2CB0D0D63E6D6FDB45568 /* VoiceActivityDetector.swift */; };
 		5EF8347C1EAA0066EFF631F8 /* GroupVoiceModelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED149397BEA7E0408C92688 /* GroupVoiceModelsView.swift */; };
-		77BB9741AB0EFC449FDBDFED /* VoiceWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FF3462D09402F14B610CD6 /* VoiceWaveformView.swift */; };
 		7A49962E84F115865D41B933 /* AudioSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE154CF628D8699BD99CF9CB /* AudioSessionCoordinator.swift */; };
 		7A822436233F3227678277FC /* AIChatViewModel+UserAsk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5340160943C17EA292203242 /* AIChatViewModel+UserAsk.swift */; };
 		7F0DF01D0A /* ToolFoldPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0DF01D0B /* ToolFoldPlanner.swift */; };
@@ -114,7 +113,6 @@
 		E54000002 /* DebugViewInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E54000012 /* DebugViewInspector.swift */; };
 		E54000003 /* DebugJSONRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = E54000013 /* DebugJSONRPC.swift */; };
 		E54000004 /* AgentRequestTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = E54000014 /* AgentRequestTrace.swift */; };
-		E54000005 /* BrowserBenchTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E54000015 /* BrowserBenchTestView.swift */; };
 		E54000006 /* AutoTouch.m in Sources */ = {isa = PBXBuildFile; fileRef = E54000017 /* AutoTouch.m */; };
 		E54000007 /* DebugMethodRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = E54000018 /* DebugMethodRegistry.swift */; };
 		E54000009 /* DebugRPCProviderChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = E54000019 /* DebugRPCProviderChat.swift */; };
@@ -413,8 +411,6 @@
 		E5QTA06B /* ProviderQuotaSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA06F /* ProviderQuotaSection.swift */; };
 		E5QTA07B /* QuotaPickerHints.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA07F /* QuotaPickerHints.swift */; };
 		E5QTA08B /* QuotaDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA08F /* QuotaDetailSheet.swift */; };
-		E5R000001 /* ICloudBackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5R000011 /* ICloudBackupManager.swift */; };
-		E5R000002 /* ICloudBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5R000012 /* ICloudBackupView.swift */; };
 		E5RSD0001 /* ResourceDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5RSD0011 /* ResourceDiagnostics.swift */; };
 		E5S000001 /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5S000011 /* DeviceIdentity.swift */; };
 		E5S000002 /* CloudSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5S000012 /* CloudSyncEngine.swift */; };
@@ -755,7 +751,6 @@
 /* Begin PBXFileReference section */
 		0ED149397BEA7E0408C92688 /* GroupVoiceModelsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GroupVoiceModelsView.swift; sourceTree = "<group>"; };
 		0F5379380323FA8C6477708C /* GroupSlotPicker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GroupSlotPicker.swift; sourceTree = "<group>"; };
-		16FF3462D09402F14B610CD6 /* VoiceWaveformView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceWaveformView.swift; sourceTree = "<group>"; };
 		28E23EA0E199D6D50EBC76F2 /* VoiceLog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceLog.swift; sourceTree = "<group>"; };
 		2BB45FC87D39AE9AB4495BE9 /* VoiceProvider+Vendors.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "VoiceProvider+Vendors.swift"; sourceTree = "<group>"; };
 		424510790AF3FB2452D3CCE3 /* VoiceOutputPlayer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceOutputPlayer.swift; sourceTree = "<group>"; };
@@ -914,7 +909,6 @@
 		E54000012 /* DebugViewInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugViewInspector.swift; sourceTree = "<group>"; };
 		E54000013 /* DebugJSONRPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugJSONRPC.swift; sourceTree = "<group>"; };
 		E54000014 /* AgentRequestTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRequestTrace.swift; sourceTree = "<group>"; };
-		E54000015 /* BrowserBenchTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserBenchTestView.swift; sourceTree = "<group>"; };
 		E54000016 /* AutoTouch.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AutoTouch.h; sourceTree = "<group>"; };
 		E54000017 /* AutoTouch.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AutoTouch.m; sourceTree = "<group>"; };
 		E54000018 /* DebugMethodRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugMethodRegistry.swift; sourceTree = "<group>"; };
@@ -1267,8 +1261,6 @@
 		E5QTA06F /* ProviderQuotaSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaSection.swift; sourceTree = "<group>"; };
 		E5QTA07F /* QuotaPickerHints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaPickerHints.swift; sourceTree = "<group>"; };
 		E5QTA08F /* QuotaDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaDetailSheet.swift; sourceTree = "<group>"; };
-		E5R000011 /* ICloudBackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudBackupManager.swift; sourceTree = "<group>"; };
-		E5R000012 /* ICloudBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudBackupView.swift; sourceTree = "<group>"; };
 		E5RSD0011 /* ResourceDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDiagnostics.swift; sourceTree = "<group>"; };
 		E5S000011 /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
 		E5S000012 /* CloudSyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncEngine.swift; sourceTree = "<group>"; };
@@ -1603,7 +1595,6 @@
 		A44D403A6D05BD06BBADC1CF /* Voice */ = {
 			isa = PBXGroup;
 			children = (
-				16FF3462D09402F14B610CD6 /* VoiceWaveformView.swift */,
 				E8AB343B6D865C37CC5E9EDB /* VoiceInputPanel.swift */,
 				4D1A2B7331C508B0D3E77D28 /* InlineVoiceInputView.swift */,
 				7A302B074A0BE0AFED8EC7E9 /* SpeechPlayerControl.swift */,
@@ -1917,7 +1908,6 @@
 				E5400009B /* DebugRPCMCP.swift */,
 				E54000014 /* AgentRequestTrace.swift */,
 				E5VIC0011 /* VoiceInputCapture.swift */,
-				E54000015 /* BrowserBenchTestView.swift */,
 				E54100011 /* SessionDataSimulator.swift */,
 				E54200011 /* MessageListTestView.swift */,
 				E54000016 /* AutoTouch.h */,
@@ -2517,7 +2507,6 @@
 			isa = PBXGroup;
 			children = (
 				E5S000012 /* CloudSyncEngine.swift */,
-				E5R000011 /* ICloudBackupManager.swift */,
 				E5S000016 /* SyncDirtyScanner.swift */,
 				F1A00099 /* V2 */,
 			);
@@ -2803,7 +2792,6 @@
 		F1V00015 /* Backup */ = {
 			isa = PBXGroup;
 			children = (
-				E5R000012 /* ICloudBackupView.swift */,
 			);
 			path = Backup;
 			sourceTree = "<group>";
@@ -3541,7 +3529,6 @@
 				E5400009A /* DebugRPCMCP.swift in Sources */,
 				E54000004 /* AgentRequestTrace.swift in Sources */,
 				E5VIC0001 /* VoiceInputCapture.swift in Sources */,
-				E54000005 /* BrowserBenchTestView.swift in Sources */,
 				E54000006 /* AutoTouch.m in Sources */,
 				E5400000A /* HangDetector.m in Sources */,
 				E5400000C /* DebugRPCHangDetector.swift in Sources */,
@@ -3700,8 +3687,6 @@
 				LOC00001 /* AppLocalization.swift in Sources */,
 				F1S00012 /* ChatSessionIdEnvironment.swift in Sources */,
 				E5Q000004 /* FontSettings.swift in Sources */,
-				E5R000001 /* ICloudBackupManager.swift in Sources */,
-				E5R000002 /* ICloudBackupView.swift in Sources */,
 				E5S000001 /* DeviceIdentity.swift in Sources */,
 				E5S000002 /* CloudSyncEngine.swift in Sources */,
 				E5S000003 /* SessionForkManager.swift in Sources */,
@@ -3774,7 +3759,6 @@
 				489FD1413F4EE806C3F0C713 /* VoiceProviderResolver.swift in Sources */,
 				57E63023C8A9A3C505DF411B /* VoiceActivityDetector.swift in Sources */,
 				2A4FD49F872431D703328384 /* VoiceOutputPlayer.swift in Sources */,
-				77BB9741AB0EFC449FDBDFED /* VoiceWaveformView.swift in Sources */,
 				38F28509AFBC2153A7C85E85 /* VoiceInputPanel.swift in Sources */,
 				30390D7AA90818BD4BDCE784 /* VoiceProviderTemplate.swift in Sources */,
 				5EF8347C1EAA0066EFF631F8 /* GroupVoiceModelsView.swift in Sources */,

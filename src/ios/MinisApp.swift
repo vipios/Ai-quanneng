@@ -741,7 +741,7 @@ struct MinisApp: App {
                 SkillFilesystemNotifier.shared.drainIfDirtyAsync(reason: "scenePhase background")
             }
             // [T-config-audit-wal-loss] The config-audit DB runs in WAL mode and
-            // is NOT covered by ICloudBackupManager's checkpointing (it lives in
+            // is NOT covered by the iCloud-backup WAL checkpoint (it lives in
             // its own file, deliberately outside minis.db). Without a checkpoint
             // a jetsam can drop history that only ever reached the -wal sidecar.
             // Cheap and synchronous — this is the last reliable moment to do it.

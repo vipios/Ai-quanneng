@@ -136,69 +136,6 @@ enum BuildFailureKind: Equatable {
 
 // MARK: - 从输出里认错误
 
-enum BuildFailureClassifier {
-
-    /// 从编译器 stderr/stdout 里判断失败类型。
-    ///
-    /// 规则来自常见编译器（clang/gcc）与 iSH 环境的实际输出。
-    /// 宁可判成 `unknown`（会重试 + 上云）也不要误判成 `sourceError`
-    /// （那会让本机直接失败、不重试也不上云）。
-    static func classify(_ output: String, exitCode: Int32) -> BuildFailureKind {
-        let s = output.lowercased()
-
-        // 1. 源码错误 —— 先判这个，因为它可能同时包含别的关键词
-        let sourceMarkers = [
-            "error: expected", "error: use of undeclared identifier",
-            "error: no member named", "error: cannot find symbol",
-            "error: redefinition of", "error: too few arguments",
-            "error: too many arguments", "error: invalid operands",
-            "syntax error", "parse error", "undefined reference to",
-        ]
-        if sourceMarkers.contains(where: { s.contains($0) }) {
-            return .sourceError
-        }
-
-        // 2. 缺工具链
-        let toolMarkers = [
-            "command not found", "no such file or directory: 'clang'",
-            "clang: not found", "gcc: not found", "make: not found",
-            "cmake: not found", "xcrun: error", "cannot execute binary file",
-            "exec format error",          // 架构不对（x86 二进制跑在 arm 上）
-            "standard library not found", "fatal error: 'stdio.h' file not found",
-            "/usr/include/", "is not a valid sdk",
-        ]
-        if toolMarkers.contains(where: { s.contains($0) }) {
-            return .missingToolchain
-        }
-
-        // 3. 资源
-        let resourceMarkers = [
-            "out of memory", "cannot allocate memory", "killed",
-            "signal 9", "no space left on device", "oom",
-        ]
-        if resourceMarkers.contains(where: { s.contains($0) }) {
-            return .resourceExhausted
-        }
-
-        // 4. 超时
-        if s.contains("timed out") || s.contains("timeout") {
-            return .timeout
-        }
-
-        // 5. 网络
-        let netMarkers = [
-            "could not resolve host", "connection refused", "network is unreachable",
-            "ssl certificate", "temporary failure in name resolution",
-            "failed to fetch", "connection reset",
-        ]
-        if netMarkers.contains(where: { s.contains($0) }) {
-            return .network
-        }
-
-        // 6. 退出码非 0 但认不出 —— 保守
-        return exitCode == 0 ? .unknown : .unknown
-    }
-}
 
 // MARK: - 决策
 

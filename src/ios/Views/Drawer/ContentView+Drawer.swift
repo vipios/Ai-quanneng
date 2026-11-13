@@ -13,8 +13,16 @@
 //    - 不改 iPad 的 `splitLayout`：那边本来就有常驻侧栏，不需要抽屉。
 //
 //  手势归属：同一条左边缘、同一方向，原版是「返回上一页」，现在是「拉开抽屉」。
-//  做法是 `InteractivePopGestureDisabler` 把
-//  `interactivePopGestureRecognizer.isEnabled` 置 false。
+//  做法在 `EdgePanOverlay.Coordinator.syncWindowPans` 里：从 window 递归找所有
+//  `UINavigationController`，把 `interactivePopGestureRecognizer.isEnabled` 置
+//  false，再给它挂一条对抽屉 pan 的**永久失败依赖**（UIKit 在 push 完会把这个
+//  isEnabled 重置回 true，只有 require(toFail:) 挡得住）。
+//
+//  这里曾经挂过一个 `InteractivePopGestureDisabler` 的 UIViewRepresentable，
+//  作为 `.background` 贴在 NavigationStack 上 —— 它走响应链 `next` 永远碰不到
+//  导航控制器，静默 return，一次都没生效过。真正的修复搬到手势协调器之后它就
+//  是纯粹的尸体，已删除。
+//
 //  为什么不靠速度/位移区分：两者起手区域完全重叠，任何阈值都会在某一档手感下
 //  失灵，定死归属只有一种结果。代价是返回只能点导航栏左上角 `‹` —— 那个按钮
 //  是系统原生的，热区、动画、无障碍全部原样，抽屉手势层还在导航栏那 44pt
@@ -66,10 +74,10 @@ extension ContentView {
             // `DrawerCloseAction` 收自己，容器顶层已经注过一次。这里再注
             // 只会让抽屉重新变成订阅者，拖动时每帧重算整棵抽屉。
         } content: {
+            // 原版 NavigationStack 原样塞进来，一个修饰符都不挂。
+            // 曾经在这里贴过 `.background(InteractivePopGestureDisabler())`，
+            // 从未生效（原因见文件头），已删。
             stackLayout
-                // 必须挂在 NavigationStack 内部，才能沿响应链找到那个
-                // UINavigationController。
-                .background(InteractivePopGestureDisabler())
         }
     }
 
@@ -122,51 +130,5 @@ extension ContentView {
             }
         }
         return out
-    }
-}
-
-// MARK: - 关掉系统返回手势
-
-/// 让 `UINavigationController.interactivePopGestureRecognizer` 失效。
-///
-/// 为什么不用 SwiftUI 的办法：SwiftUI 没有暴露「禁用交互式返回」的开关。
-/// iOS 16+ 有个 `.toolbar(.hidden)` 之类的曲线方案都要连导航栏一起动，
-/// 而导航栏必须留着（返回键在那儿）。所以直接伸手到 UIKit 那一层。
-///
-/// 为什么是 `background` 而不是别的修饰符：它需要一个「确实被挂进
-/// 视图树」的落点，`background` 放一个零尺寸的 UIView 正好，不影响布局。
-///
-/// 为什么在 `didMoveToWindow` 里做：`makeUIView` 阶段视图还没进 window，
-/// 响应链是断的，`next` 走不到 `UINavigationController`。
-private struct InteractivePopGestureDisabler: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIView { PopGestureOffView() }
-    func updateUIView(_ uiView: UIView, context: Context) {}
-
-    private final class PopGestureOffView: UIView {
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            setPopGesture(enabled: false)
-        }
-
-        override func willMove(toWindow newWindow: UIWindow?) {
-            super.willMove(toWindow: newWindow)
-            // 离开视图树时恢复 —— 否则这条设置会跟着
-            // UINavigationController 一直留下去，影响以后挂上来的页面。
-            if newWindow == nil { setPopGesture(enabled: true) }
-        }
-
-        private func setPopGesture(enabled: Bool) {
-            // 沿响应链往上找 UINavigationController。
-            // 不写死层数：SwiftUI 的 hosting 层级会随版本变，
-            // 硬编码 next.next 一旦不对就静默失效。
-            var responder: UIResponder? = self
-            while let r = responder {
-                if let nav = r as? UINavigationController {
-                    nav.interactivePopGestureRecognizer?.isEnabled = enabled
-                    return
-                }
-                responder = r.next
-            }
-        }
     }
 }

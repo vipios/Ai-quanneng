@@ -142,21 +142,18 @@ struct SessionDrawer: View {
         // 抽屉底色 #fbfbfd：只比纯白暗一点点，白卡片摆上去才有那层薄阴影可看。
         // 深色模式用 secondarySystemGroupedBackground。
         //
-        // 只用 background 忽略上下安全区，不给整个 VStack 加：内容（标题、
-        // 搜索框、列表）必须待在安全区内，否则标题顶到状态栏底下、最后一行
-        // 被 home indicator 压住。左右也不忽略 —— 右边要留 peek 那条给卡片。
+        // 只铺 background，不给整个 VStack 加：内容（标题、搜索框、列表）必须
+        // 待在安全区内，否则标题顶到状态栏底下、最后一行被 home indicator 压住。
+        // 左右也不碰 —— 右边要留 peek 那条给卡片。
         .background(Self.paper)
-        .background(Self.paper.ignoresSafeArea(edges: .vertical))
         // [R83] 上下各补一条同色，铺到屏幕边缘。
         //
-        // 抽屉的布局帧是「安全区那块矩形」（15 Pro Max 上是 y 59…898），
-        // 状态栏那 59pt 和 home indicator 那 34pt 都不在里面。上面那句
-        // `.ignoresSafeArea` 在这棵树上没能把底色拉出去 —— 用户截图里顶上
-        // 那条白边就是它，原话「背景没做到满屏，只做到状态栏下方」。
+        // 抽屉的布局帧是「安全区那块矩形」（15 Pro Max 上是 y 59…898），状态栏
+        // 那 59pt 和 home indicator 那 34pt 都不在里面。
         //
-        // 所以不再指望安全区传播，直接拿窗口实测值画两条同色块：
-        // 一条往上顶 top，一条往下压 bottom。同色，接缝看不出来；
-        // 取不到窗口时高度为 0，等于没加。
+        // 这里原先还有一句 `.background(paper.ignoresSafeArea(.vertical))`，指望
+        // 安全区传播把底色拉出去 —— 实测在这棵树上不起作用（顶上那条白边就是
+        // 它），两句在干同一件事，已经删掉。现在只留这两条实测补边，一个机制。
         .background(alignment: .top) { paperCap(topInset, up: true) }
         .background(alignment: .bottom) { paperCap(bottomInset, up: false) }
         // 右下角悬浮齿轮，点它开原版 SettingsSheet。
