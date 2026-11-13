@@ -176,11 +176,11 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         // 纵向默认居中 → 整层往下坠一个状态栏：卡片顶留一条、底部溢出被裁、
         // 抽屉跟着下坠把右下角齿轮推出屏幕。按顶边对齐后位置不再依赖高度差。
         return ZStack(alignment: .topLeading) {
-            // ── 抽屉层（最底下，静止不动）──
+            // ── 抽屉层（最底下）──
             //
-            // 抽屉钉在 0，聊天界面像一张卡片被推走、露出它。
-            // 层次：抽屉 zIndex 0，卡片 1。命中测试上层优先，所以露出来的
-            // 那一条能点、被盖住的部分不误触。
+            // [R89] 抽屉和卡片一起往右走（见下面的 offset），中间不留缝也不重叠：
+            // 两块板像一整张纸被横向拉开。层次抽屉 zIndex 0、卡片 1，命中测试上层
+            // 优先，所以卡片底下那一侧不误触。
             drawer
                 .frame(width: drawerWidth)
                 .frame(maxHeight: .infinity)
@@ -197,6 +197,19 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                 //
                 // 取实测值之后跟提议尺寸无关，换机型不用改代码。
                 .frame(height: m?.containerHeight)
+                // 抽屉自己也跟着往右滑 —— 位移 = −抽屉宽 × (1 − progress)。
+                //
+                // [R89] 以前抽屉是钉死的背景板：卡片从它上面滑走，只露出左边一条，
+                // 观感是「抽走」而不是「推进来」。要的是后者 —— 抽屉从屏幕左外侧
+                // 进来，把聊天界面推着往右走。
+                //
+                // 数字上是严丝合缝的：卡片右移 drawerWidth×p，抽屉右移
+                // drawerWidth×p − drawerWidth，两者的差值恒为 drawerWidth ⇒
+                // 抽屉右边缘永远贴住卡片左边缘。既不重叠（不用靠 zIndex 遮），
+                // 也不留缝，p 从 0 到 1 全程成立。
+                //
+                // 只动水平位移，垂直位置和高度一个数没变 —— 齿轮的落点不受影响。
+                .offset(x: -drawerWidth * (1 - state.progress))
                 // 收起过程中不参与命中：动画刚起步露出的 1~2pt
                 // 会把聊天界面左边缘的点击吃掉。
                 .allowsHitTesting(state.progress > 0.02)

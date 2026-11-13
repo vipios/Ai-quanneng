@@ -65,20 +65,20 @@ struct SessionDrawer: View {
     /// 搜索框焦点
     @FocusState private var searchFocused: Bool
 
-    // MARK: 底色 [R83]
+    // MARK: 底色 [R89]
 
-    /// 抽屉底色。浅色 #fbfbfd —— 只比纯白暗一点点，白卡片摆上去才有薄阴影；
-    /// 深色用 secondarySystemGroupedBackground。
+    /// 抽屉底色 = **聊天页底色的同一个来源**（`ChatColors.background`）。
     ///
-    /// 单独提出来是因为它现在有三处要画（主体 + 上下两条补边），
-    /// 三处颜色必须逐字相同，否则补边会比主体亮一档、接缝反而更明显。
-    static var paper: Color {
-        Color(UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor.secondarySystemGroupedBackground
-                : UIColor(red: 0xfb / 255.0, green: 0xfb / 255.0, blue: 0xfd / 255.0, alpha: 1)
-        })
-    }
+    /// [R89] 原来浅色写死 #fbfbfd（251,251,253），聊天页是 systemBackground 的纯白
+    /// （255,255,255），差 4 个色阶。抽屉从左边推进来之后两者紧挨着（不重叠、不留缝），
+    /// 这个差会在交界处显成一条竖线；更要紧的是状态栏那 59pt：那里露的就是这块纸色，
+    /// 一比就看出「和聊天背景不一样」。
+    ///
+    /// 读同一个色源之后，深浅色模式天然同步，不用再维护两份近似值 —— 白卡片摆上去
+    /// 少一层薄阴影的代价，换掉一条贯穿全屏的色差，划算。
+    ///
+    /// 单独提出来是因为它有三处要画（主体 + 上下两条补边），三处必须逐字相同。
+    static var paper: Color { ChatColors.background }
 
     // `WindowMetricsStore` 是 @MainActor 的（数据来自 UIWindow），
     // 所以下面这几个都得跟着标，否则 Swift 6 严格并发下是编译错误。
