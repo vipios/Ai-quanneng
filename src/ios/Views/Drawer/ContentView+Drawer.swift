@@ -42,15 +42,19 @@ extension ContentView {
     /// `GeometryReader { geo in ... }`，再嵌一层的话内层读到的是「建议尺寸」
     /// 而不是分配尺寸，里面的 NavigationStack 会塌成 0 高（对话页整屏空白）。
     ///
-    /// 安全区不从这里往下传：`geo.safeAreaInsets` 在这棵树上可能是 0，
-    /// 传下去等于把卡片出血的开关关掉。改由 `DrawerContainer` 里挂的那个
-    /// 1×1 探针问「我们自己 view 的 window」要，见 `WindowMetricsStore`。
-    func stackLayoutWithDrawer(width: CGFloat) -> some View {
-        DrawerContainer(width: width) {
+    /// 安全区也从同一个 `geo` 同步取，不再异步去问窗口：见 `DrawerContainer`
+    /// 里 `insets` 的注释（那一层试过三套 UIKit 取法，全部拿不到这 59pt）。
+    func stackLayoutWithDrawer(width: CGFloat,
+                               insets: EdgeInsets,
+                               windowHeight: CGFloat) -> some View {
+        DrawerContainer(width: width,
+                        insets: insets,
+                        windowHeight: windowHeight) {
             SessionDrawer(
                 sessions: sessions,
                 folders: folders,
                 groups: groupedSessionIDs(filteredSessions),
+                insets: insets,
                 // 抽屉高亮哪一行 = 屏幕上正在看的那个会话。
                 // iPhone 走导航栈（currentStackSessionId），iPad 走
                 // selectedSessionId，两个都可能是「当前」，取先有值的那个。
