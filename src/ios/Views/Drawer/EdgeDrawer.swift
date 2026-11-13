@@ -262,7 +262,17 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                     .padding(.bottom, bottom)
             }
             .frame(width: totalWidth, height: windowHeight, alignment: .top)
-            .offset(y: -top)
+            // 上移 top 这件事**不能写在这里**。
+            //
+            // 下面还有 `.clipShape`，而 clipShape 裁的是「这层视图自己的
+            // 矩形」—— 932 高、起点仍在 59，它不看 offset。板子上移 59 后
+            // 露到 0…59 的那一条正好落在裁剪框外面，被整条裁掉，卡片顶边
+            // 于是又回到 59，死死卡在状态栏下沿。
+            //
+            // 症状很好认：卡片顶边是齐的、还带着圆角 —— 那个圆角其实是
+            // 裁剪框的圆角，不是卡片的。y 位移挪到链尾，见下面的
+            // `.offset(x:y:)`。
+            //
             // 「越走越浅」靠这层底色蒙出来，只改 alpha，一次合成。
             //
             // 不用 `.opacity`：卡片不透明，整张降透明度会把底下的抽屉右缘
@@ -286,7 +296,12 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                     radius: 14,
                     x: -6,
                     y: 0)
-            .offset(x: drawerWidth * state.progress)
+            // 横向：抽屉宽 × progress；纵向：-top，把整块板（含蒙层、圆角、
+            // 阴影）一起顶到屏幕最上边。
+            //
+            // 两轴合在一次 offset 里，而且**必须排在 clipShape 之后** ——
+            // 排在前面等于把要裁的内容先移出裁剪框，顶上那一条就没了。
+            .offset(x: drawerWidth * state.progress, y: -top)
             // 抽屉开着时卡片彻底退出命中链。`.disabled` 只保证控件不响应，
             // 视图本身仍参与命中会吃掉本该传给抽屉的触摸。
             .allowsHitTesting(!state.isOpen)
