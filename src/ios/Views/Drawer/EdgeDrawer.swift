@@ -277,23 +277,40 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             //
             // 不用 `.opacity`：卡片不透明，整张降透明度会把底下的抽屉右缘
             // 透上来，浅色模式下变成一块脏灰。蒙自己的底色只降内容对比度、
-            // 不动底色，观感才是「字变浅」。蒙 systemBackground 而不是白：
-            // 深色模式下蒙白会糊成一片雾。
+            // 不动底色，观感才是「字变浅」。
+            //
+            // 蒙色从 `systemBackground` 换成 `ChatColors.background`：卡片底色
+            // 已经和抽屉一起改成 #f8f8f8，再蒙纯白的话，卡片一拉开反而自己
+            // 提亮到 253，比抽屉还白，分界就跳出来了。同色蒙同色，底色不动，
+            // 只有内容淡下去 —— 深色模式下两者都等于 systemBackground，行为不变。
             //
             // 0.75 是参照里的观感：能看出是聊天气泡，读不出任何一句内容。
             // 只调这一个数，不叠第二层黑 —— 多一层就多一遍全屏混合。
             .overlay {
-                Color(UIColor.systemBackground)
+                ChatColors.background
                     .opacity(0.75 * state.progress)
                     .allowsHitTesting(false)
             }
             // 先蒙再裁：蒙层在 clipShape 里面，圆角外面那圈不会被糊成方角。
-            .clipShape(RoundedRectangle(cornerRadius: 24 * state.progress,
+            //
+            // 50 是从参照图量出来的：截图 1290×2796（@3x），沿卡片左边缘的
+            // 阴影带逐行取点拟合圆，六个采样点算出的半径全落在 150px ± 1，
+            // 150 ÷ 3 = 50pt。原来写的是 24，比参照小一倍多。
+            //
+            // 仍然乘 progress：progress 0 时卡片就是整屏，必须是直角，
+            // 否则收起状态屏幕四角会露出圆弧外的底色。
+            .clipShape(RoundedRectangle(cornerRadius: 50 * state.progress,
                                         style: .continuous))
             // 阴影半径和偏移**不跟 progress 变**，固定成终值只动 alpha：
             // 半径一变系统每帧要按新形状重生成阴影位图。
-            .shadow(color: .black.opacity(0.16 * Double(state.progress)),
-                    radius: 14,
+            //
+            // 数值同样按参照图反推：边缘处底色 248 被压到 233，只暗 6%，
+            // 换算成不透明度约 0.07（原来是 0.16，边缘暗度约 15%，重一倍多）。
+            // 扩散范围从阴影形状边缘算起约 ±16pt，取半径 16；水平偏移按
+            // 最暗点落在卡片边缘内侧 6pt 反推，仍是 -6。整体比原来散一档、
+            // 淡一半，和参照的观感对上。
+            .shadow(color: .black.opacity(0.07 * Double(state.progress)),
+                    radius: 16,
                     x: -6,
                     y: 0)
             // 横向：抽屉宽 × progress；纵向：-top，把整块板（含蒙层、圆角、

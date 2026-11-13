@@ -67,7 +67,8 @@ struct SessionDrawer: View {
 
     // MARK: 底色 [R83]
 
-    /// 抽屉底色。浅色 #fbfbfd —— 只比纯白暗一点点，白卡片摆上去才有薄阴影；
+    /// 抽屉底色。浅色 #f8f8f8 —— 中性灰，和参照图逐像素量出来的一致
+    /// （参照图整块抽屉 248,248,248，无渐变、无色偏）；白卡片摆上去才有薄阴影。
     /// 深色用 secondarySystemGroupedBackground。
     ///
     /// 单独提出来是因为它现在有三处要画（主体 + 上下两条补边），
@@ -76,7 +77,7 @@ struct SessionDrawer: View {
         Color(UIColor { trait in
             trait.userInterfaceStyle == .dark
                 ? UIColor.secondarySystemGroupedBackground
-                : UIColor(red: 0xfb / 255.0, green: 0xfb / 255.0, blue: 0xfd / 255.0, alpha: 1)
+                : UIColor(red: 0xf8 / 255.0, green: 0xf8 / 255.0, blue: 0xf8 / 255.0, alpha: 1)
         })
     }
 
