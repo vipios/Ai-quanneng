@@ -42,12 +42,23 @@ extension ContentView {
     /// `GeometryReader { geo in ... }`，再嵌一层的话内层读到的是「建议尺寸」
     /// 而不是分配尺寸，里面的 NavigationStack 会塌成 0 高（对话页整屏空白）。
     ///
-    /// 安全区不从这里往下传：`geo.safeAreaInsets` 在这棵树上可能是 0，
-    /// 传下去等于把卡片出血的开关关掉。改由 `DrawerContainer` 里挂的那个
-    /// 1×1 探针问「我们自己 view 的 window」要，见 `WindowMetricsStore`。
-    func stackLayoutWithDrawer(width: CGFloat) -> some View {
-        DrawerContainer(width: width) {
+    /// 安全区不读 `geo.safeAreaInsets`（在这棵树上恒为 0，见调用点注释），
+    /// 调用方传的是 `geo.frame(in: .global)` 量到的真实位置：
+    ///
+    ///   · `containerHeight` = `geo.size.height`（安全区那块矩形的高，839）
+    ///   · `top`             = `geo` 在窗口里的 minY（59）
+    ///   · `windowHeight`    = 整屏高（932）
+    func stackLayoutWithDrawer(width: CGFloat,
+                               containerHeight: CGFloat,
+                               top: CGFloat,
+                               windowHeight: CGFloat) -> some View {
+        DrawerContainer(width: width,
+                        containerHeight: containerHeight,
+                        top: top,
+                        windowHeight: windowHeight) {
             SessionDrawer(
+                topInset: top,
+                bottomInset: max(0, windowHeight - top - containerHeight),
                 sessions: sessions,
                 folders: folders,
                 groups: groupedSessionIDs(filteredSessions),

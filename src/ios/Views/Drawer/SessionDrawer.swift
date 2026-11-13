@@ -23,10 +23,12 @@ struct SessionDrawer: View {
     /// 每帧都变，整棵抽屉会跟着每帧重算，而抽屉只用它做「关自己」一件事。
     @Environment(\.drawerClose) private var drawerClose
 
-    /// 窗口实测值。订阅它是因为值由 `WindowMetricsProbe` 在 layout **之后**
-    /// 才报上来 —— 首帧读不到，必须在那时重算一次，否则补边高度和齿轮底边距
-    /// 会一直停在「安全区为 0」的旧值，看起来就跟没改过一样。
-    @ObservedObject private var windowStore = WindowMetricsStore.shared
+    /// 上下两条补边的高度：顶部 = 状态栏那 59，底部 = home indicator 那 34。
+    ///
+    /// 由 `ContentView` 从根 `GeometryReader` 的 `frame(in: .global)` 量出来传进来
+    /// （`geo.safeAreaInsets` 在这棵树上恒为 0，原因见调用点注释）。直接用。
+    let topInset: CGFloat
+    let bottomInset: CGFloat
 
     /// 会话数据。由 ContentView 传进来，抽屉不自己读库 —— 两处各读一次
     /// 就会出现「列表已更新、抽屉还是旧的」。
@@ -79,15 +81,6 @@ struct SessionDrawer: View {
                 : UIColor(red: 0xfb / 255.0, green: 0xfb / 255.0, blue: 0xfd / 255.0, alpha: 1)
         })
     }
-
-    // `WindowMetricsStore` 是 @MainActor 的（数据来自 UIWindow），
-    // 所以下面这几个都得跟着标，否则 Swift 6 严格并发下是编译错误。
-    //
-    // 用实例属性而不是 static：这三个值必须在 body 里**被读到**，
-    // 渲染依赖才挂得上。写成 static 的话 body 里读的是静态值，
-    // 探针把真值报上来时这棵子树不会重算 —— 表现就是「改了跟没改一样」。
-    @MainActor private var topInset: CGFloat { windowStore.current?.top ?? 0 }
-    @MainActor private var bottomInset: CGFloat { windowStore.current?.bottom ?? 0 }
 
     /// 列表底部要给齿轮让出的高度：齿轮直径 60 + 齿轮底边距 16 + 余量 10。
     ///
