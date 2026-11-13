@@ -584,12 +584,6 @@ struct ContentView: View {
                     //
                     // 宽度用外层这个 geo 直接传：再套一层 GeometryReader 会让
                     // 里面的 NavigationStack 拿不到尺寸约束，塌成 0 高。
-                    //
-                    // 安全区不读 `geo.safeAreaInsets`：它在这棵树上恒为 0 ——
-                    // 外层的安全区早被消费掉了，GeometryReader 拿到的已经是缩进
-                    // 之后的矩形（size = 839），身上没有 inset 可报。
-                    // 真话在 `frame(in: .global)`：那是这一层在窗口里的实际位置，
-                    // 15 Pro Max 上 minY = 59、maxY = 898 ⇒ top = 59、bottom = 34。
                     let g = geo.frame(in: .global)
                     stackLayoutWithDrawer(
                         width: geo.size.width,
