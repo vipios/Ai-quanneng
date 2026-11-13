@@ -35,8 +35,8 @@ extension ContentView {
     /// 而不是分配尺寸，里面的 NavigationStack 会塌成 0 高（对话页整屏空白）。
     ///
     /// 安全区不从这里往下传：`geo.safeAreaInsets` 在这棵树上可能是 0，
-    /// 传下去等于把卡片出血的开关关掉。改由 `DrawerContainer` 直接问窗口要，
-    /// 见 `windowMetrics()`。
+    /// 传下去等于把卡片出血的开关关掉。改由 `DrawerContainer` 里挂的那个
+    /// 1×1 探针问「我们自己 view 的 window」要，见 `WindowMetricsStore`。
     func stackLayoutWithDrawer(width: CGFloat) -> some View {
         DrawerContainer(width: width) {
             SessionDrawer(

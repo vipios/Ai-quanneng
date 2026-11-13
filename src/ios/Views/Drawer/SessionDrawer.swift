@@ -23,6 +23,11 @@ struct SessionDrawer: View {
     /// 每帧都变，整棵抽屉会跟着每帧重算，而抽屉只用它做「关自己」一件事。
     @Environment(\.drawerClose) private var drawerClose
 
+    /// 窗口实测值。订阅它是因为值由 `WindowMetricsProbe` 在 layout **之后**
+    /// 才报上来 —— 首帧读不到，必须在那时重算一次，否则补边高度和齿轮底边距
+    /// 会一直停在「安全区为 0」的旧值，看起来就跟没改过一样。
+    @ObservedObject private var windowStore = WindowMetricsStore.shared
+
     /// 会话数据。由 ContentView 传进来，抽屉不自己读库 —— 两处各读一次
     /// 就会出现「列表已更新、抽屉还是旧的」。
     let sessions: [ChatSession]
@@ -75,22 +80,26 @@ struct SessionDrawer: View {
         })
     }
 
-    // `DrawerWindow.metrics()` 是 @MainActor 的（要问 UIWindow），
-    // 所以这三个都得跟着标，否则 Swift 6 严格并发下是编译错误。
-    @MainActor private static var topInset: CGFloat { DrawerWindow.metrics()?.top ?? 0 }
-    @MainActor private static var bottomInset: CGFloat { DrawerWindow.metrics()?.bottom ?? 0 }
+    // `WindowMetricsStore` 是 @MainActor 的（数据来自 UIWindow），
+    // 所以下面这几个都得跟着标，否则 Swift 6 严格并发下是编译错误。
+    //
+    // 用实例属性而不是 static：这三个值必须在 body 里**被读到**，
+    // 渲染依赖才挂得上。写成 static 的话 body 里读的是静态值，
+    // 探针把真值报上来时这棵子树不会重算 —— 表现就是「改了跟没改一样」。
+    @MainActor private var topInset: CGFloat { windowStore.current?.top ?? 0 }
+    @MainActor private var bottomInset: CGFloat { windowStore.current?.bottom ?? 0 }
 
     /// 列表底部要给齿轮让出的高度：齿轮直径 60 + 齿轮底边距 + 余量 10。
     /// 底边距和 `settingsGear` 里用的是同一个式子，两边必须同源。
-    @MainActor private static var gearReserve: CGFloat { 60 + max(16, bottomInset + 16) + 10 }
+    @MainActor private var gearReserve: CGFloat { 60 + max(16, bottomInset + 16) + 10 }
 
     /// 补到屏幕边缘的一条底色。
     ///
     /// `alignment: .top` 的补边要往上顶（-h），`.bottom` 往下压（+h）——
     /// 方向反了就是「补边盖住内容」或者「补边跑到屏幕外」，两种都看不出原因。
     @MainActor
-    private static func paperCap(_ height: CGFloat, up: Bool) -> some View {
-        paper
+    private func paperCap(_ height: CGFloat, up: Bool) -> some View {
+        Self.paper
             .frame(height: height)
             .offset(y: up ? -height : height)
             .allowsHitTesting(false)
@@ -126,7 +135,7 @@ struct SessionDrawer: View {
                 // 齿轮上移了多少，这段留白就得跟着长多少，否则最后一条
                 // 会话会被它盖住点不到（齿轮是 overlay 里的绝对定位元素，
                 // 不参与 VStack 布局，VStack 完全不知道它占了地方）。
-                .padding(.bottom, Self.gearReserve)
+                .padding(.bottom, gearReserve)
             }
             .scrollDismissesKeyboard(.interactively)
         }
@@ -148,8 +157,8 @@ struct SessionDrawer: View {
         // 所以不再指望安全区传播，直接拿窗口实测值画两条同色块：
         // 一条往上顶 top，一条往下压 bottom。同色，接缝看不出来；
         // 取不到窗口时高度为 0，等于没加。
-        .background(alignment: .top) { Self.paperCap(Self.topInset, up: true) }
-        .background(alignment: .bottom) { Self.paperCap(Self.bottomInset, up: false) }
+        .background(alignment: .top) { paperCap(topInset, up: true) }
+        .background(alignment: .bottom) { paperCap(bottomInset, up: false) }
         // 右下角悬浮齿轮，点它开原版 SettingsSheet。
         .overlay(alignment: .bottomTrailing) {
             settingsGear
@@ -197,7 +206,7 @@ struct SessionDrawer: View {
         // 取决于容器的原点在哪 —— 写死 16 的那一版在后者上会正好压住
         // home indicator，用户看到的就是「齿轮被吞了一半」。
         // 用实测底部安全区兜住两种情形：34+16 = 50，离屏幕底足够远。
-        .padding(.bottom, max(16, Self.bottomInset + 16))
+        .padding(.bottom, max(16, bottomInset + 16))
         .accessibilityLabel("设置")
     }
 
