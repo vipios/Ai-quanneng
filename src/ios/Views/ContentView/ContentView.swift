@@ -66,7 +66,6 @@
 //
 
 import SwiftUI
-import UIKit
 
 private let shareLog = AppLogger(category: "Share")
 private let draftLog = AppLogger(category: "DraftSession")
@@ -584,15 +583,7 @@ struct ContentView: View {
                     //
                     // 宽度用外层这个 geo 直接传：再套一层 GeometryReader 会让
                     // 里面的 NavigationStack 拿不到尺寸约束，塌成 0 高。
-                    //
-                    // 安全区也从这里同步传下去 —— 卡片要出血到状态栏和
-                    // home indicator 那两条，靠的就是这两个数。为什么不再自己
-                    // 去量，见 `DrawerContainer` 里 `insets` 的注释。
-                    stackLayoutWithDrawer(
-                        width: geo.size.width,
-                        insets: geo.safeAreaInsets,
-                        windowHeight: max(geo.size.height, UIScreen.main.bounds.height)
-                    )
+                    stackLayoutWithDrawer(width: geo.size.width)
                 }
             }
             .overlay(alignment: .top) {
