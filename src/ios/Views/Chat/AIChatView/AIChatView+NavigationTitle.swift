@@ -67,7 +67,11 @@ extension AIChatView {
                     // 参照标题笔画左边缘 69.72pt，我们 67.00pt。第二行的小电脑
                     // 图标跟着一起右移（参照里图标 70.16、标题 69.72，本来就是
                     // 齐平的，所以只能整块挪，不能分两处补）。
-                    .padding(.leading, 2.7)
+                    // [2026-11-14 第九轮] 2.7 → 5.7。同机型第二组参照截图量的：
+                    // 参照标题左边缘 76.33、我们 69.33。其中 4pt 由气泡 40→44
+                    // 自然带来（principal 的可用区被气泡挤窄、左界右移 4），
+                    // 剩下 3pt 靠这里补：2.7 + 3 = 5.7。
+                    .padding(.leading, 5.7)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
@@ -262,7 +266,13 @@ extension AIChatView {
         // 上，用户报「绿点压倒了全能ai字体」。参照图量的：标题降部底边到
         // 小电脑图标顶边之间空了 18px、约 4.7pt，我们现在是负值（重叠）。
         // 改 -1 后第 2 行整体下移 3pt，视觉间隙回到 ~4pt，和参照一致。
-        return VStack(alignment: .leading, spacing: legacyLayout ? -1 : -2) {
+        //
+        // [2026-11-14 第九轮] -1 → 2.67。同机型第二组参照截图量的：参照标题
+        // 墨迹顶 72.33、第二行墨迹顶 94.67（间距 22.34）；我们是 68.00 / 86.67
+        // （间距 18.67）。差 3.67 就是这个 spacing 的增量。
+        // 注意它是**居中**布局：高度 +3.67 会让整栈顶边上移 1.835，所以下面
+        // 的 offset 同步 +1.835 → 12.17，标题才仍然落在 72.33。
+        return VStack(alignment: .leading, spacing: legacyLayout ? 2.67 : -2) {
             Button {
                 if let s = titlePillSession { titlePillEditSession = s }
             } label: {
@@ -324,7 +334,19 @@ extension AIChatView {
                     }
             }
             .buttonStyle(.plain)
-            .disabled(!canEditTitle)
+            // [2026-11-14 第八轮] `.disabled(!canEditTitle)` 换成 `.allowsHitTesting`。
+            //
+            // 起因：用户报「全能 AI 这几个字字体用黑色的」—— 标题本该是
+            // `ChatColors.primaryText`（`UIColor.label`，浅色模式纯黑 #000），
+            // 截图里却量到 #A1A1A1。逐像素核对：0 × 0.37 + 255 × 0.63 = 161，
+            // 正好对上 SwiftUI 对 disabled Button 叠加的那层 ~0.37 透明度。
+            // 草稿会话（`titlePillSession == nil`）时 `canEditTitle` 为 false，
+            // 整颗标题就被这层透明度冲成了浅灰。
+            //
+            // 用户要的是「点不动但字是黑的」：`allowsHitTesting` 只拦命中、
+            // 不参与渲染，颜色和可点状态从此解耦。锁定态另有外层
+            // `.allowsHitTesting(!titleIsVisuallyLocked)`，两者叠加仍然正确。
+            .allowsHitTesting(canEditTitle)
 
             // [T-navbar-group-provider-gap 2026-07-25] Legacy row gap 1 → -1:
             // on iOS 16-18 the provider·model line (row 2) sat flush against
@@ -504,7 +526,14 @@ extension AIChatView {
         // 6 是这一版的余量上限：实测 44pt 带内上下各剩约 6.3pt（截图上标题
         // 墨迹顶 46px、带底 112px，两边各 11px），挪 6pt 后第 2 行的墨迹正好
         // 落在带底上，再大就会真的越界被裁。
-        .offset(y: legacyLayout ? 6 : 0)
+        //
+        // [2026-11-14 第九轮] 6 → 12.17。同机型第二组参照截图量的：参照标题
+        // 墨迹顶 72.33pt、我们 68.00pt，差 4.33；再加上外层 spacing 从 -1 提到
+        // 2.67 让整栈（居中布局）上移的 1.835，合计 4.33 + 1.835 = 6.17，
+        // 6 + 6.17 = 12.17。
+        // 往上会撞状态栏被切（"?" 那个老 bug），往下不受限 —— UINavigationBar
+        // 不裁自己子视图的下沿，参照那边气泡底都探到 111（带底 103）也没事。
+        .offset(y: legacyLayout ? 12.17 : 0)
         // iOS 26+: fix height to match liquid-glass navbar; older OS: let it size naturally
         .modifier(NavTitleFrameModifier())
         // [T-navbar-title-fontsize] Lock the entire principal-toolbar

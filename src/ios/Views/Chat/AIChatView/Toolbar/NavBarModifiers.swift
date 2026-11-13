@@ -129,17 +129,20 @@ struct NavBarStyleModifier: ViewModifier {
 
 /// 导航栏左右两个按钮外面那圈白色圆气泡。
 ///
-/// 参数照参照图量：截图 347px 宽（对应 430pt 机型，比例 0.807；对应 393pt
-/// 机型，比例 0.883），圆直径 36px ⇒ **40pt**；纯白填充；底下有一圈很淡的
-/// 投影 —— 气泡正下方 1~2px 的亮度从 248 掉到 241，约 4% 黑、半径 4、下移 1，
-/// 就是那点「浮起来」的感觉。
+/// 参数照参照图量：同机型全屏截图（1290px 宽 / 430pt，3.0 px/pt）上圆直径
+/// 132px ⇒ **44pt**；左边距卡片 16.00pt、顶边 67.00pt；纯白填充；底下有一圈
+/// 很淡的投影 —— 约 5% 黑、半径 4、下移 1，就是那点「浮起来」的感觉。
 ///
 /// iOS 26 的液体玻璃导航栏本来就会给每个 bar item 套一圈玻璃，再画一个白圆
 /// 就是圆圈套圆圈，所以那一支原样返回，什么都不加。
 struct NavBubble: ViewModifier {
 
     /// 气泡直径。左上返回和右上「…」共用同一个数，别各写一份。
-    static let diameter: CGFloat = 40
+    ///
+    /// [2026-11-14 第九轮] 40 → 44。参照同机型全屏截图逐像素量的：气泡
+    /// bbox 132px = **44pt**，左边距卡片 16.00pt（这条我们本来就是 16.00，
+    /// 一分不差），顶边 67.00pt。我们原来 40pt，比参照小一圈。
+    static let diameter: CGFloat = 44
 
     /// 气泡要往下补多少 pt。
     ///
@@ -147,7 +150,13 @@ struct NavBubble: ViewModifier {
     /// 61.28pt、我们 55.67pt ⇒ 我们这棵导航栏的内容整体高了 5.6pt（右上那颗
     /// 也是 55.67，同一水平线，说明不是单个 item 的问题）。标题那边已经用
     /// `.offset(y: 6)` 补过了，气泡这里补同一个量，两者才又回到一条线上。
-    static let contentDrop: CGFloat = 5.6
+    ///
+    /// [2026-11-14 第九轮] 5.6 → 13.27，按同机型的第二组参照截图重算：
+    ///   · 不带补偿时圆的顶边 = 61.33 − 5.6 = 55.73
+    ///   · 直径 40 → 44，在 44pt 带里居中摆 ⇒ 顶边上移 (44−40)/2 = 2
+    ///   · 目标 67.00 ⇒ 13.27 = 67.00 − (55.73 − 2)
+    /// 13.27 是这么来的，不是拍脑袋凑的数。
+    static let contentDrop: CGFloat = 13.27
 
     /// 左上气泡左边距要收进去多少 pt。
     ///
@@ -259,24 +268,47 @@ struct NavBackBubbleButton: View {
 /// 子视图不拦截触摸，照常弹出菜单。
 final class NavBubbleBarItemView: UIView {
 
+    /// 真正那圈白圆。位置由自己定（容器顶边 + `contentDrop`），不靠
+    /// `transform` —— 原因见 `init` 里那段。
+    private let bubble = UIView()
     private let icon = UIImageView()
 
     init(symbolName: String, pointSize: CGFloat) {
         let d = NavBubble.diameter
         super.init(frame: CGRect(x: 0, y: 0, width: d, height: d))
 
-        backgroundColor = UIColor { trait in
+        // [2026-11-14 第八轮] 位移从 `self.transform` 改成「白圆作为子视图、
+        // 自己往下摆 `contentDrop`」。
+        //
+        // 起因：用户报「右边的气泡和左边的气泡距离上边缘不一样高」。
+        // 左上那颗的位移是 SwiftUI 的 `.offset(y:)`（纯绘制位移，几何上
+        // 精确、可预期）；右上这颗原来是 `transform = translation(0, drop)`，
+        // 但 customView 的 `frame` 是 UIKit 在每次 bar 布局时**重新设**的，
+        // 而有非 identity transform 的 view 一旦被赋 frame，frame 会按
+        // 「bounds 经 transform 变换后的外接矩形」反算，位置就不再等于
+        // 写死的那个 drop —— 两颗于是对不上。
+        //
+        // 子视图方案：外层容器永远保持 identity transform，交给 UIKit 居
+        // 中摆放；白圆的纵偏移在容器**内部**完成，UIKit 怎么设 frame 都
+        // 动不了它。
+        bubble.frame = CGRect(x: 0, y: NavBubble.contentDrop, width: d, height: d)
+        bubble.isUserInteractionEnabled = false
+        // 万一 UIKit 给 customView 的 frame 不是 40×40（有些版本会撑一点），
+        // 让圆在水平方向自己居中，别贴着左边。
+        bubble.autoresizingMask = [.flexibleLeftMargin, .flexibleRightMargin]
+        bubble.backgroundColor = UIColor { trait in
             trait.userInterfaceStyle == .dark
                 ? UIColor(white: 1, alpha: 0.10)
                 : UIColor.white
         }
-        layer.cornerRadius = d / 2
+        bubble.layer.cornerRadius = d / 2
         // 和 SwiftUI 那圈 `.shadow` 同参数：不让 masksToBounds 跟着圆角裁，
         // 否则投影一并被裁没。
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.05
-        layer.shadowRadius = 4
-        layer.shadowOffset = CGSize(width: 0, height: 1)
+        bubble.layer.shadowColor = UIColor.black.cgColor
+        bubble.layer.shadowOpacity = 0.05
+        bubble.layer.shadowRadius = 4
+        bubble.layer.shadowOffset = CGSize(width: 0, height: 1)
+        addSubview(bubble)
 
         icon.image = UIImage(
             systemName: symbolName,
@@ -284,15 +316,9 @@ final class NavBubbleBarItemView: UIView {
         )
         icon.tintColor = UIColor(ChatColors.primaryText)
         icon.contentMode = .center
-        icon.frame = bounds
+        icon.frame = bubble.bounds
         icon.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(icon)
-
-        // [参照图对齐 2026-11-13 第七轮] 和左上气泡补同一个纵向量（5.6pt），
-        // 两个按钮才落在同一条水平线上（参照两个都是 61.28，我们两个都是
-        // 55.67）。用 transform 而不是改 frame：bar item 按 frame 摆位置，
-        // 动了 frame 会被下一次布局改回去；transform 只影响绘制和命中。
-        transform = CGAffineTransform(translationX: 0, y: NavBubble.contentDrop)
+        bubble.addSubview(icon)
     }
 
     @available(*, unavailable)
@@ -300,6 +326,15 @@ final class NavBubbleBarItemView: UIView {
 
     override var intrinsicContentSize: CGSize {
         CGSize(width: NavBubble.diameter, height: NavBubble.diameter)
+    }
+
+    /// 白圆往下探出了容器底部 `contentDrop`，默认的命中判定会在容器边界处
+    /// 就返回 false，那一条会点不到。按同一量把命中区往下放宽。
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        CGRect(x: 0,
+               y: 0,
+               width: bounds.width,
+               height: bounds.height + NavBubble.contentDrop).contains(point)
     }
 }
 
@@ -332,19 +367,27 @@ struct RelayStatusIcon: View {
         //
         // 原来是一个 ZStack(alignment: .topTrailing)，绿点按图标的**布局框**
         // 右上角对齐。问题是 SF Symbol 的布局宽度比墨迹宽一大截（12pt 的
-        // `desktopcomputer` 墨迹只有 ~11.7pt，框却有 20pt），绿点于是被推到
-        // 墨迹右边 7.7pt 之外 —— 实测就在 x 94..97.7，看着像浮在「中」字上面
+        // `desktopcomputer` 墨迹约 17.7pt，布局框还要再宽一圈），绿点于是被
+        // 推到墨迹右侧之外 —— 实测就在 x 94..97.7，看着像浮在「中」字上面
         // 的一颗绿点，而不是挂在显示器右上角。参照图里绿点右边缘正好和图标
         // 墨迹右边缘齐平（83.04 / 83.04）。
         //
-        // 先用 frame 把图标收紧到墨迹尺寸，overlay 的 .topTrailing 才真的是
-        // 墨迹角。12 × 10 是实测墨迹（11.7 × 9.5）四舍五入。
+        // 先把图标收紧到墨迹尺寸，overlay 的 .topTrailing 才真的是墨迹角。
+        // 12 × 10 是第七轮那版的实测值，第九轮按参照重算成 14.7 × 12.5。
         Image(systemName: "desktopcomputer")
-            // 12pt 不动：参照的图标宽是同一行文字 cap 的 1.38 倍，12pt 图标配
-            // 12pt 文字（cap 8.6）是 1.36 倍，正好对上。
-            .font(.system(size: 12))
+            // [2026-11-14 第九轮] 12 → 10pt，frame 12×10 → 14.7×12.5，按参照
+            // 逐像素重定：参照这一坨（图标+绿点）bbox 是 x 76.67..91.00、高
+            // 14.00，宽 **14.33**；我们原来 12pt 跑出来 17.67 宽，比参照胖
+            // 3.3pt，右边缘被顶到 83.67，把后面的文字整体推右、间距只剩 4.34。
+            //
+            // 10pt × (17.67 ÷ 12) = 14.73，正好落在参照的 14.33~14.67 上；
+            // 高度 15.00 × 10/12 = 12.5（比参照矮 1.5，SF Symbol 的长宽比改
+            // 不了，宽度对上了才是关键 —— 右边缘决定了后面文字的起点）。
+            // frame 取 14.7×12.5 让墨迹刚好填满，overlay 的 .topTrailing 才
+            // 真的是墨迹角，绿点不用再额外补偏移。
+            .font(.system(size: 10))
             .foregroundStyle(ChatColors.secondaryText)
-            .frame(width: 12, height: 10)
+            .frame(width: 14.7, height: 12.5)
             .overlay(alignment: .topTrailing) {
                 Circle()
                     .fill(online ? Self.onlineColor : Color.red)
