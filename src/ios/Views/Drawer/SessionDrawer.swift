@@ -23,13 +23,10 @@ struct SessionDrawer: View {
     /// 每帧都变，整棵抽屉会跟着每帧重算，而抽屉只用它做「关自己」一件事。
     @Environment(\.drawerClose) private var drawerClose
 
-    /// 上下两条补边的高度：顶部 = 状态栏那 59，底部 = home indicator 那 34。
-    ///
-    /// 由 `ContentView` 从根 `GeometryReader` 的 `frame(in: .global)` 量出来传进来
-    /// （`geo.safeAreaInsets` 在这棵树上恒为 0，原因见调用点注释）。
-    /// 直接用，不再订阅什么 store —— 首帧就是对的。
-    let topInset: CGFloat
-    let bottomInset: CGFloat
+    /// 窗口实测值。订阅它是因为值由 `WindowMetricsProbe` 在 layout **之后**
+    /// 才报上来 —— 首帧读不到，必须在那时重算一次，否则补边高度和齿轮底边距
+    /// 会一直停在「安全区为 0」的旧值，看起来就跟没改过一样。
+    @ObservedObject private var windowStore = WindowMetricsStore.shared
 
     /// 会话数据。由 ContentView 传进来，抽屉不自己读库 —— 两处各读一次
     /// 就会出现「列表已更新、抽屉还是旧的」。
@@ -68,20 +65,29 @@ struct SessionDrawer: View {
     /// 搜索框焦点
     @FocusState private var searchFocused: Bool
 
-    // MARK: 底色 [R89]
+    // MARK: 底色 [R83]
 
-    /// 抽屉底色 = **聊天页底色的同一个来源**（`ChatColors.background`）。
+    /// 抽屉底色。浅色 #fbfbfd —— 只比纯白暗一点点，白卡片摆上去才有薄阴影；
+    /// 深色用 secondarySystemGroupedBackground。
     ///
-    /// [R89] 原来浅色写死 #fbfbfd（251,251,253），聊天页是 systemBackground 的纯白
-    /// （255,255,255），差 4 个色阶。抽屉从左边推进来之后两者紧挨着（不重叠、不留缝），
-    /// 这个差会在交界处显成一条竖线；更要紧的是状态栏那 59pt：那里露的就是这块纸色，
-    /// 一比就看出「和聊天背景不一样」。
-    ///
-    /// 读同一个色源之后，深浅色模式天然同步，不用再维护两份近似值 —— 白卡片摆上去
-    /// 少一层薄阴影的代价，换掉一条贯穿全屏的色差，划算。
-    ///
-    /// 单独提出来是因为它有三处要画（主体 + 上下两条补边），三处必须逐字相同。
-    static var paper: Color { ChatColors.background }
+    /// 单独提出来是因为它现在有三处要画（主体 + 上下两条补边），
+    /// 三处颜色必须逐字相同，否则补边会比主体亮一档、接缝反而更明显。
+    static var paper: Color {
+        Color(UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor.secondarySystemGroupedBackground
+                : UIColor(red: 0xfb / 255.0, green: 0xfb / 255.0, blue: 0xfd / 255.0, alpha: 1)
+        })
+    }
+
+    // `WindowMetricsStore` 是 @MainActor 的（数据来自 UIWindow），
+    // 所以下面这几个都得跟着标，否则 Swift 6 严格并发下是编译错误。
+    //
+    // 用实例属性而不是 static：这三个值必须在 body 里**被读到**，
+    // 渲染依赖才挂得上。写成 static 的话 body 里读的是静态值，
+    // 探针把真值报上来时这棵子树不会重算 —— 表现就是「改了跟没改一样」。
+    @MainActor private var topInset: CGFloat { windowStore.current?.top ?? 0 }
+    @MainActor private var bottomInset: CGFloat { windowStore.current?.bottom ?? 0 }
 
     /// 列表底部要给齿轮让出的高度：齿轮直径 60 + 齿轮底边距 16 + 余量 10。
     ///

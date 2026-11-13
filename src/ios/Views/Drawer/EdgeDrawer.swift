@@ -112,46 +112,10 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
     /// 这一轮拖拽里键盘是不是已经收过了（见 body 里的 onChange）。
     @State private var keyboardDismissed = false
 
-    /// 安全区三条实测值，全部由 `ContentView` 从根 `GeometryReader` 的
-    /// **`frame(in: .global)`** 量出来传进来。
-    ///
-    /// [R90] 为什么不读 `geo.safeAreaInsets`：它在这棵树上恒为 0 —— 外层早就把
-    /// 安全区消费掉了，GeometryReader 拿到的已经是缩进后的矩形，身上没有 inset 可报。
-    /// 前面几轮（connectedScenes 找窗口 / view.window.safeAreaInsets / 量自己矩形 /
-    /// 1×1 探针）全栽在这上面。
-    ///
-    /// 而 `frame(in: .global)` 说的是这一层在窗口坐标系里的真实位置：15 Pro Max 上
-    /// minY = 59、maxY = 898 ⇒ top = 59、bottom = 932 − 898 = 34。一次拿全。
-    private let top: CGFloat
-
-    /// 整屏高（含上下安全区）。
-    private let windowHeight: CGFloat
-
-    /// 这一层自己的高（= 窗口高 − 上 − 下，839）。抽屉帧就钉这么高。
-    private let containerHeight: CGFloat
-
-    /// 底部安全区：窗口高 − 上 − 容器高。
-    private var bottom: CGFloat {
-        max(0, windowHeight - top - containerHeight)
-    }
-
-    /// 卡片底边离屏幕底留出的高度 —— 让底部两个圆角露在屏幕里。
-    ///
-    /// 取 12：足够看见 24pt 圆角的弧线和阴影，又不会让聊天页底部空出一块。
-    ///
-    /// 是**实例属性**不是 `static let`：`DrawerContainer` 是泛型类型
-    /// （`<Drawer, Content>`），泛型里放静态存储属性编译不过 ——
-    /// "static stored properties not supported in generic types"，
-    /// 第一次推这一版就是这么挂在 CI 上的。
-    private let cardBottomLift: CGFloat = 12
-
-    /// 卡片顶边往上多出血的高度 —— 把圆角弧线整个藏到屏幕外。
-    ///
-    /// [R90] 板顶压到 0 之后圆角就露在台面上了：滑开时 `cornerRadius = 24 × p`，
-    /// 弧线正好拱在屏幕最上沿那两个角里，透出底下的窗口色。往上多让一个
-    /// 最大圆角半径（24）出去，弧线落在 y < 0，屏幕上那两个角就永远是实的。
-    /// 内容用同样的数补回来，位置不动。
-    private let cardTopBleed: CGFloat = 24
+    /// 窗口实测值。订阅它是因为值由 `WindowMetricsProbe` 在 layout 之后才报上来
+    /// —— 首帧拿不到，必须在拿到那一刻重算一次 body，否则卡片会一直停在
+    /// 安全区里等下一次别的状态变化。
+    @ObservedObject private var windowStore = WindowMetricsStore.shared
 
     /// 抽屉宽度。固定值而非比例：行高、内边距都按确定宽度排，
     /// 纯比例会让文字折行位置在机型之间跑掉。
@@ -170,15 +134,9 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
     private let content: Content
 
     init(width: CGFloat,
-         containerHeight: CGFloat,
-         top: CGFloat,
-         windowHeight: CGFloat,
          @ViewBuilder drawer: () -> Drawer,
          @ViewBuilder content: () -> Content) {
         self.totalWidth = width
-        self.containerHeight = containerHeight
-        self.top = top
-        self.windowHeight = windowHeight
 
         // 抽屉宽 = 屏宽 − 54，再受 348 上限约束：
         //   393pt（15/16/17）：339，右侧留 54
@@ -194,48 +152,51 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         self.content = content()
     }
 
+    /// 容器在窗口里的实测位置（UIKit 量出来的，不是安全区常数）。
+    ///
+    /// 数据源搬到 `WindowMetricsStore`（文件末尾）：抽屉底色、齿轮、卡片出血
+    /// 三处都要这组数，各写一份迟早漂。这里直接读订阅到的那份，
+    /// 而不是再套一层转发 —— 读 `windowStore.current` 同时就把渲染依赖挂上了。
+    @MainActor
+    private var windowMetrics: WindowMetrics? {
+        windowStore.current
+    }
+
     var body: some View {
         // 关闭入口每帧刷一次，指向当前 state。实例本身（环境值）不变，
         // 所以不引发重算，变的只是里面那个闭包。
         let s = state
         closeAction.action = { s.close() }
 
+        // 卡片出血靠这几个数，取一次整段 body 共用。
+        let m = windowMetrics
+
         // 对齐方式必须是 `.topLeading`：卡片和屏幕等高，比父容器（安全区）
         // 高一截，ZStack 按最大子视图定尺寸后自己也会长到整屏高。
         // 纵向默认居中 → 整层往下坠一个状态栏：卡片顶留一条、底部溢出被裁、
         // 抽屉跟着下坠把右下角齿轮推出屏幕。按顶边对齐后位置不再依赖高度差。
         return ZStack(alignment: .topLeading) {
-            // ── 抽屉层（最底下）──
+            // ── 抽屉层（最底下，静止不动）──
             //
-            // [R89] 抽屉和卡片一起往右走（见下面的 offset），中间不留缝也不重叠：
-            // 两块板像一整张纸被横向拉开。层次抽屉 zIndex 0、卡片 1，命中测试上层
-            // 优先，所以卡片底下那一侧不误触。
+            // 抽屉钉在 0，聊天界面像一张卡片被推走、露出它。
+            // 层次：抽屉 zIndex 0，卡片 1。命中测试上层优先，所以露出来的
+            // 那一条能点、被盖住的部分不误触。
             drawer
                 .frame(width: drawerWidth)
-                // 内容帧钉死 = 安全区那块矩形（839）。抽屉的底色**不靠这一帧**铺满：
-                // `SessionDrawer` 里已有 `paperCap` 上下各补一条，用传进去的
-                // topInset(59) / bottomInset(34) 把纸色一直铺到屏幕顶和底
-                // （用户看到的「抽屉背景到最顶部和最低部」就是它）。这里再套一层
-                // 同色底板是两套机制干一件事，不加。
+                .frame(maxHeight: .infinity)
+                // [R85] 高度用**量出来的**容器高，不再自己算
+                // 「窗口高 − 上 − 下」。三个数同源，不会因为其中某个是猜的就对不上。
                 //
-                // **不能用 maxHeight: .infinity**：那句话吃的是父容器提议的
-                // 尺寸，而卡片是硬尺寸，提议会被带成卡片高，抽屉跟着长高、
-                // 帧底边跑到屏幕外，齿轮（底边距常数 16，相对帧底算）被一起
-                // 推出去 —— 1.40 就是这么弄丢齿轮的。
-                .frame(height: containerHeight)
-                // 抽屉自己也跟着往右滑 —— 位移 = −抽屉宽 × (1 − progress)。
+                // 原来只有 `.frame(maxHeight: .infinity)`，意思是「用满父容器
+                // 提议的尺寸」。问题在于这条链上的提议并不等于可见区域：
+                // 卡片是 `frame(height: 整窗高)` 的硬尺寸，ZStack 按最大子视图
+                // 算出来也是整窗高，而抽屉层的原点又落在安全区顶 ——
+                // 于是抽屉实际占「59 … 59+932」，底下多出的一截跑到屏幕外，
+                // 顶上那 59pt 露出窗口底色。用户看到的就是
+                // 「背景没做到满屏，只做到状态栏下方」，齿轮也跟着被推出去半截。
                 //
-                // [R89] 以前抽屉是钉死的背景板：卡片从它上面滑走，只露出左边一条，
-                // 观感是「抽走」而不是「推进来」。要的是后者 —— 抽屉从屏幕左外侧
-                // 进来，把聊天界面推着往右走。
-                //
-                // 数字上是严丝合缝的：卡片右移 drawerWidth×p，抽屉右移
-                // drawerWidth×p − drawerWidth，两者的差值恒为 drawerWidth ⇒
-                // 抽屉右边缘永远贴住卡片左边缘。既不重叠（不用靠 zIndex 遮），
-                // 也不留缝，p 从 0 到 1 全程成立。
-                //
-                // 只动水平位移，垂直位置和高度一个数没变 —— 齿轮的落点不受影响。
-                .offset(x: -drawerWidth * (1 - state.progress))
+                // 取实测值之后跟提议尺寸无关，换机型不用改代码。
+                .frame(height: m?.containerHeight)
                 // 收起过程中不参与命中：动画刚起步露出的 1~2pt
                 // 会把聊天界面左边缘的点击吃掉。
                 .allowsHitTesting(state.progress > 0.02)
@@ -250,37 +211,20 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             //   · 变浅 —— 靠蒙一层底色，不靠模糊（见 .overlay）；
             //   · 阴影把卡片和抽屉分开。
             //
-            // 卡片是**比屏幕还大一块的板**：往上盖住状态栏，往下留 `cardBottomLift`
-            // 让底部两个圆角露出来。里面的 content 用同样的 padding 退回原位 ——
-            // 位置和原版一像素不差，变的只是这块板的底色、圆角和阴影从哪儿开始。
-            //
-            // [R90] 三个数（top / bottom / windowHeight）全部来自根 GeometryReader
-            // 的 frame(in: .global)，见上面属性注释。位置一目了然：
-            //   板顶   = 容器顶(59) − (top 59 + 出血 24)        = −24
-            //   板底   = 板顶 + (932 − 12 + 24)                 = 920
-            //   内容顶 = 板顶 + (top 59 + 出血 24)              = 59
-            //   内容底 = 板底 − (bottom 34 − 抬起 12)           = 898
-            // 内容两端还是 59…898，和原版完全一致，不会被挤动。
-            //
-            // 板顶取 −24 而不是 0：滑开时圆角半径长到 24，弧线会拱进屏幕最上沿
-            // 那两个角里、透出底下的窗口色 —— 那正是「状态栏那里有明显变化」的
-            // 另一种长相。多让一个半径出去，弧线落在屏幕外，墨迹从头到尾是实的。
-            //
-            // `top == 0` 说明这一层本来就贴着屏幕顶（没有状态栏可让），那就整套
-            // 退化成「不出血」：板高 = 容器高、不偏移、不加 padding。宁可维持现状，
-            // 也不能把聊天页推歪 —— 这是前几轮反复翻车的唯一理由。
+            // 卡片是和屏幕等大的板：出血量从窗口拿，再用硬 frame 撑到整屏高，
+            // 里面的 content 自己加 padding 退回安全区，导航栏/返回键/列表
+            // inset 一点不动。ZStack 已是 `.topLeading`，卡片顶边贴在父容器
+            // 顶边（y = top），所以 offset 只需上移 top，卡片就正好整屏。
+            // 取不到窗口信息时 height 传 nil、offset 传 0：宁可维持现状，
+            // 也绝不把聊天页弄没。
             ZStack(alignment: .top) {
                 Color(UIColor.systemBackground)
                 content
-                    .padding(.top, top > 0 ? top + cardTopBleed : 0)
-                    .padding(.bottom, top > 0 ? max(0, bottom - cardBottomLift) : 0)
+                    .padding(.top, m?.top ?? 0)
+                    .padding(.bottom, m?.bottom ?? 0)
             }
-            .frame(width: totalWidth,
-                   height: top > 0
-                        ? max(0, windowHeight - cardBottomLift + cardTopBleed)
-                        : containerHeight,
-                   alignment: .top)
-            .offset(y: top > 0 ? -(top + cardTopBleed) : 0)
+            .frame(width: totalWidth, height: m?.height, alignment: .top)
+            .offset(y: -(m?.top ?? 0))
             // 「越走越浅」靠这层底色蒙出来，只改 alpha，一次合成。
             //
             // 不用 `.opacity`：卡片不透明，整张降透明度会把底下的抽屉右缘
@@ -356,6 +300,18 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         // `.frame(maxHeight: .infinity)` 只是用满提议尺寸，不会压扁内容；
         // 卡片超出部分照样画出来（SwiftUI 默认不裁），出血不受影响。
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // ── 容器实测值的探针 ──
+        //
+        // [R85] 挂在 `.background` 上而不是当 ZStack 的子视图：
+        // ZStack 会按最大的子视图（整屏高的卡片）定自己的内容尺寸，铺满型的
+        // 子视图跟着长到 932，量出来就只对得上顶边、底边变成负数。
+        // `.background` 拿到的尺寸恰好是**这个 frame 的尺寸**（= 安全区那块
+        // 矩形），量出来的 top / bottom 才是真的两条出血量。
+        // 透明、不接触摸，纯粹一个测量点。
+        .background {
+            WindowMetricsProbe()
+                .allowsHitTesting(false)
+        }
         .environmentObject(state)
         .environment(\.drawerClose, closeAction)
         // 抽屉出来就收键盘：键盘占住下半截 + 压缩安全区，抽屉会显得变小。
@@ -655,5 +611,133 @@ private struct EdgePanOverlay: UIViewRepresentable {
             // 抽屉关着：必须往右拖。
             return velocity.x > 0
         }
+    }
+}
+
+// MARK: - 窗口实测值（抽屉这一层的唯一来源）
+
+/// 一组窗口实测值。
+///
+/// 用结构体而不是元组：要判等，元组判等得手写。
+///
+/// [R85] 这里的 `top` / `bottom` **不再是 `safeAreaInsets`**，而是「我们这一层
+/// 在窗口里实际占到哪」量出来的两条边距：
+///   · top    = 容器顶边到窗口顶边的距离；
+///   · bottom = 容器底边到窗口底边的距离。
+/// 两者在正常机型上正好等于安全区（59 / 34），但来源完全不同 —— 一个是「问系统
+/// 要一个本该是多少的常数」，一个是「量自己现在在哪」。前者会被状态栏插件窗口、
+/// 被 `additionalSafeAreaInsets`、被任何一层 `.frame` 干扰，后者不会：
+/// 量出来是多少就是多少。
+struct WindowMetrics: Equatable {
+    /// 容器顶边到窗口顶边的距离。卡片要上移这么多才是整屏。
+    var top: CGFloat
+    /// 容器底边到窗口底边的距离。
+    var bottom: CGFloat
+    /// 容器宽（= 屏幕宽）。
+    var width: CGFloat
+    /// 窗口高。卡片高度直接用这个。
+    var height: CGFloat
+    /// 容器自己的高（= 窗口高 − 上下两条）。抽屉高度直接用这个。
+    var containerHeight: CGFloat
+}
+
+/// 全局唯一一份窗口实测值，由 `WindowMetricsProbe` 提供。
+@MainActor
+final class WindowMetricsStore: ObservableObject {
+
+    static let shared = WindowMetricsStore()
+
+    @Published private(set) var current: WindowMetrics?
+
+    private init() { }
+
+    /// 收下一组实测值（几何量，不是安全区）。
+    ///
+    /// 这里只挡「还没量出来」：宽或高为 0 说明探针还没进布局，报了也是废数据。
+    /// 不再挡 `top == 0 && bottom == 0` —— 几何上真的是 0 就说明容器本来就铺满
+    /// 整个窗口，那时光出血量就该是 0，挡掉反而会让卡片停在原地。
+    func apply(top: CGFloat, bottom: CGFloat, width: CGFloat, height: CGFloat) {
+        guard width > 0, height > 0, bottom.isFinite, top.isFinite else { return }
+        let m = WindowMetrics(top: max(0, top),
+                              bottom: max(0, bottom),
+                              width: width,
+                              height: height,
+                              containerHeight: max(0, height - max(0, top) - max(0, bottom)))
+        if current != m { current = m }
+    }
+}
+
+/// 铺满容器的透明宿主，只做一件事：把「自己在窗口里的矩形」报给
+/// `WindowMetricsStore`。
+///
+/// 为什么量自己而不是问窗口要安全区：见 `WindowMetrics` 的注释。这个探针和
+/// 抽屉、卡片同处一个 ZStack（容器就是那个 ZStack），所以它量到的矩形就是容器
+/// 矩形 —— 一次测量同时给出上下两条出血量和容器高，不依赖任何系统常数。
+struct WindowMetricsProbe: UIViewRepresentable {
+
+    final class ProbeView: UIView {
+
+        /// 上次报上去的位置。相同就不再报 —— 这个比较就是全部节流。
+        ///
+        /// [R85] 上一版用的是「最多补报 3 次」的计数器，那是个真 bug：
+        /// 开头几次 `didMoveToWindow` / `updateUIView` 都发生在安全区还没算出来
+        /// 的时候，三次全烧在 (0,0) 上，等真正的安全区下来时 `retriesLeft` 已经
+        /// 是 0，静默 return —— 表现就是「改了跟没改一样」。
+        /// 改成比数值：值没变就是零成本返回，值变了才建 Task，两头都对。
+        private var lastFrame: CGRect = .null
+        private var lastWindow: CGSize = .zero
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            report()
+        }
+
+        // 转屏、分屏、状态栏高度变化、抽屉被推来推去，最终都会走到布局。
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            report()
+        }
+
+        /// 把值报上去。
+        ///
+        /// 推迟一拍再写：这些回调都发生在 SwiftUI 的更新 / 布局过程中，同步改
+        /// `@Published` 会打「Publishing changes from within view updates」，
+        /// 严重时 AttributeGraph 直接成环。闭包里只带纯数据类型，不带 UIView。
+        func report() {
+            guard let window, bounds.width > 0, bounds.height > 0 else { return }
+            let frame = convert(bounds, to: window)
+            let win = window.bounds.size
+            guard win.height > 0, win.width > 0,
+                  frame.height > 0, frame.width > 0 else { return }
+            guard frame != lastFrame || win != lastWindow else { return }
+            lastFrame = frame
+            lastWindow = win
+            // 顶部再跟这个窗口自己认的安全区取一次大的。
+            //
+            // 不为别的，就为「宁可多吃一截，也绝不留一条缝」：逻辑上的正确值
+            // 就是 frame.minY，取 max 只在两者不一致时生效（说明布局还没稳定），
+            // 而多吃的方向只会让卡片往上盖、把可能出现的那条缝盖掉。
+            // 底部不这么干 —— 底部多算会压到列表内容，比留一条缝更难受。
+            let top = max(frame.minY, window.safeAreaInsets.top)
+            let bottom = win.height - frame.maxY
+            Task { @MainActor in
+                WindowMetricsStore.shared.apply(top: top, bottom: bottom,
+                                                width: frame.width, height: win.height)
+            }
+        }
+    }
+
+    func makeUIView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        return view
+    }
+
+    func updateUIView(_ view: ProbeView, context: Context) {
+        // 可以无条件调：`report()` 第一件事就是比数值，没变直接返回，
+        // 不建 Task。拖动抽屉时这里每帧都会进来，但每帧都是一次 CGRect 比较。
+        view.report()
     }
 }
