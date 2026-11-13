@@ -66,6 +66,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 private let shareLog = AppLogger(category: "Share")
 private let draftLog = AppLogger(category: "DraftSession")
@@ -583,7 +584,23 @@ struct ContentView: View {
                     //
                     // 宽度用外层这个 geo 直接传：再套一层 GeometryReader 会让
                     // 里面的 NavigationStack 拿不到尺寸约束，塌成 0 高。
-                    stackLayoutWithDrawer(width: geo.size.width)
+                    //
+                    // ── 安全区为什么不读 `geo.safeAreaInsets` ──
+                    // [R90] 它在这棵树上恒为 0：外层的安全区早就被消费掉了，
+                    // GeometryReader 拿到的已经是缩进之后的矩形（size = 839），
+                    // 它自己身上没有剩下任何 inset 可报。前面几轮全栽在这里。
+                    //
+                    // 真话在 `geo.frame(in: .global)`：那是这一层在窗口坐标系里
+                    // 的实际位置。15 Pro Max 上 minY = 59、maxY = 898，
+                    // 于是 top = 59、bottom = 932 − 898 = 34，两个数一次拿全，
+                    // 不猜、不异步、不依赖任何 UIKit 取法。
+                    let g = geo.frame(in: .global)
+                    stackLayoutWithDrawer(
+                        width: geo.size.width,
+                        containerHeight: geo.size.height,
+                        top: g.minY,
+                        windowHeight: max(UIScreen.main.bounds.height, g.maxY)
+                    )
                 }
             }
             .overlay(alignment: .top) {
