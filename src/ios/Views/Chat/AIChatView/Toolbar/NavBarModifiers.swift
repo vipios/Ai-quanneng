@@ -141,6 +141,19 @@ struct NavBubble: ViewModifier {
     /// 气泡直径。左上返回和右上「…」共用同一个数，别各写一份。
     static let diameter: CGFloat = 40
 
+    /// 气泡要往下补多少 pt。
+    ///
+    /// [参照图对齐 2026-11-13 第七轮] 全屏截图逐像素量的：参照左上气泡顶边
+    /// 61.28pt、我们 55.67pt ⇒ 我们这棵导航栏的内容整体高了 5.6pt（右上那颗
+    /// 也是 55.67，同一水平线，说明不是单个 item 的问题）。标题那边已经用
+    /// `.offset(y: 6)` 补过了，气泡这里补同一个量，两者才又回到一条线上。
+    static let contentDrop: CGFloat = 5.6
+
+    /// 左上气泡左边距要收进去多少 pt。
+    ///
+    /// 参照 15.3pt、我们 19.7pt。收 4.4 后落回 15.3，和参照的左边距一致。
+    static let leadingInset: CGFloat = -4.4
+
     /// 白底在深色模式下会刺眼，深色用 10% 白叠在卡片底色上。
     static var fill: Color {
         Color(UIColor { trait in
@@ -162,6 +175,11 @@ struct NavBubble: ViewModifier {
                         .shadow(color: .black.opacity(0.05), radius: 4, y: 1)
                 }
                 .contentShape(Circle())
+                // 位置按参照补：往左 4.4（19.7 → 15.3）、往下 5.6（55.7 → 61.3）。
+                // 只在这一支里补 —— iOS 26 的液体玻璃导航栏几何不同，那边原样直通。
+                // 右上「…」那颗在 `NavBubbleBarItemView` 里补同一个纵向量，
+                // 两个按钮必须落在同一条线上。
+                .offset(x: Self.leadingInset, y: Self.contentDrop)
         }
     }
 }
@@ -269,6 +287,12 @@ final class NavBubbleBarItemView: UIView {
         icon.frame = bounds
         icon.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(icon)
+
+        // [参照图对齐 2026-11-13 第七轮] 和左上气泡补同一个纵向量（5.6pt），
+        // 两个按钮才落在同一条水平线上（参照两个都是 61.28，我们两个都是
+        // 55.67）。用 transform 而不是改 frame：bar item 按 frame 摆位置，
+        // 动了 frame 会被下一次布局改回去；transform 只影响绘制和命中。
+        transform = CGAffineTransform(translationX: 0, y: NavBubble.contentDrop)
     }
 
     @available(*, unavailable)
@@ -304,28 +328,35 @@ struct RelayStatusIcon: View {
     private var online: Bool { relay.device != nil }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Image(systemName: "desktopcomputer")
-                // [参照图对齐 2026-11-13 第三轮] 12pt 不动。参照图逐像素量的：
-                // 显示器屏幕 47×36px、同一行的文字 cap 高 34px ⇒ 图标宽是文字
-                // cap 的 1.38 倍。`desktopcomputer` 在 12pt 下约 13pt 宽，配
-                // 11pt 的文字（cap 7.8）是 1.67 倍 —— 比参照略大但同一档。
-                // 之前配 9pt 文字时是 2.0 倍，看着才是「图标抢戏」。
-                .font(.system(size: 12))
-                .foregroundStyle(ChatColors.secondaryText)
-            Circle()
-                .fill(online ? Self.onlineColor : Color.red)
-                .frame(width: 4, height: 4)
-                // [参照图对齐 2026-11-13 第三轮] 上移量 2 → 1。参照里绿点只
-                // 比图标顶边高 2px（整颗图标 45px 高，即 4%，换算到 12pt 图标
-                // 上是半个点），我们突出去 2pt 才是「绿点压到标题」的直接原因：
-                // 等于把 -4pt 的行间距又吃掉 2pt。压到 1pt 后它只探头一点点，
-                // 和参照一样半挂在线框上。
-                .offset(x: 2, y: -1)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("中转站"))
-        .accessibilityValue(Text(online ? AppLocalized("Connected") : AppLocalized("Disconnected")))
+        // [参照图对齐 2026-11-13 第七轮] 改成「图标定尺寸 + overlay 贴点」。
+        //
+        // 原来是一个 ZStack(alignment: .topTrailing)，绿点按图标的**布局框**
+        // 右上角对齐。问题是 SF Symbol 的布局宽度比墨迹宽一大截（12pt 的
+        // `desktopcomputer` 墨迹只有 ~11.7pt，框却有 20pt），绿点于是被推到
+        // 墨迹右边 7.7pt 之外 —— 实测就在 x 94..97.7，看着像浮在「中」字上面
+        // 的一颗绿点，而不是挂在显示器右上角。参照图里绿点右边缘正好和图标
+        // 墨迹右边缘齐平（83.04 / 83.04）。
+        //
+        // 先用 frame 把图标收紧到墨迹尺寸，overlay 的 .topTrailing 才真的是
+        // 墨迹角。12 × 10 是实测墨迹（11.7 × 9.5）四舍五入。
+        Image(systemName: "desktopcomputer")
+            // 12pt 不动：参照的图标宽是同一行文字 cap 的 1.38 倍，12pt 图标配
+            // 12pt 文字（cap 8.6）是 1.36 倍，正好对上。
+            .font(.system(size: 12))
+            .foregroundStyle(ChatColors.secondaryText)
+            .frame(width: 12, height: 10)
+            .overlay(alignment: .topTrailing) {
+                Circle()
+                    .fill(online ? Self.onlineColor : Color.red)
+                    // 参照逐像素量的：绿点直径 3.3pt（bbox 3.55 × 3.11），
+                    // 右边缘和图标墨迹右边缘齐平，顶边只比图标顶边低 0.4pt。
+                    // 原来是 4pt、还往外甩 2pt，既大又飘。
+                    .frame(width: 3.3, height: 3.3)
+                    .offset(x: -0.2, y: 0.5)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("中转站"))
+            .accessibilityValue(Text(online ? AppLocalized("Connected") : AppLocalized("Disconnected")))
     }
 }
 

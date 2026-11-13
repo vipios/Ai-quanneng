@@ -63,6 +63,11 @@ extension AIChatView {
             HStack(spacing: 0) {
                 titleView
                     .frame(maxWidth: cap, alignment: .leading)
+                    // [参照图对齐 2026-11-13 第七轮] 整块右移 2.7pt。
+                    // 参照标题笔画左边缘 69.72pt，我们 67.00pt。第二行的小电脑
+                    // 图标跟着一起右移（参照里图标 70.16、标题 69.72，本来就是
+                    // 齐平的，所以只能整块挪，不能分两处补）。
+                    .padding(.leading, 2.7)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
@@ -336,7 +341,7 @@ extension AIChatView {
                 // 红/绿状态点，紧接着就是「中转站 · 模型名」+ 思考强度 pill
                 // （用户原话：把原来那行直接挪到小电脑后面）。设备名/中转站
                 // 地址那行整行删掉，不再单独占一行。
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     RelayStatusIcon()
                         // 和右边文字、pill 用同一个下留白，三者才落在同一条
                         // 视觉带上（图标本身没有 descender，对齐全靠这个）。
@@ -365,10 +370,10 @@ extension AIChatView {
                             Image(systemName: symbol)
                                 .resizable()
                                 .scaledToFit()
-                                // [参照图对齐 2026-11-13 第三轮] 跟着这一行
-                                // 文字从 9 涨到 11pt（这里取的是字号的 cap
-                                // 高，用来把箭头缩成和旁边字母一样高）。
-                                .frame(height: ceil(UIFont.systemFont(ofSize: 11).capHeight))
+                                // [参照图对齐 2026-11-13 第七轮] 跟着这一行
+                                // 文字 11 → 12pt（这里取的是字号的 cap 高，
+                                // 用来把箭头缩成和旁边字母一样高）。
+                                .frame(height: ceil(UIFont.systemFont(ofSize: 12).capHeight))
                                 .foregroundStyle(Color.orange)
                                 // Match the row text's descender clearance so
                                 // the badge centers on the same visual band.
@@ -387,7 +392,7 @@ extension AIChatView {
                             // 导航带的边上（就是历史上标题被切、字形变 "?" 的
                             // 那个 bug），所以取 11 —— 比例 0.69，够近也够安全。
                             Text("\(detail.providerLabel) · \(detail.modelName)")
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(ChatColors.secondaryText)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
@@ -436,7 +441,11 @@ extension AIChatView {
                     }
                 }
             }
-            .padding(.horizontal, 8)
+            // [参照图对齐 2026-11-13 第七轮] `.padding(.horizontal, 8)` → 只留
+            // 尾部 8pt。参照里第二行的小电脑图标左边缘和标题左边缘是齐平的
+            // （70.16 vs 69.72，差 0.4pt 属于字形侧边距）；我们原来被这 8pt
+            // 左边距推到了 76，比标题多缩进 9pt，看着像「第二行整体缩了一格」。
+            .padding(.trailing, 8)
             // [T-navbar-title-model-gap] 3 → 2 on legacy: part of the
             // height-neutral trade that funds the wider title→model gap.
             // [参照图对齐 2026-11-13 第三轮] 2 → 1：这一行字号抬到 11pt 后
@@ -520,8 +529,8 @@ extension AIChatView {
     @ViewBuilder
     private var thinkingLevelBadge: some View {
         let level = vm.currentThinkingLevel
-        // Sits on nav-bar row 2 (the 11pt "provider · model" line). Kept a
-        // touch smaller than that text (10pt / 7px icon) so it stays the most
+        // Sits on nav-bar row 2 (the 12pt "provider · model" line). Kept a
+        // touch smaller than that text (11pt / 7px icon) so it stays the most
         // compact label in the title and never larger than the "is thinking…"
         // intensity pill in the message list.
         //
@@ -534,11 +543,10 @@ extension AIChatView {
                 .resizable()
                 .frame(width: 7, height: 7)
                 .opacity(level.isEnabled ? 1.0 : 0.4)
-            // [参照图对齐 2026-11-13 第三轮] 8 → 10pt，图标 6 → 7pt：参照图里
-            // 那个 [💡关闭] pill 的字和左边「中转站 · 模型名」几乎一样大，
-            // 只小半号；我们原来是 9/8，差得太多，看着是两套字号。
+            // [参照图对齐 2026-11-13 第七轮] 10 → 11pt：这一行的正文从 11 抬到
+            // 12 了，pill 不跟着抬就会变成「两套字号」。保持比正文小一号。
             Text(level.displayName)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
         }
         .foregroundStyle(ChatColors.secondaryText)
         .padding(.horizontal, 4)
