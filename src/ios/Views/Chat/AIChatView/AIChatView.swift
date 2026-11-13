@@ -783,6 +783,11 @@ struct AIChatView: View {
                 }
         }
         .navigationBarTitleDisplayMode(.inline)
+        // [参照图对齐 2026-11-13] 左上角换成参照那种白圆气泡返回按钮。
+        // 隐藏系统返回按钮只在 iOS 26 以下发生（见 showsCustomBackButton），
+        // 且本项目的左边缘右滑早已归抽屉所有，返回本来就只有点按钮一条路，
+        // 所以这里不丢任何操作方式。
+        .navigationBarBackButtonHidden(showsCustomBackButton)
         // [T-ios-navbar-toolbar-host] The ENTIRE toolbar now lives inside an
         // equatable-gated host child. Root cause of the mid-streaming "..."
         // menu refresh (4th attempt, this one from instrumentation): with
@@ -804,8 +809,11 @@ struct AIChatView: View {
         // wrapping is the only guaranteed path to ==.
         .background(
             ChatToolbarHost(key: chatToolbarKey,
+                            showsLeading: showsCustomBackButton,
                             showsTrailing: !ChatNavMenuBarItem.isEnabled,
-                            title: {
+                            leading: {
+                NavBackBubbleButton()
+            }, title: {
                 chatNavPrincipalContent
             }, trailing: {
                 trailingMenu

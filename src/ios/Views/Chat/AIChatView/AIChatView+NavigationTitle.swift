@@ -56,14 +56,34 @@ extension AIChatView {
             titleView
                 .frame(maxWidth: cap)
         } else {
+            // [参照图对齐 2026-11-13] 原来是左右各一个 Spacer 把标题夹在
+            // 正中间；参照是左对齐（标题紧贴在左上角气泡右边），所以右边
+            // 只留一个 Spacer，把内容顶到左边。cap 不动：省下来的宽度是
+            // 留给左边那个 40pt 气泡的。
             HStack(spacing: 0) {
-                Spacer(minLength: 0)
                 titleView
-                    .frame(maxWidth: cap)
+                    .frame(maxWidth: cap, alignment: .leading)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
         }
+    }
+
+    /// [参照图对齐 2026-11-13] 左上角要不要用自绘的返回气泡（并隐藏系统
+    /// 那个返回按钮）。
+    ///
+    /// 两个条件同时成立才显示：
+    ///  · **iOS 26 以下**：液体玻璃导航栏会给每个 bar item 自己包一圈圆形
+    ///    玻璃，系统返回按钮本身就是气泡，再叠一个白圆就是圆圈套圆圈；
+    ///  · **compact 宽度**：只有被 push 进来的页面才有「返回」。iPad 分栏的
+    ///    详情页是栈底，原本就没有返回按钮，画一个会是个按不动的死按钮。
+    ///
+    /// 隐藏系统返回按钮不会影响返回手势 —— 本项目的左边缘右滑已经归抽屉
+    /// 所有（`ContentView+Drawer.swift`：`interactivePopGesture.isEnabled`
+    /// 被置 false 并对抽屉 pan 挂了永久失败依赖），返回只能点按钮。
+    var showsCustomBackButton: Bool {
+        if #available(iOS 26, *) { return false }
+        return hSizeClass == .compact
     }
 
     /// [T-ios-navbar-toolbar-host] Everything the toolbar DISPLAYS (principal
@@ -174,18 +194,11 @@ extension AIChatView {
 
     private var titleView: some View {
         let display = SessionModelDisplay(store: configStore, draftGroupId: vm.initialGroupId)
-        let modelName = display.displayName(for: vm.sessionId)
-        let isGroupBound = display.isGroupBound(for: vm.sessionId)
         let resolved = display.resolvedDetail(for: vm.sessionId)
-        let hasBinding = vm.sessionId != nil && configStore.binding(for: vm.sessionId!) != nil
-        let hasProviders = !configStore.instances.isEmpty
 
-        let isAuthed = hasBinding || hasProviders
-        // [T-quota-low-dot] The entry this chat runs on (cached per config /
-        // auth revision), for the status dot's quota warning.
-        let currentEntry = vm.resolveCurrentEntry()
-        let quotaLow = isAuthed && ModelQuotaStatusDot.isLow(instanceId: currentEntry?.providerInstanceId,
-                                                             modelId: currentEntry?.baseModel.id)
+        // 模型名行（原来的第 2 行）已经按参照换成「小电脑 + 中转站」，
+        // 它带的那几个值跟着一起删了：modelName / isGroupBound / isAuthed /
+        // currentEntry / quotaLow 现在都没有读者，留着只是编译告警。
 
         let legacyLayout = !ProcessInfo.processInfo.isiOSAppOnMac && {
             if #available(iOS 26, *) { return false }
@@ -239,7 +252,7 @@ extension AIChatView {
         // 4 → 1 and group vertical padding 3 → 2 on legacy), so the stack's
         // total height — the thing the May-18/19/20 clip saga fought — is
         // unchanged and the top-clip fix does not regress.
-        return VStack(spacing: legacyLayout ? -3 : -2) {
+        return VStack(alignment: .leading, spacing: legacyLayout ? -4 : -2) {
             Button {
                 if let s = titlePillSession { titlePillEditSession = s }
             } label: {
@@ -275,7 +288,13 @@ extension AIChatView {
                     //                 naturally has breathing room above
                     //                 and below.
                     // iOS 26 path unchanged (16pt works inside liquid-glass).
-                    .font(.system(size: legacyLayout ? 13 : 16, weight: .semibold))
+                    // [参照图对齐 2026-11-13] 字号从 13pt 提到 16pt：参照的
+                    // 标题大写字母高 10px，按截图比例（347/430）换算是 17pt，
+                    // 但我们的导航栏是 iOS 16-18 的 44pt 定高带，17 会把三行
+                    // 顶穿（就是历史上 "?" 那个裁切 bug）。16 是既贴参照、
+                    // 又塞得进 44pt 的最大值，配合外层 spacing -4 和
+                    // padding.top 6→4 把高度抵回来，总高只涨 0.5pt。
+                    .font(.system(size: 16, weight: .semibold))
                     .minimumScaleFactor(legacyLayout ? 0.85 : 1.0)
                     .foregroundStyle(ChatColors.primaryText)
                     .lineLimit(1)
@@ -307,65 +326,25 @@ extension AIChatView {
             // the 9pt row's cap headroom); the calibrated title↔group overlap
             // (outer -3) and the group pill's vertical padding are untouched.
             // iOS 26 keeps spacing 1 — the liquid-glass band has no crowding.
-            VStack(spacing: legacyLayout ? -1 : 1) {
+            VStack(alignment: .leading, spacing: legacyLayout ? -1 : 1) {
+                // [参照图对齐 2026-11-13 第二轮] 标题下面只留一行：小电脑 +
+                // 红/绿状态点，紧接着就是「中转站 · 模型名」+ 思考强度 pill
+                // （用户原话：把原来那行直接挪到小电脑后面）。设备名/中转站
+                // 地址那行整行删掉，不再单独占一行。
                 HStack(spacing: 4) {
-                    Button {
-                        showModelPicker = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            // [T-quota-low-dot] green / yellow (quota low) / orange (signed out).
-                            ModelQuotaStatusDot(isAuthed: isAuthed,
-                                                instanceId: currentEntry?.providerInstanceId,
-                                                modelId: currentEntry?.baseModel.id)
-                            if isGroupBound {
-                                Image(systemName: "square.stack.3d.up")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(ChatColors.tertiaryText)
-                            }
-                            Text(modelName)
-                                .font(.caption2)
-                                .foregroundStyle(ChatColors.secondaryText)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 8, weight: .semibold))
-                                .foregroundStyle(ChatColors.tertiaryText)
-                        }
-                        .layoutPriority(-1)
-                    }
-                    .buttonStyle(.plain)
-                    // [T-ios-voiceover-labels] This label is assembled from a
-                    // status dot, an optional group glyph, the model name and a
-                    // chevron. Left alone VoiceOver reads those as disconnected
-                    // fragments ("square stack 3d up", "chevron down"), so
-                    // combine the row into one element and state what it is.
-                    // The connection state and group binding are carried as the
-                    // VALUE rather than folded into the label, so VoiceOver
-                    // keeps them distinguishable from the control's name.
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text("Model", comment: "VoiceOver label for the model picker button"))
-                    .accessibilityValue(Text(
-                        isGroupBound
-                            ? (isAuthed
-                                ? AppLocalized("\(modelName), group, signed in", comment: "VoiceOver value: model picker, group-bound, authenticated")
-                                : AppLocalized("\(modelName), group, not signed in", comment: "VoiceOver value: model picker, group-bound, not authenticated"))
-                            : (isAuthed
-                                ? AppLocalized("\(modelName), signed in", comment: "VoiceOver value: model picker, authenticated")
-                                : AppLocalized("\(modelName), not signed in", comment: "VoiceOver value: model picker, not authenticated"))
-                    ) + Text(quotaLow ? AppLocalized(", quota low", comment: "VoiceOver: appended to the model value when the model's quota or balance is low") : ""))
-                    .accessibilityHint(Text("Opens the model picker", comment: "VoiceOver hint for the model picker button"))
-                    .accessibilityAddTraits(.isButton)
-                }
+                    RelayStatusIcon()
+                        // 和右边文字、pill 用同一个下留白，三者才落在同一条
+                        // 视觉带上（图标本身没有 descender，对齐全靠这个）。
+                        .padding(.bottom, legacyLayout ? 1 : 4)
 
-                if let detail = resolved {
-                    // Row 2: "provider · model" + the thinking-level badge as a
-                    // SEPARATE tappable sibling (not nested in the model-picker
-                    // Button) so the badge opens ThinkingLevelSheetView while the
-                    // text still opens the model picker — mirroring how row 1's
-                    // model-name Button and badge were laid out. The model name
-                    // truncates first (layoutPriority(-1) + lineLimit(1)); the
-                    // badge keeps its intrinsic size and always shows in full.
-                    HStack(spacing: 4) {
+                    if let detail = resolved {
+                        // Row: "provider · model" + the thinking-level badge as a
+                        // SEPARATE tappable sibling (not nested in the model-picker
+                        // Button) so the badge opens ThinkingLevelSheetView while the
+                        // text still opens the model picker — mirroring how row 1's
+                        // model-name Button and badge were laid out. The model name
+                        // truncates first (layoutPriority(-1) + lineLimit(1)); the
+                        // badge keeps its intrinsic size and always shows in full.
                         // [T-codex-fast-mode] Speed badge in front of the resolved
                         // model line (row 3) while a faster tier applies.
                         // User-requested placement: this row names the actual
@@ -479,7 +458,11 @@ extension AIChatView {
         // OUTER stack shifts its rendered position downward without
         // resizing any individual row. iOS 26 leaves at 0 (liquid
         // glass centers correctly).
-        .padding(.top, legacyLayout ? 6 : 0)
+        // [参照图对齐 2026-11-13] 6 → 4：字号从 13 提到 16 吃掉约 3.5pt，外层
+        // spacing 又收紧了 1pt，这里让回 2pt，整块高度只涨 0.5pt —— 既拿到
+        // 参照的字号，又不会把三行顶出 44pt 的导航栏带（顶穿的表现是标题
+        // 上沿被切、个别字形变成 "?"）。
+        .padding(.top, legacyLayout ? 4 : 0)
         // iOS 26+: fix height to match liquid-glass navbar; older OS: let it size naturally
         .modifier(NavTitleFrameModifier())
         // [T-navbar-title-fontsize] Lock the entire principal-toolbar

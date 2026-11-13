@@ -155,17 +155,23 @@ struct ChatToolbarKey: Equatable {
 /// recreated by every parent pass (excluded from ==, same pattern as
 /// EquatableByValue/ChatTrailingMenu) so a key change always renders through
 /// the freshest parent state.
-struct ChatToolbarHost<Title: View, Trailing: View>: View, Equatable {
+struct ChatToolbarHost<Leading: View, Title: View, Trailing: View>: View, Equatable {
     let key: ChatToolbarKey
+    /// [参照图对齐 2026-11-13] 左上角自绘返回气泡要不要出现。iOS 26 的液体
+    /// 玻璃导航栏自带圆形玻璃，系统返回按钮本身就是气泡，那一支不显示。
+    var showsLeading = false
     /// [T-ios-navbar-menu-baritem] False while ChatNavMenuBarItemInstaller
     /// owns the "..." as a real UIBarButtonItem: the SwiftUI trailing item is
     /// then left out entirely, so the bridge has nothing of ours to push.
     var showsTrailing = true
+    @ViewBuilder let leading: () -> Leading
     @ViewBuilder let title: () -> Title
     @ViewBuilder let trailing: () -> Trailing
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        let eq = lhs.key == rhs.key && lhs.showsTrailing == rhs.showsTrailing
+        let eq = lhs.key == rhs.key
+            && lhs.showsLeading == rhs.showsLeading
+            && lhs.showsTrailing == rhs.showsTrailing
         #if DEBUG
         if !eq {
             // Name the exact field that broke equality so a false-negative
@@ -217,6 +223,9 @@ struct ChatToolbarHost<Title: View, Trailing: View>: View, Equatable {
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
             .toolbar {
+                if showsLeading {
+                    ToolbarItem(placement: .topBarLeading) { leading() }
+                }
                 ToolbarItem(placement: .principal) { title() }
                 if showsTrailing {
                     ToolbarItem(placement: .topBarTrailing) { trailing() }
@@ -855,10 +864,22 @@ struct ChatNavMenuBarItemInstaller: UIViewRepresentable {
         init(menu: ChatTrailingMenuButton) {
             inner = ChatTrailingMenuButton.Coordinator(parent: menu)
             let cfg = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-            item = UIBarButtonItem(image: UIImage(systemName: "ellipsis", withConfiguration: cfg), menu: nil)
-            // Same colour as ChatTrailingMenuButton. A bar item otherwise takes
-            // the app tint; iOS 26's glass hides that, iOS 16-18 would show it.
-            item.tintColor = UIColor(ChatColors.primaryText)
+            let symbol = UIImage(systemName: "ellipsis", withConfiguration: cfg)
+            if #available(iOS 26, *) {
+                // iOS 26 的液体玻璃会把 bar item 自己包成圆形玻璃，图标原样
+                // 交出去就行。
+                item = UIBarButtonItem(image: symbol, menu: nil)
+                // Same colour as ChatTrailingMenuButton. A bar item otherwise takes
+                // the app tint; iOS 26's glass hides that, iOS 16-18 would show it.
+                item.tintColor = UIColor(ChatColors.primaryText)
+            } else {
+                // [参照图对齐 2026-11-13] iOS 16-18：和左上角返回同款 40pt
+                // 白圆气泡。用 customView 而不是往 image 里拼圆 —— 圆底要
+                // 跟着深浅色切换（深色是 10% 白），拼进图片就得自己盯着
+                // trait 变化重画；customView 用动态 UIColor 自动跟。
+                item = UIBarButtonItem(customView: NavBubbleBarItemView(symbolName: "ellipsis",
+                                                                       pointSize: 14))
+            }
             item.accessibilityLabel = AppLocalized("More options")
             item.menu = ChatTrailingMenuButton.buildMenu(key: menu.key, coordinator: inner)
             inner.lastKey = menu.key
