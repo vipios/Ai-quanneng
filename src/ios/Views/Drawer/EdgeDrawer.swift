@@ -152,7 +152,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         self.content = content()
     }
 
-    /// 当前窗口的安全区和尺寸（UIKit 实测值）。
+    /// 容器在窗口里的实测位置（UIKit 量出来的，不是安全区常数）。
     ///
     /// 数据源搬到 `WindowMetricsStore`（文件末尾）：抽屉底色、齿轮、卡片出血
     /// 三处都要这组数，各写一份迟早漂。这里直接读订阅到的那份，
@@ -168,7 +168,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         let s = state
         closeAction.action = { s.close() }
 
-        // 卡片出血靠这四个数，取一次整段 body 共用。
+        // 卡片出血靠这几个数，取一次整段 body 共用。
         let m = windowMetrics
 
         // 对齐方式必须是 `.topLeading`：卡片和屏幕等高，比父容器（安全区）
@@ -176,16 +176,6 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         // 纵向默认居中 → 整层往下坠一个状态栏：卡片顶留一条、底部溢出被裁、
         // 抽屉跟着下坠把右下角齿轮推出屏幕。按顶边对齐后位置不再依赖高度差。
         return ZStack(alignment: .topLeading) {
-            // ── 窗口实测值的探针（不可见，1×1）──
-            //
-            // 必须在视图树里，才能拿到「我们自己的 window」。放在最前面：
-            // zIndex 与抽屉同为 0 时按声明顺序，排第一就是在最底下，
-            // 又缩成 1×1 且不接触摸，看不见也摸不着。
-            WindowMetricsProbe()
-                .frame(width: 1, height: 1)
-                .allowsHitTesting(false)
-                .zIndex(0)
-
             // ── 抽屉层（最底下，静止不动）──
             //
             // 抽屉钉在 0，聊天界面像一张卡片被推走、露出它。
@@ -194,7 +184,8 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             drawer
                 .frame(width: drawerWidth)
                 .frame(maxHeight: .infinity)
-                // [R83] 高度钉成「窗口高 − 上下安全区」= 可见的那块矩形。
+                // [R85] 高度用**量出来的**容器高，不再自己算
+                // 「窗口高 − 上 − 下」。三个数同源，不会因为其中某个是猜的就对不上。
                 //
                 // 原来只有 `.frame(maxHeight: .infinity)`，意思是「用满父容器
                 // 提议的尺寸」。问题在于这条链上的提议并不等于可见区域：
@@ -204,9 +195,8 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                 // 顶上那 59pt 露出窗口底色。用户看到的就是
                 // 「背景没做到满屏，只做到状态栏下方」，齿轮也跟着被推出去半截。
                 //
-                // 取窗口实测值之后跟提议尺寸无关，iPhone 15 Pro Max（59/34）
-                // 和其他机型都不用改代码。取不到窗口时传 nil = 维持原行为。
-                .frame(height: m.map { $0.height - $0.top - $0.bottom })
+                // 取实测值之后跟提议尺寸无关，换机型不用改代码。
+                .frame(height: m?.containerHeight)
                 // 收起过程中不参与命中：动画刚起步露出的 1~2pt
                 // 会把聊天界面左边缘的点击吃掉。
                 .allowsHitTesting(state.progress > 0.02)
@@ -310,6 +300,18 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         // `.frame(maxHeight: .infinity)` 只是用满提议尺寸，不会压扁内容；
         // 卡片超出部分照样画出来（SwiftUI 默认不裁），出血不受影响。
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // ── 容器实测值的探针 ──
+        //
+        // [R85] 挂在 `.background` 上而不是当 ZStack 的子视图：
+        // ZStack 会按最大的子视图（整屏高的卡片）定自己的内容尺寸，铺满型的
+        // 子视图跟着长到 932，量出来就只对得上顶边、底边变成负数。
+        // `.background` 拿到的尺寸恰好是**这个 frame 的尺寸**（= 安全区那块
+        // 矩形），量出来的 top / bottom 才是真的两条出血量。
+        // 透明、不接触摸，纯粹一个测量点。
+        .background {
+            WindowMetricsProbe()
+                .allowsHitTesting(false)
+        }
         .environmentObject(state)
         .environment(\.drawerClose, closeAction)
         // 抽屉出来就收键盘：键盘占住下半截 + 压缩安全区，抽屉会显得变小。
@@ -617,27 +619,29 @@ private struct EdgePanOverlay: UIViewRepresentable {
 /// 一组窗口实测值。
 ///
 /// 用结构体而不是元组：要判等，元组判等得手写。
+///
+/// [R85] 这里的 `top` / `bottom` **不再是 `safeAreaInsets`**，而是「我们这一层
+/// 在窗口里实际占到哪」量出来的两条边距：
+///   · top    = 容器顶边到窗口顶边的距离；
+///   · bottom = 容器底边到窗口底边的距离。
+/// 两者在正常机型上正好等于安全区（59 / 34），但来源完全不同 —— 一个是「问系统
+/// 要一个本该是多少的常数」，一个是「量自己现在在哪」。前者会被状态栏插件窗口、
+/// 被 `additionalSafeAreaInsets`、被任何一层 `.frame` 干扰，后者不会：
+/// 量出来是多少就是多少。
 struct WindowMetrics: Equatable {
+    /// 容器顶边到窗口顶边的距离。卡片要上移这么多才是整屏。
     var top: CGFloat
+    /// 容器底边到窗口底边的距离。
     var bottom: CGFloat
+    /// 容器宽（= 屏幕宽）。
     var width: CGFloat
+    /// 窗口高。卡片高度直接用这个。
     var height: CGFloat
+    /// 容器自己的高（= 窗口高 − 上下两条）。抽屉高度直接用这个。
+    var containerHeight: CGFloat
 }
 
 /// 全局唯一一份窗口实测值，由 `WindowMetricsProbe` 提供。
-///
-/// [R84] 为什么不再扫 `connectedScenes` 找 key window：
-/// 越狱机器上状态栏那一堆插件（温度、网速、电池环）会各开一个覆盖窗，其中某个
-/// 很可能就是 `isKeyWindow`。那种窗口的 `bounds` 是整屏（所以宽高看着是对的），
-/// `safeAreaInsets` 却是 **0** —— 于是 `metrics()` 返回 `(0, 0, 430, 932)`，
-/// 看上去完全正常，实际上下两条出血量全归零：
-///   · 卡片高度用 932、上移量 `-0` → 卡片停在 59，状态栏那条露出底色；
-///   · 齿轮底边距 `max(16, 0 + 16)` = 16 → 被推到 975，只露一截；
-///   · 抽屉补边高度 0 → 顶上那条白边照旧。
-/// 三个症状一个根因，且在数值上看不出任何「出错」的迹象，只有真机像素能验出来。
-///
-/// 所以唯一可靠的取法是问**我们自己 view 的 window**（`view.window` 一定是
-/// 我们这条视图树挂着的那个），不要在整个进程里猜哪个窗口是主窗口。
 @MainActor
 final class WindowMetricsStore: ObservableObject {
 
@@ -647,75 +651,78 @@ final class WindowMetricsStore: ObservableObject {
 
     private init() { }
 
-    /// 收下一组实测值。
+    /// 收下一组实测值（几何量，不是安全区）。
     ///
-    /// 我们自己的窗口也可能被插件抹平（个别全屏 / 沉浸类插件会真的把应用窗口的
-    /// 安全区清掉）。真遇到这种情况就退一步：在同一场景的所有窗口里取最大的
-    /// 那份安全区 —— 只要进程里还有任何一个窗口认这 59/34，就用它。
-    /// 两处都拿不到（比如还没挂进视图树）就保持上一个有效值，绝不把出血量清零：
-    /// 清零的后果就是「卡片停在状态栏下、齿轮被推出去」，比不铺满更难看。
-    func apply(insets: UIEdgeInsets, bounds: CGRect) {
-        var best = WindowMetrics(top: insets.top,
-                                 bottom: insets.bottom,
-                                 width: bounds.width,
-                                 height: bounds.height)
-
-        if best.top == 0 && best.bottom == 0 {
-            let windows = UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap { $0.windows }
-            for w in windows {
-                let t = w.safeAreaInsets.top, b = w.safeAreaInsets.bottom
-                if t > best.top || b > best.bottom {
-                    best.top = max(t, best.top)
-                    best.bottom = max(b, best.bottom)
-                }
-            }
-        }
-
-        guard best.top > 0 || best.bottom > 0 else { return }
-        if current != best { current = best }
+    /// 这里只挡「还没量出来」：宽或高为 0 说明探针还没进布局，报了也是废数据。
+    /// 不再挡 `top == 0 && bottom == 0` —— 几何上真的是 0 就说明容器本来就铺满
+    /// 整个窗口，那时光出血量就该是 0，挡掉反而会让卡片停在原地。
+    func apply(top: CGFloat, bottom: CGFloat, width: CGFloat, height: CGFloat) {
+        guard width > 0, height > 0, bottom.isFinite, top.isFinite else { return }
+        let m = WindowMetrics(top: max(0, top),
+                              bottom: max(0, bottom),
+                              width: width,
+                              height: height,
+                              containerHeight: max(0, height - max(0, top) - max(0, bottom)))
+        if current != m { current = m }
     }
 }
 
-/// 一个 1×1 的宿主，只做一件事：挂进视图树之后把窗口实测值报给
-/// `WindowMetricsStore`。为什么不能用 `connectedScenes` 猜，见那边的注释。
+/// 铺满容器的透明宿主，只做一件事：把「自己在窗口里的矩形」报给
+/// `WindowMetricsStore`。
+///
+/// 为什么量自己而不是问窗口要安全区：见 `WindowMetrics` 的注释。这个探针和
+/// 抽屉、卡片同处一个 ZStack（容器就是那个 ZStack），所以它量到的矩形就是容器
+/// 矩形 —— 一次测量同时给出上下两条出血量和容器高，不依赖任何系统常数。
 struct WindowMetricsProbe: UIViewRepresentable {
 
     final class ProbeView: UIView {
 
-        /// 还能补报几次。只在 `updateUIView` 那条路上扣，`didMoveToWindow`
-        /// 会把它重置 —— 那样即便某个机型上安全区真的全是 0，也最多多建三个
-        /// Task 就停手，不会每帧无限重试。
-        private var retriesLeft = 3
+        /// 上次报上去的位置。相同就不再报 —— 这个比较就是全部节流。
+        ///
+        /// [R85] 上一版用的是「最多补报 3 次」的计数器，那是个真 bug：
+        /// 开头几次 `didMoveToWindow` / `updateUIView` 都发生在安全区还没算出来
+        /// 的时候，三次全烧在 (0,0) 上，等真正的安全区下来时 `retriesLeft` 已经
+        /// 是 0，静默 return —— 表现就是「改了跟没改一样」。
+        /// 改成比数值：值没变就是零成本返回，值变了才建 Task，两头都对。
+        private var lastFrame: CGRect = .null
+        private var lastWindow: CGSize = .zero
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            retriesLeft = 3
             report()
         }
 
-        // 转屏、分屏、改状态栏高度都会走到这里；键盘**不会**（窗口安全区
-        // 不含键盘），所以不用担心弹键盘时卡片被撑出屏幕。
-        override func safeAreaInsetsDidChange() {
-            super.safeAreaInsetsDidChange()
+        // 转屏、分屏、状态栏高度变化、抽屉被推来推去，最终都会走到布局。
+        override func layoutSubviews() {
+            super.layoutSubviews()
             report()
         }
 
         /// 把值报上去。
         ///
-        /// 推迟一拍再写：`didMoveToWindow` 和 `safeAreaInsetsDidChange` 都发生在
-        /// SwiftUI 的更新 / 布局过程中，同步改 `@Published` 会打
-        /// 「Publishing changes from within view updates」，严重时 AttributeGraph
-        /// 直接成环。这里只把两个纯数据类型（insets / bounds）带进闭包，
-        /// 不带 UIView，避免非 Sendable 捕获。
+        /// 推迟一拍再写：这些回调都发生在 SwiftUI 的更新 / 布局过程中，同步改
+        /// `@Published` 会打「Publishing changes from within view updates」，
+        /// 严重时 AttributeGraph 直接成环。闭包里只带纯数据类型，不带 UIView。
         func report() {
-            guard let window, retriesLeft > 0 else { return }
-            retriesLeft -= 1
-            let insets = window.safeAreaInsets
-            let bounds = window.bounds
+            guard let window, bounds.width > 0, bounds.height > 0 else { return }
+            let frame = convert(bounds, to: window)
+            let win = window.bounds.size
+            guard win.height > 0, win.width > 0,
+                  frame.height > 0, frame.width > 0 else { return }
+            guard frame != lastFrame || win != lastWindow else { return }
+            lastFrame = frame
+            lastWindow = win
+            // 顶部再跟这个窗口自己认的安全区取一次大的。
+            //
+            // 不为别的，就为「宁可多吃一截，也绝不留一条缝」：逻辑上的正确值
+            // 就是 frame.minY，取 max 只在两者不一致时生效（说明布局还没稳定），
+            // 而多吃的方向只会让卡片往上盖、把可能出现的那条缝盖掉。
+            // 底部不这么干 —— 底部多算会压到列表内容，比留一条缝更难受。
+            let top = max(frame.minY, window.safeAreaInsets.top)
+            let bottom = win.height - frame.maxY
             Task { @MainActor in
-                WindowMetricsStore.shared.apply(insets: insets, bounds: bounds)
+                WindowMetricsStore.shared.apply(top: top, bottom: bottom,
+                                                width: frame.width, height: win.height)
             }
         }
     }
@@ -724,16 +731,13 @@ struct WindowMetricsProbe: UIViewRepresentable {
         let view = ProbeView()
         view.isUserInteractionEnabled = false
         view.backgroundColor = .clear
+        view.isOpaque = false
         return view
     }
 
     func updateUIView(_ view: ProbeView, context: Context) {
-        // 只在「还没拿到值」时补报一次。
-        //
-        // 不能无条件报：拖动抽屉时外层 body 每帧重算，`updateUIView` 也跟着
-        // 每帧调一次，每次都建一个 Task —— 那就又回到 R80 那三个发热问题
-        // （每帧干重活）上去了。正常情况 `didMoveToWindow` 已经报过，这里
-        // 一次比较就返回。
-        if WindowMetricsStore.shared.current == nil { view.report() }
+        // 可以无条件调：`report()` 第一件事就是比数值，没变直接返回，
+        // 不建 Task。拖动抽屉时这里每帧都会进来，但每帧都是一次 CGRect 比较。
+        view.report()
     }
 }

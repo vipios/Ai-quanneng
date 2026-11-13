@@ -89,9 +89,13 @@ struct SessionDrawer: View {
     @MainActor private var topInset: CGFloat { windowStore.current?.top ?? 0 }
     @MainActor private var bottomInset: CGFloat { windowStore.current?.bottom ?? 0 }
 
-    /// 列表底部要给齿轮让出的高度：齿轮直径 60 + 齿轮底边距 + 余量 10。
-    /// 底边距和 `settingsGear` 里用的是同一个式子，两边必须同源。
-    @MainActor private var gearReserve: CGFloat { 60 + max(16, bottomInset + 16) + 10 }
+    /// 列表底部要给齿轮让出的高度：齿轮直径 60 + 齿轮底边距 16 + 余量 10。
+    ///
+    /// [R85] 不再跟 `bottomInset` 走：抽屉帧的底边已经是安全区底，齿轮底边距
+    /// 就是常数 16（见 `settingsGear`）。两边必须同一个式子 —— 原来一边按
+    /// 「安全区底 + 16」、一边按同一式子算留白，两处一起错，列表最后一条
+    /// 永远少让出 34pt。
+    private var gearReserve: CGFloat { 86 }
 
     /// 补到屏幕边缘的一条底色。
     ///
@@ -197,13 +201,13 @@ struct SessionDrawer: View {
         }
         .buttonStyle(.plain)
         .padding(.trailing, 14)
-        // [R83] 底边距取「安全区底 + 16」，不是写死 16。
+        // [R85] 底边距就是 16，不再加 `bottomInset`。
         //
-        // 抽屉的帧底要么落在安全区底（898），要么落在屏幕底（932），
-        // 取决于容器的原点在哪 —— 写死 16 的那一版在后者上会正好压住
-        // home indicator，用户看到的就是「齿轮被吞了一半」。
-        // 用实测底部安全区兜住两种情形：34+16 = 50，离屏幕底足够远。
-        .padding(.bottom, max(16, bottomInset + 16))
+        // 抽屉的布局帧 = 量出来的容器矩形（15 Pro Max 上是 y 59…898），它的底边
+        // 本来就落在安全区底。在这里再减一次 `bottomInset` 是把同一段空白算了两遍
+        // ——上一版 `max(16, bottomInset + 16)` 得到 50，齿轮被顶到离屏幕底 84pt，
+        // 悬在半空。`bottomInset` 现在只用于给底色补边（`paperCap`）。
+        .padding(.bottom, 16)
         .accessibilityLabel("设置")
     }
 
