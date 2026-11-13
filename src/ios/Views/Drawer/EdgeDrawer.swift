@@ -219,17 +219,25 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                 //
                 // 取实测值之后跟提议尺寸无关，换机型不用改代码。
                 .frame(height: m?.containerHeight)
-                // 抽屉跟着卡片一起往右走 —— 位移 = −抽屉宽 × (1 − progress)。
+                // 抽屉跟着卡片一起往右走，但只走卡片行程的四分之一。
                 //
-                // 原来是钉在 0 不动的：卡片从它上面滑走，观感是「抽走」。
-                // 现在抽屉从屏幕左外侧进来，把聊天界面推着往右走。
+                // 上一版是 −抽屉宽 × (1 − progress)：抽屉走满整个宽度，右边缘
+                // 死贴着卡片左边缘。观感是「抽屉被卡片从屏幕外整条拽出来」，
+                // 而且抽屉里的内容在拖动中一路横移，滑到一半时内容还在屏幕外。
                 //
-                // 数字上严丝合缝：卡片右移 drawerWidth×p，抽屉右移
-                // drawerWidth×p − drawerWidth，两者差值恒为 drawerWidth ⇒
-                // 抽屉右边缘永远贴住卡片左边缘，不重叠也不留缝。
+                // 参照图不是这样：卡片本身压在抽屉上面（抽屉比露出来的那条宽），
+                // 两者一起往右走，抽屉只补一小段，卡片到位时抽屉也正好归位。
+                // 从三帧拖动截图里逐字符量出来的比例：
+                //   卡片边缘 172px 时，抽屉被推掉 146px，剩余行程 566px → 0.258
+                //   卡片边缘 247px 时，抽屉被推掉 114px，剩余行程 491px → 0.232
+                // 稳定在 0.25，所以位移取 −抽屉宽 × 0.25 × (1 − progress)。
+                //
+                // 这样抽屉右边缘 = 抽屉宽 × (0.75 + 0.25p)，卡片左边缘 = 抽屉宽 × p，
+                // 前者恒 ≥ 后者（只在 p = 1 相等）⇒ 抽屉右边缘永远藏在卡片下面，
+                // 露出来的只有那张纸的中间段，正是「卡片压在抽屉中间」。
                 //
                 // 只加水平位移，垂直位置和高度一个数都没动 —— 齿轮落点不受影响。
-                .offset(x: -drawerWidth * (1 - state.progress))
+                .offset(x: -drawerWidth * 0.25 * (1 - state.progress))
                 // 收起过程中不参与命中：动画刚起步露出的 1~2pt
                 // 会把聊天界面左边缘的点击吃掉。
                 .allowsHitTesting(state.progress > 0.02)
@@ -284,11 +292,17 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             // 提亮到 253，比抽屉还白，分界就跳出来了。同色蒙同色，底色不动，
             // 只有内容淡下去 —— 深色模式下两者都等于 systemBackground，行为不变。
             //
-            // 0.75 是参照里的观感：能看出是聊天气泡，读不出任何一句内容。
+            // 0.70 是从抽屉全开的参照图上反推的，两条互不相干的证据：
+            //   · 黑色标题：9 → 175，a = (175−9)/(248−9) = 0.695
+            //   · 输入框白药丸：255 → 250，a = (255−250)/(255−248) = 0.714
+            // 反过来还能验证蒙色：若蒙的是纯白 0.70，底板会被抬到 253，
+            // 而参照图卡片区实测仍是 248 —— 所以蒙色就是卡片自己的 #f8f8f8。
+            //
+            // 乘 progress：卡片跟着手指走多少，就淡多少，停在最右边时到 0.70。
             // 只调这一个数，不叠第二层黑 —— 多一层就多一遍全屏混合。
             .overlay {
                 ChatColors.background
-                    .opacity(0.75 * state.progress)
+                    .opacity(0.70 * state.progress)
                     .allowsHitTesting(false)
             }
             // 先蒙再裁：蒙层在 clipShape 里面，圆角外面那圈不会被糊成方角。
@@ -338,9 +352,16 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             // 常驻而不是 `if state.isOpen` 包着：`if` 是结构性条件，越过
             // progress 0.5 那刻 ZStack 子视图列表变化要重建容器，正好发生在
             // 拖动中段，手感是「滑到一半顿一下」。
+            // 让出的宽度是「卡片左边缘」，不是抽屉宽。
+            //
+            // 抽屉现在压到卡片下面一段（右边缘 = 抽屉宽 × (0.75 + 0.25p)），
+            // 卡片左边缘 = 抽屉宽 × p，前者恒大于后者。若还按抽屉宽整段让开，
+            // 卡片盖住的那一条（p = 0.72 时有 73pt）就没有任何一层接住点击，
+            // 直接穿到最底下的抽屉上 —— 点看不见的抽屉行会触发。
+            // 让到卡片左边缘，正好是「露出来的那部分归抽屉、卡片那块归关闭层」。
             HStack(spacing: 0) {
                 Color.clear
-                    .frame(width: drawerWidth)
+                    .frame(width: drawerWidth * state.progress)
                     .allowsHitTesting(false)
                 Color.clear
                     .contentShape(Rectangle())
@@ -498,9 +519,30 @@ private struct EdgePanOverlay: UIViewRepresentable {
 
         private var startProgress: CGFloat = 0
 
+        /// 拖过屏幕水平中线时的那一下轻震。
+        ///
+        /// 常驻一个实例而不是每次 `impactOccurred` 前现场 new：Taptic 引擎
+        /// 要先 prepare 才能做到「过线即震」，现场创建会晚一拍，拖得快的
+        /// 时候那一下会甩在后面。`.light` 再乘 0.6 强度 —— 默认强度的 light
+        /// 在这个场景里偏重，用户要的是「很轻微」。
+        private let midHaptic = UIImpactFeedbackGenerator(style: .light)
+
+        /// 这一轮拖动里，中线那一下是不是已经震过了。
+        private var midHapticFired = false
+
+        /// 「卡片到屏幕正中间」对应的 progress。
+        ///
+        /// 卡片左边缘 = 抽屉宽 × p，屏幕水平中线 = 屏宽 / 2
+        /// ⇒ p = 屏宽 / (2 × 抽屉宽)。
+        /// 15 Pro Max（430 / 348）= 0.618，抽屉和卡片此刻各露一半。
+        private func midProgress(for view: UIView) -> CGFloat {
+            (view.bounds.width * 0.5) / max(width, 1)
+        }
+
         init(state: DrawerState, width: CGFloat) {
             self.state = state
             self.width = width
+            midHaptic.prepare()
         }
 
         /// 把三个手势挂到宿主所在的 window 上。
@@ -604,6 +646,11 @@ private struct EdgePanOverlay: UIViewRepresentable {
             switch g.state {
             case .began:
                 startProgress = state.progress
+                // 中线那一下按「现在在哪一边」重新武装：从关着开始拖，就要震；
+                // 从开着往回拖，越过的只是回程，不震。不重置的话上一次拖动
+                // 震过之后这个闸会一直关着，第二次拖就再也不会响了。
+                midHapticFired = state.progress >= midProgress(for: view)
+                midHaptic.prepare()
 
             case .changed:
                 // translation 归一化成 0…1 的进度增量。
@@ -614,6 +661,21 @@ private struct EdgePanOverlay: UIViewRepresentable {
                 var t = Transaction()
                 t.disablesAnimations = true
                 withTransaction(t) { state.progress = p }
+
+                // 卡片左边缘越过屏幕水平中线时震一下。
+                //
+                // 只在手势的 .changed 里判，不放进 settle 的动画里：松手后
+                // 弹向终点的过程也会经过中线，那里再震一次就成了「拖一下响两声」。
+                //
+                // 0.04 的回滞是给手指在阈值上抖动用：不加的话靠近中线时每帧
+                // 都在重武装，来回蹭一下就连续震。
+                let mid = midProgress(for: view)
+                if p >= mid, !midHapticFired {
+                    midHapticFired = true
+                    midHaptic.impactOccurred(intensity: 0.6)
+                } else if p < mid - 0.04 {
+                    midHapticFired = false
+                }
 
             case .ended, .cancelled, .failed:
                 // 吸附方向：先看速度（快速轻扫），再看位移比例。
