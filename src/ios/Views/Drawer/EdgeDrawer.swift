@@ -548,8 +548,8 @@ private struct EdgePanOverlay: UIViewRepresentable {
         ///
         /// 常驻一个实例而不是每次 `impactOccurred` 前现场 new：Taptic 引擎
         /// 要先 prepare 才能做到「过线即震」，现场创建会晚一拍，拖得快的
-        /// 时候那一下会甩在后面。`.light` 再乘 0.6 强度 —— 默认强度的 light
-        /// 在这个场景里偏重，用户要的是「很轻微」。
+        /// 时候那一下会甩在后面。强度走 `.light` —— 比 `.medium` 音色轻，
+        /// 具体数值在触发处（2026-11-14 从 0.6 提到 0.8）。
         private let midHaptic = UIImpactFeedbackGenerator(style: .light)
 
         /// 这一轮拖动里，中线那一下是不是已经震过了。
@@ -697,7 +697,10 @@ private struct EdgePanOverlay: UIViewRepresentable {
                 let mid = midProgress(for: view)
                 if p >= mid, !midHapticFired {
                     midHapticFired = true
-                    midHaptic.impactOccurred(intensity: 0.6)
+                    // [2026-11-14] 0.6 → 0.8：用户报「滑到中间时候震动再加一点」。
+                    // 只动强度、不动 `.light` 这档和触发时机 —— 换 style 会把
+                    // 音色也换掉，那是另一回事。
+                    midHaptic.impactOccurred(intensity: 0.8)
                 } else if p < mid - 0.04 {
                     midHapticFired = false
                 }
