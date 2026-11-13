@@ -138,7 +138,12 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
     /// 卡片底边离屏幕底留出的高度 —— 让底部两个圆角露在屏幕里。
     ///
     /// 取 12：足够看见 24pt 圆角的弧线和阴影，又不会让聊天页底部空出一块。
-    private static let cardBottomLift: CGFloat = 12
+    ///
+    /// 是**实例属性**不是 `static let`：`DrawerContainer` 是泛型类型
+    /// （`<Drawer, Content>`），泛型里放静态存储属性编译不过 ——
+    /// "static stored properties not supported in generic types"，
+    /// 第一次推这一版就是这么挂在 CI 上的。
+    private let cardBottomLift: CGFloat = 12
 
     /// 卡片顶边往上多出血的高度 —— 把圆角弧线整个藏到屏幕外。
     ///
@@ -146,7 +151,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
     /// 弧线正好拱在屏幕最上沿那两个角里，透出底下的窗口色。往上多让一个
     /// 最大圆角半径（24）出去，弧线落在 y < 0，屏幕上那两个角就永远是实的。
     /// 内容用同样的数补回来，位置不动。
-    private static let cardTopBleed: CGFloat = 24
+    private let cardTopBleed: CGFloat = 24
 
     /// 抽屉宽度。固定值而非比例：行高、内边距都按确定宽度排，
     /// 纯比例会让文字折行位置在机型之间跑掉。
@@ -267,15 +272,15 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             ZStack(alignment: .top) {
                 Color(UIColor.systemBackground)
                 content
-                    .padding(.top, top > 0 ? top + Self.cardTopBleed : 0)
-                    .padding(.bottom, top > 0 ? max(0, bottom - Self.cardBottomLift) : 0)
+                    .padding(.top, top > 0 ? top + cardTopBleed : 0)
+                    .padding(.bottom, top > 0 ? max(0, bottom - cardBottomLift) : 0)
             }
             .frame(width: totalWidth,
                    height: top > 0
-                        ? max(0, windowHeight - Self.cardBottomLift + Self.cardTopBleed)
+                        ? max(0, windowHeight - cardBottomLift + cardTopBleed)
                         : containerHeight,
                    alignment: .top)
-            .offset(y: top > 0 ? -(top + Self.cardTopBleed) : 0)
+            .offset(y: top > 0 ? -(top + cardTopBleed) : 0)
             // 「越走越浅」靠这层底色蒙出来，只改 alpha，一次合成。
             //
             // 不用 `.opacity`：卡片不透明，整张降透明度会把底下的抽屉右缘
