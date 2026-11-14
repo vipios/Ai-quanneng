@@ -455,34 +455,36 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             syncChrome()
         }
 
-        /// 两件事，每次布局后重新确认一遍：摘掉底边分隔线、放开裁剪。
-        /// 两件都是改 bar 自己已有的属性，不往里加任何视图。
+        /// 两件事，每次布局后重新确认一遍：摘掉底边分隔线（背景同时改成
+        /// 上实下虚）、放开裁剪。两件都是改 bar 自己已有的属性，不往里加
+        /// 任何视图。
         func syncChrome() {
             removeSeparator()
             guard let nav = enclosingNavigationController else { return }
             let bar = nav.navigationBar
             openClips(on: bar)
-            fadeExistingBackground(on: bar)
+            extendBand(on: bar)
         }
 
         func removeSeparator() {
             guard let nav = enclosingNavigationController else { return }
             let bar = nav.navigationBar
+            let color = UIColor(ChatColors.background).resolvedColor(with: bar.traitCollection)
 
             // ① 页面级（关键）：SwiftUI 的 `.toolbarBackground(_:for:)` 是把颜色
             //    写进**导航项自己**的 appearance，而导航项上的优先级高于 bar 上
             //    的默认值。上一版只清了 bar 那份，所以线一直在 —— 实测截图
             //    y=80px 处那条 rgb(233,233,233) 就是它。
             for item in Self.appearanceItems(of: nav) {
-                if let a = Self.cleared(item.standardAppearance) { item.standardAppearance = a }
-                if let a = Self.cleared(item.scrollEdgeAppearance) { item.scrollEdgeAppearance = a }
-                if let a = Self.cleared(item.compactAppearance) { item.compactAppearance = a }
+                if let a = Self.styled(item.standardAppearance, fadingColor: color) { item.standardAppearance = a }
+                if let a = Self.styled(item.scrollEdgeAppearance, fadingColor: color) { item.scrollEdgeAppearance = a }
+                if let a = Self.styled(item.compactAppearance, fadingColor: color) { item.compactAppearance = a }
             }
 
             // ② bar 级：导航项没有自带 appearance 时才用这份默认值。
-            if let a = Self.cleared(bar.standardAppearance) { bar.standardAppearance = a }
-            if let a = Self.cleared(bar.scrollEdgeAppearance) { bar.scrollEdgeAppearance = a }
-            if let a = Self.cleared(bar.compactAppearance) { bar.compactAppearance = a }
+            if let a = Self.styled(bar.standardAppearance, fadingColor: color) { bar.standardAppearance = a }
+            if let a = Self.styled(bar.scrollEdgeAppearance, fadingColor: color) { bar.scrollEdgeAppearance = a }
+            if let a = Self.styled(bar.compactAppearance, fadingColor: color) { bar.compactAppearance = a }
 
             // ③ 老 API 兜底：iOS 13 之前这条线是 `shadowImage` 画的，有些系统
             //    版本在 appearance 清空后仍会回落到它，给一张空图。
@@ -522,88 +524,179 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             }
         }
 
-        // MARK: - 背景底部过渡带
+        // MARK: - 导航带高度
+        //
+        // 参照量出来的三条线（同机型全屏截图，1290px / 430pt，3.0 px/pt）：
+        //   · 状态栏下沿      59.00
+        //   · 气泡           67.00 … 110.67（直径 44）
+        //   · 导航带下沿    110.67
+        // 参照那条带是 **51.67 高**：标准 44pt 带之外，它自己往下多铺了 7.67，
+        // 正好和气泡底边（110.67）齐平。
+        //
+        // 我们系统 bar 的高度是 59 + 44 = 103，比参照短 7.67。气泡底边
+        // （110.67）因此比带子（103）低 7.67，凸在带子外面 —— 这就是
+        // 「卡片上下宽度不对」。
 
-        /// 过渡带高度。参照逐像素扫的：从清晰内容往上，局部对比度 20 → 2.4，
-        /// 过渡约 **18pt**，是渐变不是硬边。
-        private static let fadeHeight: CGFloat = 18
-
-        /// 参照导航带的下沿落在「状态栏下沿 + 多少 pt」。
+        /// 导航带下沿落在「状态栏下沿 + 多少 pt」。
         ///
-        /// 参照量的：状态栏 59、导航带底 110.67 ⇒ **51.67**。这 51.67 = 标准
-        /// 44pt 带 + 它自己多铺的 7.67。按「安全区 + 51.67」算而不是写死
-        /// 110.67，换机型（安全区 47 / 54 / 59）自动对。
-        private static let navBandBottomBelowSafeArea: CGFloat = 51.67
+        /// **直接写参照的量测值 51.67，不取整**：59 + 51.67 = 110.67，和参照
+        /// 的带底、气泡底都是同一条线。
+        private static let bandHeightBelowSafeArea: CGFloat = 51.67
 
-        /// 拿不到安全区时的兜底：按标准 44pt 带算，多铺 7.67。
+        /// 拿不到安全区时的兜底：标准 44pt 带之外多铺的量，同样是参照的值。
         private static let fallbackOverhang: CGFloat = 7.67
 
-        /// [2026-11-14 第十一轮] 导航栏背景改成「上实下虚」。
+        /// 把 bar 自己那层背景（`_UIBarBackground`）抬到导航带下沿。
         ///
-        /// 上一版往 bar 里插了一层自己的 `UIView` 当背景，z 序没插对，把标题
-        /// 和两个气泡整块盖没了（导航栏区域一片纯白）。所以这一版**不新增
-        /// 任何视图**，直接改 bar 自己那层背景（`_UIBarBackground`）：
+        /// 不新增视图：这层本来就是系统画的、在内容下面，只改它的高度，
+        /// 气泡和标题都在它上面，一点不受影响。
         ///
-        ///   · 把它的高度撑到导航带下沿（安全区 + 51.67）
-        ///   · 给它挂一张竖向 `CAGradientLayer` 蒙版，只让最后 18pt 从 100%
-        ///     渐隐到 0
-        ///
-        /// 它本来就在内容下面、是 UIKit 自己管的那一层，所以盖不到标题和
-        /// 气泡；颜色也还是 `.toolbarBackground(ChatColors.background)` 给的
-        /// 那个，深浅色切换不用管。
-        private func fadeExistingBackground(on bar: UINavigationBar) {
-            guard let bg = bar.subviews.first(where: {
-                String(describing: type(of: $0)).contains("BarBackground")
-            }) else { return }
+        /// 高度按**window 坐标**反算，不按 bar 自己的 bounds 反算：不同系统
+        /// 版本里 bar 的 frame 有的是 (0,0,w,103)（连状态栏一起算），有的是
+        /// (0,59,w,44)（只算那 44pt 带），两种都对得上「带底 = 安全区 + 52」
+        /// 这条线，不必去猜是哪种。
+        private func extendBand(on bar: UINavigationBar) {
+            guard let bg = Self.backgroundLayer(of: bar), let window = bar.window else { return }
 
-            let safeTop = bar.window?.safeAreaInsets.top ?? 0
-            let overhang = safeTop > 0
-                ? max(0, safeTop + Self.navBandBottomBelowSafeArea - bar.bounds.height)
-                : Self.fallbackOverhang
-            let height = bar.bounds.height + overhang
-            guard height > 0, bar.bounds.width > 0 else { return }
+            let safeTop = window.safeAreaInsets.top
+            guard safeTop > 0 else {
+                // 拿不到安全区：按标准 44pt 带 + 8 兜底。
+                let fallback = bar.bounds.height + Self.fallbackOverhang
+                if abs(bg.frame.height - fallback) > 0.5 {
+                    var f = bg.frame
+                    f.size.height = fallback
+                    bg.frame = f
+                }
+                if bg.clipsToBounds { bg.clipsToBounds = false }
+                return
+            }
 
-            // UIKit 每次布局都会把背景层重设回 44pt 带，所以每次都比一次。
+            let barTopInWindow = bar.convert(CGPoint.zero, to: window).y
+            let bgTopInWindow = barTopInWindow + bg.frame.minY
+            let height = (safeTop + Self.bandHeightBelowSafeArea) - bgTopInWindow
+            guard height > 1, bar.bounds.width > 0 else { return }
+
+            // UIKit 每次布局都可能把它设回标准带，所以每次都比一遍。
             if abs(bg.frame.height - height) > 0.5 {
                 var f = bg.frame
                 f.size.height = height
                 bg.frame = f
             }
-            // 撑高的那 7.67 落在 bar 边界外，得让它自己别裁。
+            // 多出来的那段落在 bar 边界外，得让它自己别裁。
             if bg.clipsToBounds { bg.clipsToBounds = false }
-
-            // 渐隐带按背景层的**实际**高度算，而不是按目标值：万一 UIKit
-            // 把 frame 重新设回标准带、这次没撑上，渐隐带也只是变成「底部
-            // 18pt」，不会跑到层外面去。
-            let realHeight = bg.bounds.height
-            guard realHeight > 0 else { return }
-            let end = max(0, min(1, 1 - Self.fadeHeight / realHeight))
-            let mask = (bg.layer.mask as? CAGradientLayer) ?? CAGradientLayer()
-            let size = bg.bounds.size
-            if mask.frame.size != size {
-                mask.frame = CGRect(origin: .zero, size: size)
-            }
-            mask.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
-            mask.locations = [NSNumber(value: 0), NSNumber(value: Double(end)), NSNumber(value: 1)]
-            mask.startPoint = CGPoint(x: 0.5, y: 0)
-            mask.endPoint = CGPoint(x: 0.5, y: 1)
-            // 已经挂的是这一张就别反复赋值 —— 每次赋值都会重绘整条 bar。
-            if bg.layer.mask !== mask {
-                bg.layer.mask = mask
-            }
         }
 
-        /// 把一份 appearance 的 `shadowColor` 清成透明。
+        /// 找 bar 自己那层背景。
         ///
-        /// 已经是透明、或者压根没有这份 appearance 就返回 nil，调用方据此跳过
-        /// 赋值 —— 避免每次布局都往 UIKit 里灌一遍新对象。
+        /// 主路按类名（`_UIBarBackground`）；万一哪天系统改名，退回结构判定：
+        /// z 序最下面、且不是内容容器（`_UINavigationBarContentView`）的那层。
+        private static func backgroundLayer(of bar: UINavigationBar) -> UIView? {
+            if let hit = bar.subviews.first(where: {
+                String(describing: type(of: $0)).contains("BarBackground")
+            }) {
+                return hit
+            }
+            return bar.subviews.first(where: {
+                !String(describing: type(of: $0)).contains("ContentView")
+            })
+        }
+
+        // MARK: - 背景底部过渡带
+
+        /// 过渡带高度。参照逐像素扫的：从清晰内容往上，局部对比度 20 → 2.4，
+        /// 过渡约 **18pt**，是渐变不是硬边。
+        ///
+        /// 过渡带挂在**背景图的最底 18pt**。带底 110.67（= 状态栏 59 + 51.67）
+        /// 之后，它就落在 92.67…110.67，和参照同一条线。
+        private static let fadeHeight: CGFloat = 18
+
+        /// 渐变背景图的缓存：同一档配色 + 缩放只生成一次。
+        private static var fadeImageCache: (key: String, image: UIImage)?
+
+        /// 上一次真正写进去的那一档配色（深浅色切换时靠它触发重写）。
+        private static var appliedFadeKey: String?
+
+        /// 配色 + 缩放 → 缓存键。
+        private static func fadeKey(_ color: UIColor) -> String {
+            "\(color.hashValue)-\(Int(UIScreen.main.scale * 100))"
+        }
+
+        /// 「上实下虚」的导航带背景图。
+        ///
+        /// 图只有 1px 宽，纵向结构（从上往下）：
+        ///   · 0…8pt   纯色（4pt 顶帽 + 4pt 会被纵向拉满的实心条）
+        ///   · 8…H     线性渐隐到全透明，高 `fadeHeight`
+        /// 再按 top 4 / bottom fadeHeight 切帽、`.stretch`：实心那段被拉满整条
+        /// bar，渐隐段原样贴在底边 —— 不用预先知道 bar 有多高，换机型自动成立。
+        ///
+        /// [2026-11-14 第十二轮] 为什么不用蒙版：上一版给 bar 自己那层背景
+        /// （`_UIBarBackground`）挂 `CAGradientLayer` 蒙版，装上后渐变完全没
+        /// 出来（用户报「没有模糊带」）。那层是 UIKit 每次布局自己重画的，
+        /// 蒙版对它不可靠。改成走 `UINavigationBarAppearance` —— 这条通道
+        /// 本项目已经验证有效：底边那条分隔线就是靠 `shadowColor = .clear`
+        /// 清掉的，现场截图可证。
+        private static func fadeImage(color: UIColor, scale: CGFloat) -> UIImage {
+            let fade = fadeHeight
+            let height = fade + 8
+            let key = fadeKey(color)
+            if let cached = fadeImageCache, cached.key == key { return cached.image }
+
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = scale
+            format.opaque = false
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: height),
+                                                   format: format)
+            let raw = renderer.image { context in
+                let cg = context.cgContext
+                cg.setFillColor(color.cgColor)
+                cg.fill(CGRect(x: 0, y: 0, width: 1, height: height - fade))
+                if let gradient = CGGradient(
+                    colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                    colors: [color.cgColor, color.withAlphaComponent(0).cgColor] as CFArray,
+                    locations: [0, 1]
+                ) {
+                    cg.drawLinearGradient(gradient,
+                                          start: CGPoint(x: 0, y: height - fade),
+                                          end: CGPoint(x: 0, y: height),
+                                          options: [])
+                }
+            }
+            let image = raw.resizableImage(
+                withCapInsets: UIEdgeInsets(top: 4, left: 0, bottom: fade, right: 0),
+                resizingMode: .stretch
+            )
+            fadeImageCache = (key, image)
+            return image
+        }
+
+        /// 把一份 appearance 改成「摘掉分隔线 + 背景上实下虚」。
+        ///
+        /// 已经是目标状态就返回 nil，调用方据此跳过赋值 —— 避免每次布局都往
+        /// UIKit 里灌一遍新对象（每次赋值都会重画整条 bar）。
         ///
         /// 必须 copy 出新实例再赋回去：`UIBarAppearance` 是引用类型，原地改完
         /// 再赋同一个对象，UIKit 有可能认为「没变化」而不重画。
-        private static func cleared(_ appearance: UINavigationBarAppearance?) -> UINavigationBarAppearance? {
-            guard let appearance, appearance.shadowColor != .clear else { return nil }
+        private static func styled(_ appearance: UINavigationBarAppearance?,
+                                   fadingColor color: UIColor) -> UINavigationBarAppearance? {
+            guard let appearance else { return nil }
+            let key = fadeKey(color)
+            // 已经是我们写的那一份、且配色没变：不重复赋值（每次赋值都重画整条 bar）。
+            if appliedFadeKey == key,
+               appearance.shadowColor == .clear,
+               appearance.backgroundColor == .clear,
+               appearance.backgroundEffect == nil,
+               appearance.backgroundImage != nil {
+                return nil
+            }
             let copy = (appearance.copy() as? UINavigationBarAppearance) ?? appearance
             copy.shadowColor = .clear
+            // 底色让给背景图：留着实色的话，渐隐的那 18pt 会被它垫回不透明。
+            copy.backgroundColor = .clear
+            // 毛玻璃一并关掉，否则它还会在渐隐段后面铺一层。
+            copy.backgroundEffect = nil
+            copy.backgroundImage = fadeImage(color: color, scale: UIScreen.main.scale)
+            copy.backgroundImageContentMode = .scaleToFill
+            appliedFadeKey = key
             return copy
         }
 
