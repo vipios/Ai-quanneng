@@ -425,7 +425,7 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> Probe { Probe() }
 
     func updateUIViewController(_ vc: Probe, context: Context) {
-        vc.removeSeparator()
+        vc.syncChrome()
     }
 
     /// 只用来摸到父级导航栏，不画任何东西。
@@ -437,22 +437,32 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
 
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
-            removeSeparator()
+            syncChrome()
         }
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
-            removeSeparator()
+            syncChrome()
             // 只补一次，不递归：清干净之后再调是空操作，没必要长期挂着
             // async 在主队列上反复触发。
             guard !didCatchLatePush else { return }
             didCatchLatePush = true
-            DispatchQueue.main.async { [weak self] in self?.removeSeparator() }
+            DispatchQueue.main.async { [weak self] in self?.syncChrome() }
         }
 
         override func viewDidLayoutSubviews() {
             super.viewDidLayoutSubviews()
+            syncChrome()
+        }
+
+        /// 两件事，每次布局后重新确认一遍：摘掉底边分隔线、放开裁剪。
+        /// 两件都是改 bar 自己已有的属性，不往里加任何视图。
+        func syncChrome() {
             removeSeparator()
+            guard let nav = enclosingNavigationController else { return }
+            let bar = nav.navigationBar
+            openClips(on: bar)
+            fadeExistingBackground(on: bar)
         }
 
         func removeSeparator() {
@@ -477,6 +487,110 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             // ③ 老 API 兜底：iOS 13 之前这条线是 `shadowImage` 画的，有些系统
             //    版本在 appearance 清空后仍会回落到它，给一张空图。
             if bar.shadowImage == nil { bar.shadowImage = UIImage() }
+        }
+
+        // MARK: - 放开裁剪
+
+        /// [2026-11-14 第十一轮] 关掉导航栏对子视图的裁剪。
+        ///
+        /// 起因：用户报「我们的字体和左上右上图标被裁」。
+        ///
+        /// 截图逐像素量的（1290px / 430pt，3.0 px/pt）：左右两个 44pt 气泡
+        /// 顶边都在 **67.00pt**，和参照一分不差 —— 位置本来就是对的。但可见
+        /// 高度只有 30.67pt，底边被一条水平线硬切在 **97.33pt**；第二行文字
+        /// 墨迹顶 94.00、高 14.33，也只露出 3.67pt。参照在同样的位置上能完整
+        /// 露到 110.67pt。
+        ///
+        /// 所以这里只改一个已有的属性：把 bar 和它内部各层容器的
+        /// `clipsToBounds` 设回 false，让已经摆好的内容画出来。一个 frame、
+        /// 一个 offset 都不动，位置因此不会变。
+        ///
+        /// 为什么连子视图一起放开：真正在裁的是 bar 内部那个内容容器
+        /// （`_UINavigationBarContentView` 一类），只放开 bar 自己这层不够。
+        /// 深度限 4 层：bar → contentView → 内容栈 → 具体 item，够到了就停，
+        /// 再往下是系统内部的东西，不碰。
+        private func openClips(on bar: UINavigationBar) {
+            if bar.clipsToBounds { bar.clipsToBounds = false }
+            Self.openClips(in: bar, depth: 0)
+        }
+
+        private static func openClips(in view: UIView, depth: Int) {
+            guard depth < 4 else { return }
+            for sub in view.subviews {
+                if sub.clipsToBounds { sub.clipsToBounds = false }
+                openClips(in: sub, depth: depth + 1)
+            }
+        }
+
+        // MARK: - 背景底部过渡带
+
+        /// 过渡带高度。参照逐像素扫的：从清晰内容往上，局部对比度 20 → 2.4，
+        /// 过渡约 **18pt**，是渐变不是硬边。
+        private static let fadeHeight: CGFloat = 18
+
+        /// 参照导航带的下沿落在「状态栏下沿 + 多少 pt」。
+        ///
+        /// 参照量的：状态栏 59、导航带底 110.67 ⇒ **51.67**。这 51.67 = 标准
+        /// 44pt 带 + 它自己多铺的 7.67。按「安全区 + 51.67」算而不是写死
+        /// 110.67，换机型（安全区 47 / 54 / 59）自动对。
+        private static let navBandBottomBelowSafeArea: CGFloat = 51.67
+
+        /// 拿不到安全区时的兜底：按标准 44pt 带算，多铺 7.67。
+        private static let fallbackOverhang: CGFloat = 7.67
+
+        /// [2026-11-14 第十一轮] 导航栏背景改成「上实下虚」。
+        ///
+        /// 上一版往 bar 里插了一层自己的 `UIView` 当背景，z 序没插对，把标题
+        /// 和两个气泡整块盖没了（导航栏区域一片纯白）。所以这一版**不新增
+        /// 任何视图**，直接改 bar 自己那层背景（`_UIBarBackground`）：
+        ///
+        ///   · 把它的高度撑到导航带下沿（安全区 + 51.67）
+        ///   · 给它挂一张竖向 `CAGradientLayer` 蒙版，只让最后 18pt 从 100%
+        ///     渐隐到 0
+        ///
+        /// 它本来就在内容下面、是 UIKit 自己管的那一层，所以盖不到标题和
+        /// 气泡；颜色也还是 `.toolbarBackground(ChatColors.background)` 给的
+        /// 那个，深浅色切换不用管。
+        private func fadeExistingBackground(on bar: UINavigationBar) {
+            guard let bg = bar.subviews.first(where: {
+                String(describing: type(of: $0)).contains("BarBackground")
+            }) else { return }
+
+            let safeTop = bar.window?.safeAreaInsets.top ?? 0
+            let overhang = safeTop > 0
+                ? max(0, safeTop + Self.navBandBottomBelowSafeArea - bar.bounds.height)
+                : Self.fallbackOverhang
+            let height = bar.bounds.height + overhang
+            guard height > 0, bar.bounds.width > 0 else { return }
+
+            // UIKit 每次布局都会把背景层重设回 44pt 带，所以每次都比一次。
+            if abs(bg.frame.height - height) > 0.5 {
+                var f = bg.frame
+                f.size.height = height
+                bg.frame = f
+            }
+            // 撑高的那 7.67 落在 bar 边界外，得让它自己别裁。
+            if bg.clipsToBounds { bg.clipsToBounds = false }
+
+            // 渐隐带按背景层的**实际**高度算，而不是按目标值：万一 UIKit
+            // 把 frame 重新设回标准带、这次没撑上，渐隐带也只是变成「底部
+            // 18pt」，不会跑到层外面去。
+            let realHeight = bg.bounds.height
+            guard realHeight > 0 else { return }
+            let end = max(0, min(1, 1 - Self.fadeHeight / realHeight))
+            let mask = (bg.layer.mask as? CAGradientLayer) ?? CAGradientLayer()
+            let size = bg.bounds.size
+            if mask.frame.size != size {
+                mask.frame = CGRect(origin: .zero, size: size)
+            }
+            mask.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
+            mask.locations = [NSNumber(value: 0), NSNumber(value: Double(end)), NSNumber(value: 1)]
+            mask.startPoint = CGPoint(x: 0.5, y: 0)
+            mask.endPoint = CGPoint(x: 0.5, y: 1)
+            // 已经挂的是这一张就别反复赋值 —— 每次赋值都会重绘整条 bar。
+            if bg.layer.mask !== mask {
+                bg.layer.mask = mask
+            }
         }
 
         /// 把一份 appearance 的 `shadowColor` 清成透明。
