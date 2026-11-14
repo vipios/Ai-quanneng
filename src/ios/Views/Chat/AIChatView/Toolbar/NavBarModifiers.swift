@@ -123,8 +123,8 @@ struct NavBarStyleModifier: ViewModifier {
         // 实机一点效果都没有：那个值在这棵树上恒为 0，渐变被画到了 51.67pt
         // （状态栏里），颜色又和底色一样，等于没画。
         //
-        // 这一版不再要那个值：从屏幕最顶上铺下来，0 → 110.67 全实色，
-        // 110.67 → 123 按参照实测的曲线落到底。带子自己有没有底色都不影响。
+        // 这一版不再要那个值：从屏幕最顶上铺下来，0 → 108 全实色，
+        // 108 → 123 按参照实测的曲线落到底。带子自己有没有底色都不影响。
         .overlay(alignment: .top) {
             TopBandFade()
         }
@@ -138,7 +138,7 @@ struct NavBarStyleModifier: ViewModifier {
 
 // MARK: - 导航带 + 下沿的过渡
 
-/// 从屏幕顶上铺下来的一条：0 → 110.67 实色，110.67 → 123 淡出。
+/// 从屏幕顶上铺下来的一条：0 → 108 实色，108 → 123 淡出。
 ///
 /// 和输入栏那条（`AIChatView+InputBar.swift:504`）是同一个办法，只是方向反过来：
 /// 输入栏是「透明 → 实色」压在底部，让内容不从底下漏出来；这条是「实色 → 透明」
@@ -146,21 +146,22 @@ struct NavBarStyleModifier: ViewModifier {
 ///
 /// **为什么从 0 铺起**：导航带自己的底色不可靠 —— 实机截图量下来，带子区域
 /// 的像素和页面底色一模一样（都是 248），内容在 98.67pt 就已经完整露出来了，
-/// 带子等于没盖住东西。所以这条渐变干脆把整段都自己铺：0 → 110.67 实色，
-/// 顺带把带子没盖住的那段也盖上；110.67 → 123 才是过渡。
+/// 带子等于没盖住东西。所以这条渐变干脆把整段都自己铺：0 → 108 实色，
+/// 顺带把带子没盖住的那段也盖上；108 → 123 才是过渡。
 ///
 /// 中间那几个停靠点不是均分的，是拿参照截图逐行量出来的实际透明度：
 ///
+///   108.00 → 内容透出  2%   ⇒ 盖 0.98
 ///   110.67 → 内容透出  8%   ⇒ 盖 0.92
 ///   117.33 → 内容透出 25%   ⇒ 盖 0.75
 ///   121.33 → 内容透出 77%   ⇒ 盖 0.23
 ///   122.67 → 内容透出 95%   ⇒ 盖 0.05
 ///   123.00 → 内容全亮       ⇒ 盖 0
 ///
-/// 也就是前 6.7pt 几乎不动（一直压到 0.92…0.75），最后 5.7pt 才猛落到底。
+/// 也就是前 9.3pt 几乎不动（一直压到 0.98…0.75），最后 5.7pt 才猛落到底。
 ///
 /// 位置直接用点数摆，只在本页自己的范围里画、**不越界**：先读这一层顶边
-/// 在屏幕上的位置，`110.67 − 顶边` 就是实色段该铺多高，剩下 12.33 就是
+/// 在屏幕上的位置，`108 − 顶边` 就是实色段该铺多高，剩下 15 就是
 /// 过渡带。页面顶边落在 0 / 59 / 103 哪一处，最后都落到同一条线上。
 ///
 /// **不用 `ignoresSafeArea()`**：那会让这一层撑满整屏、连导航栏那块一起
@@ -171,14 +172,14 @@ struct TopBandFade: View {
     /// 状态栏下沿。15 Pro Max = 59；拿不到就用这个兜底。
     static let statusBarHeight: CGFloat = 59
 
-    /// 带子本体高度。
+    /// 带子实色段高度。51.67 → 49：下沿从 110.67 收到 108，和参照同一条线。
     ///
     /// 和 `NavBarSeparatorRemover.Probe.bandHeightBelowSafeArea` 是同一个数：
     /// 那边在 UIKit 里、这边在 SwiftUI 里，拿不到同一份常量，改一处必须改两处。
-    static let bandHeightBelowSafeArea: CGFloat = 51.67
+    static let bandHeightBelowSafeArea: CGFloat = 49
 
-    /// 过渡带高度。110.67 → 123。
-    static let fadeHeight: CGFloat = 12.33
+    /// 过渡带高度。108 → 123，15.0pt，和参照一样宽。
+    static let fadeHeight: CGFloat = 15
 
     /// 实色段的绝对下沿（屏幕坐标）。
     static var bandBottom: CGFloat { statusBarHeight + bandHeightBelowSafeArea }
@@ -187,21 +188,22 @@ struct TopBandFade: View {
         GeometryReader { geo in
             // 这一层顶边在屏幕上的位置。恒为 0 的是 `safeAreaInsets`，不是这个。
             let top = geo.frame(in: .global).minY
-            // 实色段：从这一层顶边铺到屏幕 110.67 那条线。
-            // 页面顶边已经在 110.67 时，这个数是 0，就只画过渡带。
+            // 实色段：从这一层顶边铺到屏幕 108 那条线。
+            // 页面顶边已经在 108 时，这个数是 0，就只画过渡带。
             let solid = max(0, Self.bandBottom - top)
             VStack(spacing: 0) {
                 if solid > 0.5 {
                     ChatColors.background
                         .frame(height: solid)
                 }
-                // 过渡带：110.67 → 123，12.33pt
+                // 过渡带：108 → 123，15pt
                 LinearGradient(
                     stops: [
-                        .init(color: ChatColors.background.opacity(0.92), location: 0),
-                        .init(color: ChatColors.background.opacity(0.75), location: 0.540),
-                        .init(color: ChatColors.background.opacity(0.23), location: 0.865),
-                        .init(color: ChatColors.background.opacity(0.05), location: 0.973),
+                        .init(color: ChatColors.background.opacity(0.98), location: 0),
+                        .init(color: ChatColors.background.opacity(0.92), location: 0.178),
+                        .init(color: ChatColors.background.opacity(0.75), location: 0.622),
+                        .init(color: ChatColors.background.opacity(0.23), location: 0.889),
+                        .init(color: ChatColors.background.opacity(0.05), location: 0.978),
                         .init(color: ChatColors.background.opacity(0), location: 1),
                     ],
                     startPoint: .top,
@@ -420,13 +422,22 @@ final class NavBubbleBarItemView: UIView {
         CGSize(width: NavBubble.diameter, height: NavBubble.diameter)
     }
 
-    /// 白圆往下探出了容器底部 `contentDrop`，默认的命中判定会在容器边界处
-    /// 就返回 false，那一条会点不到。按同一量把命中区往下放宽。
+    /// 命中区。
+    ///
+    /// 两件事一起兜：
+    ///
+    /// ① 白圆往下探出了容器底部 `contentDrop`，默认判定在容器边界就返回
+    ///    false，那半截会点不到 —— 所以往下放宽同一个量。
+    ///
+    /// ② **不信任 `bounds`**。UIKit 每次 bar 布局都会重设 customView 的
+    ///    frame，有些系统版本给的是 0×0、或者比 44 小的尺寸。原来的写法
+    ///    直接拿 bounds 算，bounds 一旦变成 0，命中区也跟着是 0 —— 整颗
+    ///    「…」就完全点不动（1.66 起点不了正是这个）。这里改用气泡本身的
+    ///    直径兜底，bounds 再小也保证有 44 × (44 + contentDrop) 的可点范围。
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        CGRect(x: 0,
-               y: 0,
-               width: bounds.width,
-               height: bounds.height + NavBubble.contentDrop).contains(point)
+        let w = max(bounds.width, NavBubble.diameter)
+        let h = max(bounds.height, NavBubble.diameter) + NavBubble.contentDrop
+        return CGRect(x: 0, y: 0, width: w, height: h).contains(point)
     }
 }
 
@@ -527,8 +538,26 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         /// 再写一遍，那次写入可能落在我们上一次布局之后。
         private var didCatchLatePush = false
 
+        override func willMove(toParent parent: UIViewController?) {
+            super.willMove(toParent: parent)
+            // 越早越好。这时候可能还没接上导航栈，拿不到就跳过；
+            // 不主动触发 view 加载（`isViewLoaded` 拦一下），免得打乱布局。
+            if isViewLoaded { syncChrome() }
+        }
+
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
+            syncChrome()
+        }
+
+        override func viewWillLayoutSubviews() {
+            super.viewWillLayoutSubviews()
+            // 比 `viewDidLayoutSubviews` 早一步。
+            //
+            // 那一版只在 did 里同步，而 did 是**布局结束**才调 —— 那时这一帧
+            // 已经定稿，改完得等下一帧才画出来。用户看到的就是：进页面先闪
+            // 一下「内容被切在 97.33」的旧样子，然后才跳成带子抬到 108 的
+            // 样子。挪到 will 里，同一次布局就把带子改好，画出来就是对的。
             syncChrome()
         }
 
@@ -622,11 +651,14 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         // 参照量出来的四条线（同机型全屏截图，1290px / 430pt，3.0 px/pt）：
         //   · 状态栏下沿        59.00
         //   · 气泡              67.00 … 110.67（直径 44）
-        //   · 带子本体下沿      110.67   ← 不透明段到此为止
-        //   · 渐隐段终点        110.67 + 12.33 = 123.00
+        //   · 带子实色段下沿    108.00   ← 不透明段到此为止
+        //   · 渐隐段终点        108.00 + 15.00 = 123.00
         //
-        // 参照那条带的不透明段是 **51.67 高**：标准 44pt 带之外，它自己往下
-        // 多铺了 7.67，正好和气泡底边（110.67）齐平。
+        // [2026-11-14 对齐参照] 带子从 51.67 收到 **49**（下沿 110.67 → 108）。
+        // 参照的渐隐是 108 → 123、15.0pt，起点比气泡底边（110.67）还高 2.67pt，
+        // 等于从带子里面就开始淡了。要对齐就得把实色段也收到 108，两边不错位。
+        // 副作用（已知）：左右两个 44pt 气泡底边在 110.67，会露出 2.67pt 到
+        // 过渡带里 —— 参照本身也是这样，气泡底部那一截就落在模糊区里。
         //
         // [2026-11-14 第十五轮] 关键修正：**渐隐段在带子下沿之外，不在带子里**。
         //
@@ -635,27 +667,27 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         // 的就是「怎么还是透明」，不是「滑进去慢慢消失」。
         //
         // 参照逐行量的可见度（内容墨迹 34 / 底色 247）：
-        //   109.33pt → 0.05（已看不见）
-        //   110.67pt → 0.08（刚开始透）
+        //   108.00pt → 0.02（刚开始透）
+        //   110.67pt → 0.08
         //   117.33pt → 0.25
         //   121.33pt → 0.77
         //   122.67pt → 0.95（基本全亮）
-        // 所以不透明段必须一直到 110.67，渐隐在那之后才开始。
+        //   123.00pt → 1.00
+        // 所以不透明段到 108 为止，渐隐在那之后才开始。
 
-        /// 带子**本体**（不透明段）下沿落在「状态栏下沿 + 多少 pt」。
+        /// 带子**实色段**下沿落在「状态栏下沿 + 多少 pt」。
         ///
-        /// **直接写参照的量测值 51.67，不取整**：59 + 51.67 = 110.67，和参照
-        /// 的带底、气泡底都是同一条线。
-        private static let bandHeightBelowSafeArea: CGFloat = 51.67
+        /// **直接写量测值，不取整**：59 + 49 = 108，和参照的渐隐起点同一条线。
+        private static let bandHeightBelowSafeArea: CGFloat = 49
 
-        /// 拿不到安全区时的兜底：标准 44pt 带之外多铺的量，同样是参照的值。
-        private static let fallbackOverhang: CGFloat = 7.67
+        /// 拿不到安全区时的兜底：标准 44pt 带之外多铺的量。49 − 44 = 5。
+        private static let fallbackOverhang: CGFloat = 5
 
         /// 背景层该有多高（在本层坐标系里）。
         ///
         /// 高度按**window 坐标**反算，不按 bar 自己的 bounds 反算：不同系统
         /// 版本里 bar 的 frame 有的是 (0,0,w,103)（连状态栏一起算），有的是
-        /// (0,59,w,44)（只算那 44pt 带），两种都对得上「带子到 110.67」
+        /// (0,59,w,44)（只算那 44pt 带），两种都对得上「带子到 108」
         /// 这条线，不必去猜是哪种。
         private func bandLayerHeight(on bar: UINavigationBar) -> CGFloat {
             let fallback = bar.bounds.height + Self.fallbackOverhang
@@ -683,6 +715,10 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             }
             // 多出来的那段落在 bar 边界外，得让它自己别裁。
             if bg.clipsToBounds { bg.clipsToBounds = false }
+            // 这层被拉高、又放开了裁剪之后，它盖住的那片区域会先把点击接住
+            // （hitTest 停在它这里就不再往下传），可它只是个底色、没有任何
+            // 手势，接住等于把点击吃掉。右上「…」和左上返回正好压在这片区域。
+            if bg.isUserInteractionEnabled { bg.isUserInteractionEnabled = false }
         }
 
         /// 找 bar 自己那层背景。
@@ -704,7 +740,7 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         ///
         /// [2026-11-14 第十七轮] 底部那条渐隐**已整段退回**，不再往 appearance
         /// 里塞任何背景图 —— 塞进去的图会被系统按它自己的尺寸重画，位置对不上，
-        /// 实机看不出过渡效果。带子这里只负责「实色铺到 110.67」这一件事。
+        /// 实机看不出过渡效果。带子这里只负责「实色铺到 108」这一件事。
         ///
         /// 已经是目标状态就返回 nil，调用方据此跳过赋值 —— 避免每次布局都往
         /// UIKit 里灌一遍新对象（每次赋值都会重画整条 bar）。
@@ -723,7 +759,7 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             }
             let copy = (appearance.copy() as? UINavigationBarAppearance) ?? appearance
             copy.shadowColor = .clear
-            // 实色铺满整条带子，到 110.67 为止。
+            // 实色铺满整条带子，到 108 为止。
             copy.backgroundColor = color
             // 毛玻璃关掉，免得它把带子下面的内容虚化出第二层效果。
             copy.backgroundEffect = nil
