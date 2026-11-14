@@ -425,7 +425,7 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> Probe { Probe() }
 
     func updateUIViewController(_ vc: Probe, context: Context) {
-        vc.removeSeparator()
+        vc.syncChrome()
     }
 
     /// 只用来摸到父级导航栏，不画任何东西。
@@ -437,22 +437,33 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
 
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
-            removeSeparator()
+            syncChrome()
         }
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
-            removeSeparator()
+            syncChrome()
             // 只补一次，不递归：清干净之后再调是空操作，没必要长期挂着
             // async 在主队列上反复触发。
             guard !didCatchLatePush else { return }
             didCatchLatePush = true
-            DispatchQueue.main.async { [weak self] in self?.removeSeparator() }
+            DispatchQueue.main.async { [weak self] in self?.syncChrome() }
         }
 
         override func viewDidLayoutSubviews() {
             super.viewDidLayoutSubviews()
+            syncChrome()
+        }
+
+        /// 三件事，都在每次布局后重新确认一遍：吃掉导航栏底边的分隔线、
+        /// 放开裁剪、铺底部过渡带。前两件 SwiftUI 每次推工具栏都会写回
+        /// 默认值，只设一次会被盖掉。
+        func syncChrome() {
             removeSeparator()
+            guard let nav = enclosingNavigationController else { return }
+            let bar = nav.navigationBar
+            openClips(on: bar)
+            installTopFade(nav: nav, bar: bar)
         }
 
         func removeSeparator() {
@@ -477,6 +488,137 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             // ③ 老 API 兜底：iOS 13 之前这条线是 `shadowImage` 画的，有些系统
             //    版本在 appearance 清空后仍会回落到它，给一张空图。
             if bar.shadowImage == nil { bar.shadowImage = UIImage() }
+        }
+
+        // MARK: - 放开裁剪
+
+        /// [2026-11-14 第十轮] 关掉导航栏对子视图的裁剪。
+        ///
+        /// 起因：用户报「我们的字体和左上右上图标被裁」。
+        ///
+        /// 截图逐像素量的（1290px / 430pt，3.0 px/pt）：左右两个 44pt 气泡
+        /// 顶边都在 **67.00pt**，和参照一分不差 —— 位置本来就是对的。但可见
+        /// 高度只有 30.67pt，底边被一条水平线硬切在 **97.33pt**；第二行文字
+        /// 墨迹顶 94.00、高 14.33，也只露出 3.67pt。参照在同样的位置上能完整
+        /// 露到 110.67pt。
+        ///
+        /// 所以这里只做一件事：把裁剪关掉，让已经摆好的内容画出来。一个
+        /// frame、一个 offset 都不动，位置因此不会变。
+        ///
+        /// 为什么连子视图一起放开：真正在裁的是 bar 内部那个内容容器
+        /// （`_UINavigationBarContentView` 一类），只放开 bar 自己这层不够。
+        /// 深度限 6 层 —— 从 bar 数到 SwiftUI 的宿主视图大概是
+        /// bar → contentView → barStackView → barButtonView → hostingView 五层，
+        /// 留一层余量；再往深就是系统自己的远景视图，不能碰。
+        private func openClips(on bar: UINavigationBar) {
+            if bar.clipsToBounds { bar.clipsToBounds = false }
+            Self.openClips(in: bar, depth: 0)
+        }
+
+        private static func openClips(in view: UIView, depth: Int) {
+            guard depth < 6 else { return }
+            for sub in view.subviews {
+                if sub.clipsToBounds { sub.clipsToBounds = false }
+                openClips(in: sub, depth: depth + 1)
+            }
+        }
+
+        // MARK: - 底部过渡带
+
+        /// 过渡带高度。参照逐像素扫的：从清晰内容往上，局部对比度 20 → 2.4，
+        /// 过渡约 **18pt**，是渐变不是硬边。
+        private static let fadeHeight: CGFloat = 18
+
+        /// 参照导航带的下沿落在「状态栏下沿 + 多少 pt」。
+        ///
+        /// 参照量的：状态栏 59、导航带底 110.67 ⇒ **51.67**。这 51.67 = 标准
+        /// 44pt 带 + 它自己多铺的 7.67。按「安全区 + 51.67」算而不是写死
+        /// 110.67，换机型（安全区 47 / 54 / 59）自动对。
+        private static let navBandBottomBelowSafeArea: CGFloat = 51.67
+
+        /// 拿不到安全区时的兜底：按标准 44pt 带算，多铺 7.67。
+        private static let fallbackOverhang: CGFloat = 7.67
+
+        private weak var fadeHost: FadeBackdrop?
+
+        /// [2026-11-14 第十轮] 导航栏背景从「不透明纯色」改成「上实下虚」。
+        ///
+        /// 起因：用户报「字体滑动到上面快进去时候导航卡片下边缘那种模糊」。
+        /// 我们原来把 `.toolbarBackground(ChatColors.background)` 钉成不透明，
+        /// 内容滚上去是在 bar 底边被一刀切断；参照是毛玻璃，越往上越实。
+        ///
+        /// 做法：三份 appearance 的底色清成透明，自己在 bar 里挂一层
+        /// `FadeBackdrop`。坐标全在 bar 自己的 bounds 里 —— bar 的 bounds
+        /// 从屏幕顶算起、含状态栏整段，所以换机型（59 或 44 的安全区）自动
+        /// 对得上，不用写死任何一个数。
+        private func installTopFade(nav: UINavigationController, bar: UINavigationBar) {
+            let width = bar.bounds.width
+            let barHeight = bar.bounds.height
+            guard width > 0, barHeight > 0 else { return }
+
+            for item in Self.appearanceItems(of: nav) {
+                if let a = Self.transparent(item.standardAppearance) { item.standardAppearance = a }
+                if let a = Self.transparent(item.scrollEdgeAppearance) { item.scrollEdgeAppearance = a }
+                if let a = Self.transparent(item.compactAppearance) { item.compactAppearance = a }
+            }
+            if let a = Self.transparent(bar.standardAppearance) { bar.standardAppearance = a }
+            if let a = Self.transparent(bar.scrollEdgeAppearance) { bar.scrollEdgeAppearance = a }
+            if let a = Self.transparent(bar.compactAppearance) { bar.compactAppearance = a }
+
+            let host: FadeBackdrop
+            if let existing = fadeHost, existing.superview === bar {
+                host = existing
+            } else {
+                host = FadeBackdrop()
+                // 插在自己的背景层之上、内容容器之下 —— 夹在这两者中间，
+                // 既盖住系统那层背景，又不会挡住按钮和标题。
+                // 内容容器叫 `_UINavigationBarContentView`，背景层叫
+                // `_UIBarBackground`；都按类名找，找不到就退到最底层。
+                if let content = bar.subviews.first(where: { String(describing: type(of: $0)).contains("ContentView") }) {
+                    bar.insertSubview(host, belowSubview: content)
+                } else if let bg = bar.subviews.first(where: { String(describing: type(of: $0)).contains("BarBackground") }) {
+                    bar.insertSubview(host, aboveSubview: bg)
+                } else {
+                    bar.insertSubview(host, at: 0)
+                }
+                fadeHost = host
+            }
+
+            let safeTop = bar.window?.safeAreaInsets.top ?? 0
+            let overhang = safeTop > 0
+                ? max(0, safeTop + Self.navBandBottomBelowSafeArea - barHeight)
+                : Self.fallbackOverhang
+
+            let target = CGRect(x: 0, y: 0,
+                                width: width,
+                                height: barHeight + overhang)
+            if host.frame != target { host.frame = target }
+
+            host.apply(
+                background: UIColor(ChatColors.background)
+                    .resolvedColor(with: bar.traitCollection),
+                fade: Self.fadeHeight,
+                height: target.height
+            )
+        }
+
+        /// 把一份 appearance 的底色和分隔色一起清成透明。
+        ///
+        /// 和上面的 `cleared` 分开写：那边只清分隔线（只动 `shadowColor`），
+        /// 这边要连底色一起清，好让 `FadeBackdrop` 从底下透出来。
+        private static func transparent(_ appearance: UINavigationBarAppearance?) -> UINavigationBarAppearance? {
+            guard let appearance else { return nil }
+            let alreadyClear = appearance.backgroundColor == .clear
+                && appearance.shadowColor == .clear
+                && appearance.backgroundEffect == nil
+            guard !alreadyClear else { return nil }
+            let copy = (appearance.copy() as? UINavigationBarAppearance) ?? appearance
+            copy.backgroundColor = .clear
+            copy.shadowColor = .clear
+            // `.toolbarBackground(.visible)` 有可能留下一个默认 material；
+            // 光清颜色不够，那层材质还在，得一起摘掉。
+            copy.backgroundEffect = nil
+            return copy
         }
 
         /// 把一份 appearance 的 `shadowColor` 清成透明。
@@ -543,5 +685,81 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             }
             return nil
         }
+    }
+}
+
+// MARK: - 导航栏自己画的那层背景
+
+/// 导航栏的背景：毛玻璃打底、不透明纯色压在上面，两层共用同一张竖向蒙版。
+///
+/// 为什么非得两层：
+///  · 只用纯色 —— 底部渐隐会直接露出清晰内容，没有「糊」的那一下，等于
+///    什么都没做；
+///  · 只用毛玻璃 —— 顶上不够实，状态栏的时间电量和下面的消息会互相透，
+///    而且滚到底时整条 bar 会显得发灰。
+///
+/// 两层各自按同一张蒙版渐隐（最后 `fadeHeight` 那 18pt 从 100% 到 0），
+/// 合起来就是参照那种「上实下虚」：上面完全盖住，下面慢慢化开。
+///
+/// 蒙版用 `CAGradientLayer` 而不是 SwiftUI 的 `LinearGradient`：这层挂在
+/// `UINavigationBar` 里面，走 UIKit 的坐标（bar.bounds 从屏幕顶算、含状态栏
+/// 整段），换机型不用改任何数。
+private final class FadeBackdrop: UIView {
+
+    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+    private let solid = UIView()
+    private let blurMask = CAGradientLayer()
+    private let solidMask = CAGradientLayer()
+
+    /// 上一轮用的尺寸 / 过渡高度，值没变就不重建蒙版。
+    private var lastSize: CGSize = .zero
+    private var lastFade: CGFloat = -1
+
+    init() {
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        // 这层要比 bar 底多铺一截（`overhang`），得能画到 bar 外面去。
+        clipsToBounds = false
+
+        blur.isUserInteractionEnabled = false
+        blur.clipsToBounds = true
+        addSubview(blur)
+
+        // 后加的在上：纯色压在毛玻璃之上，两个都渐隐。
+        solid.isUserInteractionEnabled = false
+        solid.clipsToBounds = true
+        addSubview(solid)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func apply(background: UIColor, fade: CGFloat, height: CGFloat) {
+        if solid.backgroundColor?.isEqual(background) != true {
+            solid.backgroundColor = background
+        }
+        guard bounds.height > 0, height > 0 else { return }
+
+        if blur.frame != bounds { blur.frame = bounds }
+        if solid.frame != bounds { solid.frame = bounds }
+
+        guard bounds.size != lastSize || fade != lastFade else { return }
+        lastSize = bounds.size
+        lastFade = fade
+
+        // 0 → (1 − fade/h) 全不透明，最后 fade 那截渐隐到 0。
+        let end = max(0, min(1, 1 - fade / height))
+        applyMask(blurMask, to: blur, end: end)
+        applyMask(solidMask, to: solid, end: end)
+    }
+
+    private func applyMask(_ mask: CAGradientLayer, to view: UIView, end: CGFloat) {
+        mask.frame = CGRect(origin: .zero, size: view.bounds.size)
+        mask.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
+        mask.locations = [NSNumber(value: 0), NSNumber(value: Double(end)), NSNumber(value: 1)]
+        mask.startPoint = CGPoint(x: 0.5, y: 0)
+        mask.endPoint = CGPoint(x: 0.5, y: 1)
+        view.layer.mask = mask
     }
 }
