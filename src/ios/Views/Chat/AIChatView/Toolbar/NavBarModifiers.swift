@@ -173,9 +173,6 @@ struct TopBandFade: View {
     static let statusBarHeight: CGFloat = 59
 
     /// 带子实色段高度。51.67 → 49：下沿从 110.67 收到 108，和参照同一条线。
-    ///
-    /// 和 `NavBarSeparatorRemover.Probe.bandHeightBelowSafeArea` 是同一个数：
-    /// 那边在 UIKit 里、这边在 SwiftUI 里，拿不到同一份常量，改一处必须改两处。
     static let bandHeightBelowSafeArea: CGFloat = 49
 
     /// 过渡带高度。108 → 123，15.0pt，和参照一样宽。
@@ -238,25 +235,6 @@ struct NavBubble: ViewModifier {
     /// 一分不差），顶边 67.00pt。我们原来 40pt，比参照小一圈。
     static let diameter: CGFloat = 44
 
-    /// 气泡要往下补多少 pt。
-    ///
-    /// [参照图对齐 2026-11-13 第七轮] 全屏截图逐像素量的：参照左上气泡顶边
-    /// 61.28pt、我们 55.67pt ⇒ 我们这棵导航栏的内容整体高了 5.6pt（右上那颗
-    /// 也是 55.67，同一水平线，说明不是单个 item 的问题）。标题那边已经用
-    /// `.offset(y: 6)` 补过了，气泡这里补同一个量，两者才又回到一条线上。
-    ///
-    /// [2026-11-14 第九轮] 5.6 → 13.27，按同机型的第二组参照截图重算：
-    ///   · 不带补偿时圆的顶边 = 61.33 − 5.6 = 55.73
-    ///   · 直径 40 → 44，在 44pt 带里居中摆 ⇒ 顶边上移 (44−40)/2 = 2
-    ///   · 目标 67.00 ⇒ 13.27 = 67.00 − (55.73 − 2)
-    /// 13.27 是这么来的，不是拍脑袋凑的数。
-    static let contentDrop: CGFloat = 13.27
-
-    /// 左上气泡左边距要收进去多少 pt。
-    ///
-    /// 参照 15.3pt、我们 19.7pt。收 4.4 后落回 15.3，和参照的左边距一致。
-    static let leadingInset: CGFloat = -4.4
-
     /// 白底在深色模式下会刺眼，深色用 10% 白叠在卡片底色上。
     static var fill: Color {
         Color(UIColor { trait in
@@ -278,11 +256,6 @@ struct NavBubble: ViewModifier {
                         .shadow(color: .black.opacity(0.05), radius: 4, y: 1)
                 }
                 .contentShape(Circle())
-                // 位置按参照补：往左 4.4（19.7 → 15.3）、往下 5.6（55.7 → 61.3）。
-                // 只在这一支里补 —— iOS 26 的液体玻璃导航栏几何不同，那边原样直通。
-                // 右上「…」那颗在 `NavBubbleBarItemView` 里补同一个纵向量，
-                // 两个按钮必须落在同一条线上。
-                .offset(x: Self.leadingInset, y: Self.contentDrop)
         }
     }
 }
@@ -362,47 +335,22 @@ struct NavBackBubbleButton: View {
 /// 子视图不拦截触摸，照常弹出菜单。
 final class NavBubbleBarItemView: UIView {
 
-    /// 真正那圈白圆。位置由自己定（容器顶边 + `contentDrop`），不靠
-    /// `transform` —— 原因见 `init` 里那段。
-    private let bubble = UIView()
     private let icon = UIImageView()
 
     init(symbolName: String, pointSize: CGFloat) {
         let d = NavBubble.diameter
         super.init(frame: CGRect(x: 0, y: 0, width: d, height: d))
 
-        // [2026-11-14 第八轮] 位移从 `self.transform` 改成「白圆作为子视图、
-        // 自己往下摆 `contentDrop`」。
-        //
-        // 起因：用户报「右边的气泡和左边的气泡距离上边缘不一样高」。
-        // 左上那颗的位移是 SwiftUI 的 `.offset(y:)`（纯绘制位移，几何上
-        // 精确、可预期）；右上这颗原来是 `transform = translation(0, drop)`，
-        // 但 customView 的 `frame` 是 UIKit 在每次 bar 布局时**重新设**的，
-        // 而有非 identity transform 的 view 一旦被赋 frame，frame 会按
-        // 「bounds 经 transform 变换后的外接矩形」反算，位置就不再等于
-        // 写死的那个 drop —— 两颗于是对不上。
-        //
-        // 子视图方案：外层容器永远保持 identity transform，交给 UIKit 居
-        // 中摆放；白圆的纵偏移在容器**内部**完成，UIKit 怎么设 frame 都
-        // 动不了它。
-        bubble.frame = CGRect(x: 0, y: NavBubble.contentDrop, width: d, height: d)
-        bubble.isUserInteractionEnabled = false
-        // 万一 UIKit 给 customView 的 frame 不是 40×40（有些版本会撑一点），
-        // 让圆在水平方向自己居中，别贴着左边。
-        bubble.autoresizingMask = [.flexibleLeftMargin, .flexibleRightMargin]
-        bubble.backgroundColor = UIColor { trait in
+        backgroundColor = UIColor { trait in
             trait.userInterfaceStyle == .dark
                 ? UIColor(white: 1, alpha: 0.10)
                 : UIColor.white
         }
-        bubble.layer.cornerRadius = d / 2
-        // 和 SwiftUI 那圈 `.shadow` 同参数：不让 masksToBounds 跟着圆角裁，
-        // 否则投影一并被裁没。
-        bubble.layer.shadowColor = UIColor.black.cgColor
-        bubble.layer.shadowOpacity = 0.05
-        bubble.layer.shadowRadius = 4
-        bubble.layer.shadowOffset = CGSize(width: 0, height: 1)
-        addSubview(bubble)
+        layer.cornerRadius = d / 2
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.05
+        layer.shadowRadius = 4
+        layer.shadowOffset = CGSize(width: 0, height: 1)
 
         icon.image = UIImage(
             systemName: symbolName,
@@ -410,9 +358,9 @@ final class NavBubbleBarItemView: UIView {
         )
         icon.tintColor = UIColor(ChatColors.primaryText)
         icon.contentMode = .center
-        icon.frame = bubble.bounds
+        icon.frame = bounds
         icon.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        bubble.addSubview(icon)
+        addSubview(icon)
     }
 
     @available(*, unavailable)
@@ -420,24 +368,6 @@ final class NavBubbleBarItemView: UIView {
 
     override var intrinsicContentSize: CGSize {
         CGSize(width: NavBubble.diameter, height: NavBubble.diameter)
-    }
-
-    /// 命中区。
-    ///
-    /// 两件事一起兜：
-    ///
-    /// ① 白圆往下探出了容器底部 `contentDrop`，默认判定在容器边界就返回
-    ///    false，那半截会点不到 —— 所以往下放宽同一个量。
-    ///
-    /// ② **不信任 `bounds`**。UIKit 每次 bar 布局都会重设 customView 的
-    ///    frame，有些系统版本给的是 0×0、或者比 44 小的尺寸。原来的写法
-    ///    直接拿 bounds 算，bounds 一旦变成 0，命中区也跟着是 0 —— 整颗
-    ///    「…」就完全点不动（1.66 起点不了正是这个）。这里改用气泡本身的
-    ///    直径兜底，bounds 再小也保证有 44 × (44 + contentDrop) 的可点范围。
-    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        let w = max(bounds.width, NavBubble.diameter)
-        let h = max(bounds.height, NavBubble.diameter) + NavBubble.contentDrop
-        return CGRect(x: 0, y: 0, width: w, height: h).contains(point)
     }
 }
 
@@ -576,15 +506,14 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             syncChrome()
         }
 
-        /// 三件事，每次布局后重新确认一遍：放开裁剪、把背景层抬到带子下沿、
-        /// 摘掉底边分隔线。三件都是改 bar 自己已有的属性，不往里加任何视图。
+        /// 两件事：放开裁剪、摘掉底边分隔线。带子的实色段不再靠拉高背景层，
+        /// 改由 `TopBandFade` 自己铺（它从屏幕顶铺实色到 108），所以这里
+        /// 不再动 `backgroundLayer` 的 frame —— 那件事是「进页面闪一下原版」
+        /// 的根源（事后改 frame，第一帧总是旧高度）。
         func syncChrome() {
             guard let nav = enclosingNavigationController else { return }
             let bar = nav.navigationBar
             openClips(on: bar)
-            if let bg = Self.backgroundLayer(of: bar) {
-                applyBandHeight(bandLayerHeight(on: bar), to: bg)
-            }
             removeSeparator()
         }
 
@@ -644,96 +573,6 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
                 if sub.clipsToBounds { sub.clipsToBounds = false }
                 openClips(in: sub, depth: depth + 1)
             }
-        }
-
-        // MARK: - 导航带高度
-        //
-        // 参照量出来的四条线（同机型全屏截图，1290px / 430pt，3.0 px/pt）：
-        //   · 状态栏下沿        59.00
-        //   · 气泡              67.00 … 110.67（直径 44）
-        //   · 带子实色段下沿    108.00   ← 不透明段到此为止
-        //   · 渐隐段终点        108.00 + 15.00 = 123.00
-        //
-        // [2026-11-14 对齐参照] 带子从 51.67 收到 **49**（下沿 110.67 → 108）。
-        // 参照的渐隐是 108 → 123、15.0pt，起点比气泡底边（110.67）还高 2.67pt，
-        // 等于从带子里面就开始淡了。要对齐就得把实色段也收到 108，两边不错位。
-        // 副作用（已知）：左右两个 44pt 气泡底边在 110.67，会露出 2.67pt 到
-        // 过渡带里 —— 参照本身也是这样，气泡底部那一截就落在模糊区里。
-        //
-        // [2026-11-14 第十五轮] 关键修正：**渐隐段在带子下沿之外，不在带子里**。
-        //
-        // 上一版把渐隐段做在带子内部（92.67…110.67），方向整个反了：带子内部
-        // 变半透明（内容在标题那一行就透出来），带子下面反而全亮 —— 用户看到
-        // 的就是「怎么还是透明」，不是「滑进去慢慢消失」。
-        //
-        // 参照逐行量的可见度（内容墨迹 34 / 底色 247）：
-        //   108.00pt → 0.02（刚开始透）
-        //   110.67pt → 0.08
-        //   117.33pt → 0.25
-        //   121.33pt → 0.77
-        //   122.67pt → 0.95（基本全亮）
-        //   123.00pt → 1.00
-        // 所以不透明段到 108 为止，渐隐在那之后才开始。
-
-        /// 带子**实色段**下沿落在「状态栏下沿 + 多少 pt」。
-        ///
-        /// **直接写量测值，不取整**：59 + 49 = 108，和参照的渐隐起点同一条线。
-        private static let bandHeightBelowSafeArea: CGFloat = 49
-
-        /// 拿不到安全区时的兜底：标准 44pt 带之外多铺的量。49 − 44 = 5。
-        private static let fallbackOverhang: CGFloat = 5
-
-        /// 背景层该有多高（在本层坐标系里）。
-        ///
-        /// 高度按**window 坐标**反算，不按 bar 自己的 bounds 反算：不同系统
-        /// 版本里 bar 的 frame 有的是 (0,0,w,103)（连状态栏一起算），有的是
-        /// (0,59,w,44)（只算那 44pt 带），两种都对得上「带子到 108」
-        /// 这条线，不必去猜是哪种。
-        private func bandLayerHeight(on bar: UINavigationBar) -> CGFloat {
-            let fallback = bar.bounds.height + Self.fallbackOverhang
-            guard let bg = Self.backgroundLayer(of: bar), let window = bar.window else { return fallback }
-
-            let safeTop = window.safeAreaInsets.top
-            guard safeTop > 0 else { return fallback }
-
-            let barTopInWindow = bar.convert(CGPoint.zero, to: window).y
-            let bgTopInWindow = barTopInWindow + bg.frame.minY
-            let height = (safeTop + Self.bandHeightBelowSafeArea) - bgTopInWindow
-            return height > 1 ? height : fallback
-        }
-
-        /// 把背景层抬到算好的高度。
-        ///
-        /// 不新增视图：这层本来就是系统画的、在内容下面，只改它的高度，
-        /// 气泡和标题都在它上面，一点不受影响。
-        private func applyBandHeight(_ height: CGFloat, to bg: UIView) {
-            // UIKit 每次布局都可能把它设回标准带，所以每次都比一遍。
-            if abs(bg.frame.height - height) > 0.5 {
-                var f = bg.frame
-                f.size.height = height
-                bg.frame = f
-            }
-            // 多出来的那段落在 bar 边界外，得让它自己别裁。
-            if bg.clipsToBounds { bg.clipsToBounds = false }
-            // 这层被拉高、又放开了裁剪之后，它盖住的那片区域会先把点击接住
-            // （hitTest 停在它这里就不再往下传），可它只是个底色、没有任何
-            // 手势，接住等于把点击吃掉。右上「…」和左上返回正好压在这片区域。
-            if bg.isUserInteractionEnabled { bg.isUserInteractionEnabled = false }
-        }
-
-        /// 找 bar 自己那层背景。
-        ///
-        /// 主路按类名（`_UIBarBackground`）；万一哪天系统改名，退回结构判定：
-        /// z 序最下面、且不是内容容器（`_UINavigationBarContentView`）的那层。
-        private static func backgroundLayer(of bar: UINavigationBar) -> UIView? {
-            if let hit = bar.subviews.first(where: {
-                String(describing: type(of: $0)).contains("BarBackground")
-            }) {
-                return hit
-            }
-            return bar.subviews.first(where: {
-                !String(describing: type(of: $0)).contains("ContentView")
-            })
         }
 
         /// 把一份 appearance 改成「摘掉分隔线 + 实色背景」。
