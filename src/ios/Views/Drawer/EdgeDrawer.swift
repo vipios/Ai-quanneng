@@ -186,7 +186,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
 
     /// 抽屉层的高度：当前这个窗口里，内容区到底有多高。
     ///
-    /// [2026-11-14 第十四轮] 为什么不能直接用 `windowMetrics?.containerHeight`：
+    /// 为什么不能直接用 `windowMetrics?.containerHeight`：
     ///
     /// 那份数是 `WindowMetricsProbe` 在**布局之后**异步报上来的，窗口一改尺寸
     /// （进/出分屏、拖分隔条）就有两个坑，用户实测的三种表现全是它：
@@ -225,7 +225,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         return ZStack(alignment: .topLeading) {
             // ── 抽屉那张纸：横向铺满整屏 ──
             //
-            // [2026-11-13 第六轮] 用户报「抽屉没有横向铺满，只铺到停下的位置，
+            // 用户报「抽屉没有横向铺满，只铺到停下的位置，
             // 卡片圆角一出来就露出一些别的颜色补的地方」。现场确实是这么回事：
             // 抽屉固定占 0…348（抽屉宽），卡片推开后落在 348 起，卡片左上/左下
             // 那两个圆角把矩形切掉一块 —— 那块既不属于抽屉（超出 348 了），
@@ -269,7 +269,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                 //
                 // 取实测值之后跟提议尺寸无关，换机型不用改代码。
                 //
-                // [2026-11-14 第十四轮] 但实测值是**布局之后**才报上来的，窗口
+                // 但实测值是**布局之后**才报上来的，窗口
                 // 一变它就有两个坑（用户实测三种表现，全是它）：
                 //   · 还没量到（nil）→ `.frame(height: nil)` 等于没有约束，
                 //     抽屉按卡片高度撑满 ⇒ 第一次进分屏，齿轮被推出窗口；
@@ -582,8 +582,7 @@ private struct EdgePanOverlay: UIViewRepresentable {
         ///
         /// 常驻一个实例而不是每次 `impactOccurred` 前现场 new：Taptic 引擎
         /// 要先 prepare 才能做到「过线即震」，现场创建会晚一拍，拖得快的
-        /// 时候那一下会甩在后面。强度走 `.light` —— 比 `.medium` 音色轻，
-        /// 具体数值在触发处（2026-11-14 从 0.6 提到 0.8）。
+        /// 时候那一下会甩在后面。强度走 `.light`（触发处 intensity 0.8）。
         private let midHaptic = UIImpactFeedbackGenerator(style: .light)
 
         /// 这一轮拖动里，中线那一下是不是已经震过了。
@@ -731,9 +730,8 @@ private struct EdgePanOverlay: UIViewRepresentable {
                 let mid = midProgress(for: view)
                 if p >= mid, !midHapticFired {
                     midHapticFired = true
-                    // [2026-11-14] 0.6 → 0.8：用户报「滑到中间时候震动再加一点」。
-                    // 只动强度、不动 `.light` 这档和触发时机 —— 换 style 会把
-                    // 音色也换掉，那是另一回事。
+                    // 只动强度（0.8）、不动 `.light` 这档和触发时机 —— 换 style
+                    // 会把音色也换掉。
                     midHaptic.impactOccurred(intensity: 0.8)
                 } else if p < mid - 0.04 {
                     midHapticFired = false

@@ -15,7 +15,6 @@ import Combine
 import GameController
 import PhotosUI
 import QuickLook
-import QuickLook
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -117,18 +116,10 @@ struct NavBarStyleModifier: ViewModifier {
                     }
             }
         }
-        // [2026-11-14 第二十轮] 导航带 + 下沿那条过渡。两个分支都要挂。
-        //
-        // 上一版把它写在 iOS 16–18 那一支里、位置又用 `topSafeAreaInset` 算，
-        // 实机一点效果都没有：那个值在这棵树上恒为 0，渐变被画到了 51.67pt
-        // （状态栏里），颜色又和底色一样，等于没画。
-        //
-        // 这一版不再要那个值：从屏幕最顶上铺下来，0 → 108 全实色，
-        // 108 → 123 按参照实测的曲线落到底。带子自己有没有底色都不影响。
+        // 过渡带（两个分支都要挂）+ 摘掉底边分隔线。
         .overlay(alignment: .top) {
             TopBandFade()
         }
-        // 导航栏底边那条 1px 分隔线，两个分支都要摘。
         .background {
             NavBarSeparatorRemover()
                 .frame(width: 0, height: 0)
@@ -154,12 +145,12 @@ struct NavBarStyleModifier: ViewModifier {
 ///   122.67 → 内容透出 95%   ⇒ 盖 0.05
 ///   123.00 → 内容全亮       ⇒ 盖 0
 ///
-/// **实色段（0 → 108）不在这里画**：SwiftUI overlay 在进页面的第一帧
-/// 晚一拍，首帧裸露原版就是用户看到的「闪一下」。实色段交给 UIKit 的
-/// 导航栏背景承担（`NavBarSeparatorRemover.Probe` 把背景层拉高到 108，
-/// 首帧就在），这里只补 108 之下的渐变。
+/// **实色段（顶边 → 108）在这里也画一份**：UIKit 那边（`Probe.applyBandHeight`）
+/// 把导航栏背景抬到 108，但系统每次布局都会把它重设回标准高度 —— push 转场
+/// 帧里抬升被重置，实色只到 103，和过渡带起点（108）之间漏出 5pt 缝，缝边
+/// 看着就像一条黑线。两边同色重叠无害，谁被重置都有另一层兜着。
 ///
-/// 位置按屏幕坐标摆：读这一层顶边在屏幕上的位置，先占位到 108，再画
+/// 位置按屏幕坐标摆：读这一层顶边在屏幕上的位置，先铺实色到 108，再画
 /// 15pt 过渡。页面顶边落在 0 / 59 / 103 哪一处，都落到同一条线上。
 ///
 /// **不用 `ignoresSafeArea()`**：那会让这一层撑满整屏。现在它严格待在
@@ -198,31 +189,36 @@ struct TopBandFade: View {
         GeometryReader { geo in
             // 这一层顶边在屏幕上的位置。恒为 0 的是 `safeAreaInsets`，不是这个。
             let top = geo.frame(in: .global).minY
-            // 过渡带起点（108）距这一层顶边的距离。顶边已在 108 之下时为 0。
-            let lead = max(0, Self.bandBottom - top)
-            ZStack(alignment: .top) {
-                // ② 磨砂：让滑进来的内容被模糊
-                Rectangle()
-                    .fill(.regularMaterial)
-                    .mask(Rectangle().fill(Self.blurMask))
-                // ① 底色压淡：参照实测的曲线
-                LinearGradient(
-                    stops: [
-                        .init(color: ChatColors.background.opacity(0.98), location: 0),
-                        .init(color: ChatColors.background.opacity(0.92), location: 0.178),
-                        .init(color: ChatColors.background.opacity(0.75), location: 0.622),
-                        .init(color: ChatColors.background.opacity(0.23), location: 0.889),
-                        .init(color: ChatColors.background.opacity(0.05), location: 0.978),
-                        .init(color: ChatColors.background.opacity(0), location: 1),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+            // 实色段：从这一层顶边铺到屏幕 108 那条线。顶边已在 108 之下时为 0。
+            let solid = max(0, Self.bandBottom - top)
+            VStack(spacing: 0) {
+                if solid > 0.5 {
+                    ChatColors.background
+                        .frame(height: solid)
+                }
+                // 过渡带：108 → 123，磨砂 + 压淡
+                ZStack(alignment: .top) {
+                    // 磨砂：让滑进来的内容被模糊
+                    Rectangle()
+                        .fill(.regularMaterial)
+                        .mask(Rectangle().fill(Self.blurMask))
+                    // 底色压淡：参照实测的曲线
+                    LinearGradient(
+                        stops: [
+                            .init(color: ChatColors.background.opacity(0.98), location: 0),
+                            .init(color: ChatColors.background.opacity(0.92), location: 0.178),
+                            .init(color: ChatColors.background.opacity(0.75), location: 0.622),
+                            .init(color: ChatColors.background.opacity(0.23), location: 0.889),
+                            .init(color: ChatColors.background.opacity(0.05), location: 0.978),
+                            .init(color: ChatColors.background.opacity(0), location: 1),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .frame(height: Self.fadeHeight)
+                Spacer(minLength: 0)
             }
-            .frame(height: Self.fadeHeight)
-            // 占位：把过渡带推到屏幕 108 那条线（顶边到 108 之间不画东西，
-            // 那段由 UIKit 的导航栏背景实色盖）。
-            .padding(.top, lead)
             .frame(width: geo.size.width, alignment: .top)
         }
         .allowsHitTesting(false)
@@ -241,11 +237,8 @@ struct TopBandFade: View {
 /// 就是圆圈套圆圈，所以那一支原样返回，什么都不加。
 struct NavBubble: ViewModifier {
 
-    /// 气泡直径。左上返回和右上「…」共用同一个数，别各写一份。
-    ///
-    /// [2026-11-14 第九轮] 40 → 44。参照同机型全屏截图逐像素量的：气泡
-    /// bbox 132px = **44pt**，左边距卡片 16.00pt（这条我们本来就是 16.00，
-    /// 一分不差），顶边 67.00pt。我们原来 40pt，比参照小一圈。
+    /// 气泡直径。左上返回和右上「…」共用。参照同机型全屏截图逐像素量：
+    /// 气泡 bbox 132px = 44pt。
     static let diameter: CGFloat = 44
 
     /// 白底在深色模式下会刺眼，深色用 10% 白叠在卡片底色上。
@@ -335,17 +328,9 @@ struct NavBackBubbleButton: View {
 
 /// iOS 16–18 的「…」气泡。
 ///
-/// 右上角那个「…」不是 SwiftUI 视图，而是 `ChatNavMenuBarItemInstaller` 挂到
-/// 导航条上的**真实 `UIBarButtonItem`**（那边的注释写了为什么非要用真 bar
-/// item：系统才肯自己摆放它，且已经打开的 UIMenu 不会在流式输出时刷新）。
-/// 所以这里给不了它 SwiftUI 的 `NavBubble`，只能把同样的白圆画成它的
-/// `customView`。
-///
-/// 参数和 `NavBubble` 逐项对齐：直径 40pt、纯白（深色 10% 白）、4% 黑投影
-/// 半径 4 下移 1；中间仍是原来那颗 14pt medium 的 `ellipsis`。
-///
-/// 视图自己不加任何手势：`UIBarButtonItem` 的点击/菜单挂在它自己的容器上，
-/// 子视图不拦截触摸，照常弹出菜单。
+/// 右上角那个「…」是 `ChatNavMenuBarItemInstaller` 挂到导航条上的真实
+/// `UIBarButtonItem`，白圆用 customView 画（深色 10% 白、浅色纯白）。
+/// 和 `NavBubble` 同款：直径 44pt，中间 14pt medium 的 `ellipsis`。
 final class NavBubbleBarItemView: UIView {
 
     private let icon = UIImageView()
@@ -414,8 +399,7 @@ final class NavBubbleBarItemView: UIView {
 
 /// 导航栏第二行的开头：一个显示器小图标，右上角一颗红/绿状态点。
 ///
-/// [参照图对齐 2026-11-13 第二轮] 原来这里还带中转站地址的文字，用户要求
-/// 标题下面**只留一行**（小电脑 + 状态点 + 供应商 · 模型名 + 思考强度），
+/// 标题下面只留一行（小电脑 + 状态点 + 供应商 · 模型名 + 思考强度），
 /// 设备名/中转站地址不再显示，所以这个视图只剩图标和点，文字归到了右边
 /// 那一行里。
 ///
@@ -435,37 +419,16 @@ struct RelayStatusIcon: View {
     private var online: Bool { relay.device != nil }
 
     var body: some View {
-        // [参照图对齐 2026-11-13 第七轮] 改成「图标定尺寸 + overlay 贴点」。
-        //
-        // 原来是一个 ZStack(alignment: .topTrailing)，绿点按图标的**布局框**
-        // 右上角对齐。问题是 SF Symbol 的布局宽度比墨迹宽一大截（12pt 的
-        // `desktopcomputer` 墨迹约 17.7pt，布局框还要再宽一圈），绿点于是被
-        // 推到墨迹右侧之外 —— 实测就在 x 94..97.7，看着像浮在「中」字上面
-        // 的一颗绿点，而不是挂在显示器右上角。参照图里绿点右边缘正好和图标
-        // 墨迹右边缘齐平（83.04 / 83.04）。
-        //
-        // 先把图标收紧到墨迹尺寸，overlay 的 .topTrailing 才真的是墨迹角。
-        // 12 × 10 是第七轮那版的实测值，第九轮按参照重算成 14.7 × 12.5。
+        // 图标定死尺寸（14.7×12.5），绿点用 overlay 贴右上角。不把绿点放进
+        // ZStack：SF Symbol 的布局框比墨迹宽，绿点会飘到墨迹右侧之外。
         Image(systemName: "desktopcomputer")
-            // [2026-11-14 第九轮] 12 → 10pt，frame 12×10 → 14.7×12.5，按参照
-            // 逐像素重定：参照这一坨（图标+绿点）bbox 是 x 76.67..91.00、高
-            // 14.00，宽 **14.33**；我们原来 12pt 跑出来 17.67 宽，比参照胖
-            // 3.3pt，右边缘被顶到 83.67，把后面的文字整体推右、间距只剩 4.34。
-            //
-            // 10pt × (17.67 ÷ 12) = 14.73，正好落在参照的 14.33~14.67 上；
-            // 高度 15.00 × 10/12 = 12.5（比参照矮 1.5，SF Symbol 的长宽比改
-            // 不了，宽度对上了才是关键 —— 右边缘决定了后面文字的起点）。
-            // frame 取 14.7×12.5 让墨迹刚好填满，overlay 的 .topTrailing 才
-            // 真的是墨迹角，绿点不用再额外补偏移。
             .font(.system(size: 10))
             .foregroundStyle(ChatColors.secondaryText)
             .frame(width: 14.7, height: 12.5)
             .overlay(alignment: .topTrailing) {
                 Circle()
                     .fill(online ? Self.onlineColor : Color.red)
-                    // 参照逐像素量的：绿点直径 3.3pt（bbox 3.55 × 3.11），
-                    // 右边缘和图标墨迹右边缘齐平，顶边只比图标顶边低 0.4pt。
-                    // 原来是 4pt、还往外甩 2pt，既大又飘。
+                    // 参照逐像素量：绿点直径 3.3pt，右边缘与图标墨迹右边缘齐平。
                     .frame(width: 3.3, height: 3.3)
                     .offset(x: -0.2, y: 0.5)
             }
@@ -588,24 +551,12 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
 
         // MARK: - 放开裁剪
 
-        /// [2026-11-14 第十一轮] 关掉导航栏对子视图的裁剪。
+        /// 关掉导航栏对子视图的裁剪。
         ///
-        /// 起因：用户报「我们的字体和左上右上图标被裁」。
-        ///
-        /// 截图逐像素量的（1290px / 430pt，3.0 px/pt）：左右两个 44pt 气泡
-        /// 顶边都在 **67.00pt**，和参照一分不差 —— 位置本来就是对的。但可见
-        /// 高度只有 30.67pt，底边被一条水平线硬切在 **97.33pt**；第二行文字
-        /// 墨迹顶 94.00、高 14.33，也只露出 3.67pt。参照在同样的位置上能完整
-        /// 露到 110.67pt。
-        ///
-        /// 所以这里只改一个已有的属性：把 bar 和它内部各层容器的
-        /// `clipsToBounds` 设回 false，让已经摆好的内容画出来。一个 frame、
-        /// 一个 offset 都不动，位置因此不会变。
-        ///
-        /// 为什么连子视图一起放开：真正在裁的是 bar 内部那个内容容器
-        /// （`_UINavigationBarContentView` 一类），只放开 bar 自己这层不够。
-        /// 深度限 4 层：bar → contentView → 内容栈 → 具体 item，够到了就停，
-        /// 再往下是系统内部的东西，不碰。
+        /// 44pt 气泡和第二行文字本来会被 bar 内部的内容容器裁掉（实测底边被
+        /// 切在 97.33pt）。把 bar 和各层容器的 `clipsToBounds` 设回 false，
+        /// 让已经摆好的内容画出来；frame、offset 一律不动，位置不变。
+        /// 深度限 4 层：bar → contentView → 内容栈 → 具体 item。
         private func openClips(on bar: UINavigationBar) {
             if bar.clipsToBounds { bar.clipsToBounds = false }
             Self.openClips(in: bar, depth: 0)
@@ -624,13 +575,12 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         //   · 状态栏下沿        59.00
         //   · 带子实色段下沿    108.00   ← 不透明段到此为止
         //   · 渐隐段终点        108.00 + 15.00 = 123.00（TopBandFade 画）
+        //
+        // 实色段高度和 TopBandFade 共用同一个数（`TopBandFade.bandHeightBelowSafeArea`），
+        // 不在这里另写一份。
 
-        /// 带子**实色段**下沿落在「状态栏下沿 + 多少 pt」。
-        /// 59 + 49 = 108，和参照的渐隐起点同一条线。
-        private static let bandHeightBelowSafeArea: CGFloat = 49
-
-        /// 拿不到安全区时的兜底：标准 44pt 带之外多铺的量。49 − 44 = 5。
-        private static let fallbackOverhang: CGFloat = 5
+        /// 拿不到安全区时的兜底：标准 44pt 带之外多铺的量。
+        private static let fallbackOverhang: CGFloat = TopBandFade.bandHeightBelowSafeArea - 44
 
         /// 背景层该有多高（在本层坐标系里）。
         ///
@@ -647,7 +597,7 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
 
             let barTopInWindow = bar.convert(CGPoint.zero, to: window).y
             let bgTopInWindow = barTopInWindow + bg.frame.minY
-            let height = (safeTop + Self.bandHeightBelowSafeArea) - bgTopInWindow
+            let height = (safeTop + TopBandFade.bandHeightBelowSafeArea) - bgTopInWindow
             return height > 1 ? height : fallback
         }
 
@@ -682,15 +632,10 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
 
         /// 把一份 appearance 改成「摘掉分隔线 + 实色背景」。
         ///
-        /// [2026-11-14 第十七轮] 底部那条渐隐**已整段退回**，不再往 appearance
-        /// 里塞任何背景图 —— 塞进去的图会被系统按它自己的尺寸重画，位置对不上，
-        /// 实机看不出过渡效果。带子这里只负责「实色铺到 108」这一件事。
-        ///
-        /// 已经是目标状态就返回 nil，调用方据此跳过赋值 —— 避免每次布局都往
-        /// UIKit 里灌一遍新对象（每次赋值都会重画整条 bar）。
-        ///
-        /// 必须 copy 出新实例再赋回去：`UIBarAppearance` 是引用类型，原地改完
-        /// 再赋同一个对象，UIKit 有可能认为「没变化」而不重画。
+        /// 已经是目标状态就返回 nil，调用方据此跳过赋值 —— 避免每次布局都
+        /// 往 UIKit 里灌新对象（每次赋值都重画整条 bar）。必须 copy 出新实例
+        /// 再赋回去：`UIBarAppearance` 是引用类型，原地改完再赋同一个对象，
+        /// UIKit 可能认为「没变化」而不重画。
         private static func styled(_ appearance: UINavigationBarAppearance?,
                                    fadingColor color: UIColor) -> UINavigationBarAppearance? {
             guard let appearance else { return nil }

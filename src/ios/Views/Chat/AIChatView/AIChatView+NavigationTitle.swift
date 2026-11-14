@@ -56,21 +56,11 @@ extension AIChatView {
             titleView
                 .frame(maxWidth: cap)
         } else {
-            // [参照图对齐 2026-11-13] 原来是左右各一个 Spacer 把标题夹在
-            // 正中间；参照是左对齐（标题紧贴在左上角气泡右边），所以右边
-            // 只留一个 Spacer，把内容顶到左边。cap 不动：省下来的宽度是
-            // 留给左边那个 40pt 气泡的。
+            // 参照是左对齐（标题紧贴左上角气泡右边）：右边只留一个 Spacer
+            // 把内容顶到左边。
             HStack(spacing: 0) {
                 titleView
                     .frame(maxWidth: cap, alignment: .leading)
-                    // [参照图对齐 2026-11-13 第七轮] 整块右移 2.7pt。
-                    // 参照标题笔画左边缘 69.72pt，我们 67.00pt。第二行的小电脑
-                    // 图标跟着一起右移（参照里图标 70.16、标题 69.72，本来就是
-                    // 齐平的，所以只能整块挪，不能分两处补）。
-                    // [2026-11-14 第九轮] 2.7 → 5.7。同机型第二组参照截图量的：
-                    // 参照标题左边缘 76.33、我们 69.33。其中 4pt 由气泡 40→44
-                    // 自然带来（principal 的可用区被气泡挤窄、左界右移 4），
-                    // 剩下 3pt 靠这里补：2.7 + 3 = 5.7。
                     .padding(.leading, 5.7)
                 Spacer(minLength: 0)
             }
@@ -78,8 +68,7 @@ extension AIChatView {
         }
     }
 
-    /// [参照图对齐 2026-11-13] 左上角要不要用自绘的返回气泡（并隐藏系统
-    /// 那个返回按钮）。
+    /// 左上角要不要用自绘的返回气泡（并隐藏系统那个返回按钮）。
     ///
     /// 两个条件同时成立才显示：
     ///  · **iOS 26 以下**：液体玻璃导航栏会给每个 bar item 自己包一圈圆形
@@ -261,17 +250,9 @@ extension AIChatView {
         // 4 → 1 and group vertical padding 3 → 2 on legacy), so the stack's
         // total height — the thing the May-18/19/20 clip saga fought — is
         // unchanged and the top-clip fix does not regress.
-        // [参照图对齐 2026-11-13 第三轮] 外层间距 -4 → -1。
-        // 起因：标题提到 16pt 之后行盒变高，-4 的负间距让第 2 行顶到了标题
-        // 上，用户报「绿点压倒了全能ai字体」。参照图量的：标题降部底边到
-        // 小电脑图标顶边之间空了 18px、约 4.7pt，我们现在是负值（重叠）。
-        // 改 -1 后第 2 行整体下移 3pt，视觉间隙回到 ~4pt，和参照一致。
-        //
-        // [2026-11-14 第九轮] -1 → 2.67。同机型第二组参照截图量的：参照标题
-        // 墨迹顶 72.33、第二行墨迹顶 94.67（间距 22.34）；我们是 68.00 / 86.67
-        // （间距 18.67）。差 3.67 就是这个 spacing 的增量。
-        // 注意它是**居中**布局：高度 +3.67 会让整栈顶边上移 1.835，所以下面
-        // 的 offset 同步 +1.835 → 12.17，标题才仍然落在 72.33。
+        // 外层间距 2.67（参照量的标题到第二行墨迹间距 22.34，我们 18.67，
+        // 差 3.67，扣掉居中布局的上移就是 2.67）。它是居中布局，高度一变
+        // 整栈顶边会跟着动，所以下面的 offset 要同步补偿。
         return VStack(alignment: .leading, spacing: legacyLayout ? 2.67 : -2) {
             Button {
                 if let s = titlePillSession { titlePillEditSession = s }
@@ -285,35 +266,6 @@ extension AIChatView {
                 // on legacy iOS so they fit cleanly; keep the iOS 26
                 // size unchanged.
                 Text(sessionTitle ?? soulName)
-                    // [T-navbar-title-size 2026-05-18 / -19 / -20] iOS 16-18
-                    // principal toolbar is a fixed ~44pt band sitting just
-                    // below the status bar with very little reserved padding.
-                    // A 3-line title stack at 16pt/.caption2/9pt overflowed
-                    // the band's top against the status-bar / Dynamic Island
-                    // cutoff (a tall CJK glyph clipped its top, then "?"
-                    // appeared because the glyph rect was outside the navbar
-                    // viewport). Iterative tightening:
-                    //   2026-05-18: 16 → 15pt + `padding(.top, 2)`
-                    //   2026-05-19: 15 → 13.5pt + `minimumScaleFactor(0.85)`
-                    //                 + `fixedSize(...)` + `padding(.top, 3)`
-                    //   2026-05-20: 13.5 → 13pt + drop padding(.top) to 0 +
-                    //                 outer VStack spacing -6 → -8. Earlier
-                    //                 attempts to push the stack DOWN with
-                    //                 more padding.top failed because SwiftUI
-                    //                 vertically CENTERS the .principal item
-                    //                 in the navbar — extra height clips
-                    //                 BOTH top and bottom equally, not just
-                    //                 the bottom. Net result: shrink the
-                    //                 total stack height instead, so it
-                    //                 naturally has breathing room above
-                    //                 and below.
-                    // iOS 26 path unchanged (16pt works inside liquid-glass).
-                    // [参照图对齐 2026-11-13] 字号从 13pt 提到 16pt：参照的
-                    // 标题大写字母高 10px，按截图比例（347/430）换算是 17pt，
-                    // 但我们的导航栏是 iOS 16-18 的 44pt 定高带，17 会把三行
-                    // 顶穿（就是历史上 "?" 那个裁切 bug）。16 是既贴参照、
-                    // 又塞得进 44pt 的最大值，配合外层 spacing -4 和
-                    // padding.top 6→4 把高度抵回来，总高只涨 0.5pt。
                     .font(.system(size: 16, weight: .semibold))
                     .minimumScaleFactor(legacyLayout ? 0.85 : 1.0)
                     .foregroundStyle(ChatColors.primaryText)
@@ -334,18 +286,9 @@ extension AIChatView {
                     }
             }
             .buttonStyle(.plain)
-            // [2026-11-14 第八轮] `.disabled(!canEditTitle)` 换成 `.allowsHitTesting`。
-            //
-            // 起因：用户报「全能 AI 这几个字字体用黑色的」—— 标题本该是
-            // `ChatColors.primaryText`（`UIColor.label`，浅色模式纯黑 #000），
-            // 截图里却量到 #A1A1A1。逐像素核对：0 × 0.37 + 255 × 0.63 = 161，
-            // 正好对上 SwiftUI 对 disabled Button 叠加的那层 ~0.37 透明度。
-            // 草稿会话（`titlePillSession == nil`）时 `canEditTitle` 为 false，
-            // 整颗标题就被这层透明度冲成了浅灰。
-            //
-            // 用户要的是「点不动但字是黑的」：`allowsHitTesting` 只拦命中、
-            // 不参与渲染，颜色和可点状态从此解耦。锁定态另有外层
-            // `.allowsHitTesting(!titleIsVisuallyLocked)`，两者叠加仍然正确。
+            // 标题点不动但字要是纯黑的：`.disabled` 会给 Button 叠一层 ~0.37
+            // 的透明度，把标题冲成浅灰，所以用 `.allowsHitTesting` —— 只拦
+            // 命中、不参与渲染。
             .allowsHitTesting(canEditTitle)
 
             // [T-navbar-group-provider-gap 2026-07-25] Legacy row gap 1 → -1:
@@ -359,10 +302,8 @@ extension AIChatView {
             // (outer -3) and the group pill's vertical padding are untouched.
             // iOS 26 keeps spacing 1 — the liquid-glass band has no crowding.
             VStack(alignment: .leading, spacing: legacyLayout ? -1 : 1) {
-                // [参照图对齐 2026-11-13 第二轮] 标题下面只留一行：小电脑 +
-                // 红/绿状态点，紧接着就是「中转站 · 模型名」+ 思考强度 pill
-                // （用户原话：把原来那行直接挪到小电脑后面）。设备名/中转站
-                // 地址那行整行删掉，不再单独占一行。
+                // 标题下面只留一行：小电脑 + 红/绿状态点，紧接着
+                // 「中转站 · 模型名」+ 思考强度 pill。
                 HStack(spacing: 6) {
                     RelayStatusIcon()
                         // 和右边文字、pill 用同一个下留白，三者才落在同一条
@@ -392,9 +333,7 @@ extension AIChatView {
                             Image(systemName: symbol)
                                 .resizable()
                                 .scaledToFit()
-                                // [参照图对齐 2026-11-13 第七轮] 跟着这一行
-                                // 文字 11 → 12pt（这里取的是字号的 cap 高，
-                                // 用来把箭头缩成和旁边字母一样高）。
+                                // 缩成和旁边 12pt 字母一样高。
                                 .frame(height: ceil(UIFont.systemFont(ofSize: 12).capHeight))
                                 .foregroundStyle(Color.orange)
                                 // Match the row text's descender clearance so
@@ -405,14 +344,6 @@ extension AIChatView {
                         Button {
                             showModelPicker = true
                         } label: {
-                            // [参照图对齐 2026-11-13 第三轮] 9 → 11pt。
-                            // 参照图逐像素量的：第 2 行文字 cap 高 34px，标题
-                            // cap 高 44px，比值 0.77；我们 9pt 配 16pt 只有
-                            // 0.56，肉眼看就是「一行小字」。按 0.77 折算，
-                            // 16pt 标题下这一行应该是 12pt，但 12 的行盒
-                            // （14.3pt）叠在 19pt 标题上会把整栈顶到 44pt
-                            // 导航带的边上（就是历史上标题被切、字形变 "?" 的
-                            // 那个 bug），所以取 11 —— 比例 0.69，够近也够安全。
                             Text("\(detail.providerLabel) · \(detail.modelName)")
                                 .font(.system(size: 12))
                                 .foregroundStyle(ChatColors.secondaryText)
@@ -463,17 +394,9 @@ extension AIChatView {
                     }
                 }
             }
-            // [参照图对齐 2026-11-13 第七轮] `.padding(.horizontal, 8)` → 只留
-            // 尾部 8pt。参照里第二行的小电脑图标左边缘和标题左边缘是齐平的
-            // （70.16 vs 69.72，差 0.4pt 属于字形侧边距）；我们原来被这 8pt
-            // 左边距推到了 76，比标题多缩进 9pt，看着像「第二行整体缩了一格」。
+            // 只留尾部 8pt：参照里第二行的小电脑图标左边缘和标题左边缘齐平，
+            // 左侧不加缩进。
             .padding(.trailing, 8)
-            // [T-navbar-title-model-gap] 3 → 2 on legacy: part of the
-            // height-neutral trade that funds the wider title→model gap.
-            // [参照图对齐 2026-11-13 第三轮] 2 → 1：这一行字号抬到 11pt 后
-            // 行盒高了 2.4pt，加上外层间距的 +3，整栈会长到 ~40pt。44pt 的
-            // 导航带里再胖就有顶穿（标题上沿被切 / 字形变 "?"）的风险，这里
-            // 让回 2pt，整栈 ~38pt，余量还在。
             .padding(.vertical, legacyLayout ? 1 : 3)
             .background(
                 RoundedRectangle(cornerRadius: 8)
@@ -509,30 +432,14 @@ extension AIChatView {
         // OUTER stack shifts its rendered position downward without
         // resizing any individual row. iOS 26 leaves at 0 (liquid
         // glass centers correctly).
-        // [参照图对齐 2026-11-13] 6 → 4：字号从 13 提到 16 吃掉约 3.5pt，外层
-        // spacing 又收紧了 1pt，这里让回 2pt，整块高度只涨 0.5pt —— 既拿到
-        // 参照的字号，又不会把三行顶出 44pt 的导航栏带（顶穿的表现是标题
-        // 上沿被切、个别字形变成 "?"）。
+        // 取 4：既拿到参照的字号，又不把三行顶出 44pt 导航带（顶穿表现是
+        // 标题上沿被切、个别字形变 "?"）。
         .padding(.top, legacyLayout ? 4 : 0)
-        // [参照图对齐 2026-11-13 第四轮] 整块再往下 6pt。
-        // 用户对比参照图报「咱们的离状态栏太近了，要和他一样的高度」，
-        // 4pt 之后又报「有点高了，再往下降一点」，所以 4 → 6。
-        // 为什么不用 padding(.top)：那一行改的是**布局高度**，`.principal`
-        // 在 44pt 带里是居中摆的，加 4pt padding 只会把整块顶高 4pt、内容
-        // 实际只下移 2pt，而且 39.4 + 4 = 43.4 已经贴到带的边，再往上顶就
-        // 会重演「标题上沿被切、字形变 ?」那个老 bug。
-        // `.offset` 只做绘制位移、不参与布局，位移量和填的数一模一样，想再
-        // 微调直接改这一个数。
-        // 6 是这一版的余量上限：实测 44pt 带内上下各剩约 6.3pt（截图上标题
-        // 墨迹顶 46px、带底 112px，两边各 11px），挪 6pt 后第 2 行的墨迹正好
-        // 落在带底上，再大就会真的越界被裁。
-        //
-        // [2026-11-14 第九轮] 6 → 12.17。同机型第二组参照截图量的：参照标题
-        // 墨迹顶 72.33pt、我们 68.00pt，差 4.33；再加上外层 spacing 从 -1 提到
-        // 2.67 让整栈（居中布局）上移的 1.835，合计 4.33 + 1.835 = 6.17，
-        // 6 + 6.17 = 12.17。
-        // 往上会撞状态栏被切（"?" 那个老 bug），往下不受限 —— UINavigationBar
-        // 不裁自己子视图的下沿，参照那边气泡底都探到 111（带底 103）也没事。
+        // 整块再往下 12.17pt，让标题墨迹顶落在参照的 72.33pt。用 `.offset`
+        // 而不是 padding：padding 改布局高度，`.principal` 在 44pt 带里居中，
+        // 加 padding 只顶高、实际下移量对不上；offset 只做绘制位移，改这个数
+        // 就是精确的下移量。往上会撞状态栏被切（标题上沿裁掉、字形变 "?" 的
+        // 老 bug），往下不受限。
         .offset(y: legacyLayout ? 12.17 : 0)
         // iOS 26+: fix height to match liquid-glass navbar; older OS: let it size naturally
         .modifier(NavTitleFrameModifier())
@@ -572,8 +479,7 @@ extension AIChatView {
                 .resizable()
                 .frame(width: 7, height: 7)
                 .opacity(level.isEnabled ? 1.0 : 0.4)
-            // [参照图对齐 2026-11-13 第七轮] 10 → 11pt：这一行的正文从 11 抬到
-            // 12 了，pill 不跟着抬就会变成「两套字号」。保持比正文小一号。
+            // 比正文小一号（正文 12，pill 11），不搞两套字号。
             Text(level.displayName)
                 .font(.system(size: 11, weight: .medium))
         }
