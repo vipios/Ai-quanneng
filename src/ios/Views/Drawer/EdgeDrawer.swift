@@ -184,39 +184,14 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         windowStore.current
     }
 
-    /// 抽屉层的高度：当前这个窗口里，内容区到底有多高。
-    ///
-    /// [2026-11-14 第十四轮] 为什么不能直接用 `windowMetrics?.containerHeight`：
-    ///
-    /// 那份数是 `WindowMetricsProbe` 在**布局之后**异步报上来的，窗口一改尺寸
-    /// （进/出分屏、拖分隔条）就有两个坑，用户实测的三种表现全是它：
-    ///
-    ///   1. 还没量到（nil）→ `.frame(height: nil)` 等于**没有约束**，抽屉按卡片
-    ///      的整屏高撑满，齿轮被推到窗口外 —— 第一次进分屏就没了；
-    ///   2. 量到的是上一个窗口的旧数 → 抽屉高度停在旧值，比窗口矮两百多，
-    ///      齿轮悬在半空 —— 退出分屏后卡在上方，只能杀后台；
-    ///   3. 上下拉一下分隔条就恢复 → 因为那个动作强制触发了重新布局，探针补报。
-    ///
-    /// 所以加一条门槛：**只有宽度和当前窗口对得上，这份量测值才算数**
-    /// （宽度一变，说明它是另一个窗口尺寸下量的）。对不上就退回外层
-    /// `GeometryReader` 传进来的 `containerHeight` —— 它是当前窗口的活值，
-    /// 拖动分隔条时每帧都在更新，不会停在上一个尺寸上。
-    ///
-    /// 顺带在这里读 `windowStore`：body 通过这个属性读它，探针补报新值时
-    /// 这棵子树会重算，不用另外挂订阅。
-    @MainActor
-    private var drawerHeight: CGFloat {
-        if let m = windowMetrics, abs(m.width - totalWidth) < 1 {
-            return m.containerHeight
-        }
-        return containerHeight
-    }
-
     var body: some View {
         // 关闭入口每帧刷一次，指向当前 state。实例本身（环境值）不变，
         // 所以不引发重算，变的只是里面那个闭包。
         let s = state
         closeAction.action = { s.close() }
+
+        // 卡片出血靠这几个数，取一次整段 body 共用。
+        let m = windowMetrics
 
         // 对齐方式必须是 `.topLeading`：卡片和屏幕等高，比父容器（安全区）
         // 高一截，ZStack 按最大子视图定尺寸后自己也会长到整屏高。
@@ -268,16 +243,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                 // 「背景没做到满屏，只做到状态栏下方」，齿轮也跟着被推出去半截。
                 //
                 // 取实测值之后跟提议尺寸无关，换机型不用改代码。
-                //
-                // [2026-11-14 第十四轮] 但实测值是**布局之后**才报上来的，窗口
-                // 一变它就有两个坑（用户实测三种表现，全是它）：
-                //   · 还没量到（nil）→ `.frame(height: nil)` 等于没有约束，
-                //     抽屉按卡片高度撑满 ⇒ 第一次进分屏，齿轮被推出窗口；
-                //   · 量到的是上一个窗口的旧数 → 抽屉高度停在旧值 ⇒
-                //     进出分屏后齿轮悬在半空，只有杀后台才回来。
-                // 改成用 `drawerHeight`：宽度对得上才认这份量测值，否则
-                // 用外层传进来的容器高（那是当前窗口的活值，跟着拖动每帧更新）。
-                .frame(height: drawerHeight)
+                .frame(height: m?.containerHeight)
                 // 抽屉跟着卡片一起往右走，但只走卡片行程的四分之一。
                 //
                 // 上一版是 −抽屉宽 × (1 − progress)：抽屉走满整个宽度，右边缘
