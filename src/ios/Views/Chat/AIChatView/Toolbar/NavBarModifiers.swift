@@ -241,6 +241,15 @@ struct NavBubble: ViewModifier {
     /// 气泡 bbox 132px = 44pt。
     static let diameter: CGFloat = 44
 
+    /// 气泡往下补 13.27pt：参照顶边 67.00，44pt 带内居中只有 59 起。
+    /// 用 `.offset`（绘制位移）——左气泡点击走 SwiftUI Button，点击区域
+    /// 留在原位，视觉圆的大半和原位区重叠，照常可点；右上「…」的点击
+    /// 走 `tapArea`（铺满整颗圆），跟这个位移无关。
+    static let contentDrop: CGFloat = 13.27
+
+    /// 左上气泡左边距收 4.4：参照 15.3、我们 19.7。
+    static let leadingInset: CGFloat = -4.4
+
     /// 白底在深色模式下会刺眼，深色用 10% 白叠在卡片底色上。
     static var fill: Color {
         Color(UIColor { trait in
@@ -262,6 +271,9 @@ struct NavBubble: ViewModifier {
                         .shadow(color: .black.opacity(0.05), radius: 4, y: 1)
                 }
                 .contentShape(Circle())
+                // 位置按参照补：往左 4.4、往下 13.27。只在这一支里补 ——
+                // iOS 26 的液体玻璃导航栏几何不同，那边原样直通。
+                .offset(x: Self.leadingInset, y: Self.contentDrop)
         }
     }
 }
@@ -333,6 +345,10 @@ struct NavBackBubbleButton: View {
 /// 和 `NavBubble` 同款：直径 44pt，中间 14pt medium 的 `ellipsis`。
 final class NavBubbleBarItemView: UIView {
 
+    /// 白圆子视图：容器交给 UIKit 居中摆放（永远 identity transform），
+    /// 白圆在容器内部下移 `contentDrop` 对齐参照 —— UIKit 怎么重设容器的
+    /// frame 都动不了它在容器里的位置。
+    private let bubble = UIView()
     private let icon = UIImageView()
 
     /// 点击层。**不能指望 `UIBarButtonItem.menu`**：对 customView 类型的
@@ -340,23 +356,30 @@ final class NavBubbleBarItemView: UIView {
     /// 右上「…」点不了就是这个。改用 UIButton 自己带 menu
     /// （`showsMenuAsPrimaryAction`），这是 SwiftUI 的 ToolbarItem 路径
     /// （`ChatTrailingMenuButton`/HitPaddedButton）上验证过能弹的做法。
-    /// 按钮透明铺满容器，只负责接点击和弹菜单；白圆视觉画在容器上。
+    /// 按钮透明，铺满整颗视觉圆（含下移的那段），只负责接点击和弹菜单。
     private let tapArea = UIButton(type: .custom)
 
     init(symbolName: String, pointSize: CGFloat) {
         let d = NavBubble.diameter
         super.init(frame: CGRect(x: 0, y: 0, width: d, height: d))
 
-        backgroundColor = UIColor { trait in
+        bubble.frame = CGRect(x: 0, y: NavBubble.contentDrop, width: d, height: d)
+        bubble.isUserInteractionEnabled = false
+        // 万一 UIKit 给 customView 的 frame 不是 44×44，让圆水平方向自己居中。
+        bubble.autoresizingMask = [.flexibleLeftMargin, .flexibleRightMargin]
+        bubble.backgroundColor = UIColor { trait in
             trait.userInterfaceStyle == .dark
                 ? UIColor(white: 1, alpha: 0.10)
                 : UIColor.white
         }
-        layer.cornerRadius = d / 2
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.05
-        layer.shadowRadius = 4
-        layer.shadowOffset = CGSize(width: 0, height: 1)
+        bubble.layer.cornerRadius = d / 2
+        // 投影参数和 SwiftUI 那圈 `.shadow` 同款；不让 masksToBounds 跟圆角裁，
+        // 否则投影一并被裁没。
+        bubble.layer.shadowColor = UIColor.black.cgColor
+        bubble.layer.shadowOpacity = 0.05
+        bubble.layer.shadowRadius = 4
+        bubble.layer.shadowOffset = CGSize(width: 0, height: 1)
+        addSubview(bubble)
 
         icon.image = UIImage(
             systemName: symbolName,
@@ -364,13 +387,13 @@ final class NavBubbleBarItemView: UIView {
         )
         icon.tintColor = UIColor(ChatColors.primaryText)
         icon.contentMode = .center
-        icon.frame = bounds
+        icon.frame = bubble.bounds
         icon.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(icon)
+        bubble.addSubview(icon)
 
         tapArea.backgroundColor = .clear
-        tapArea.frame = bounds
-        tapArea.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        tapArea.frame = CGRect(x: 0, y: 0, width: d, height: d + NavBubble.contentDrop)
+        tapArea.autoresizingMask = [.flexibleLeftMargin, .flexibleRightMargin]
         tapArea.showsMenuAsPrimaryAction = true
         addSubview(tapArea)
     }
@@ -388,9 +411,11 @@ final class NavBubbleBarItemView: UIView {
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        // bounds 被 UIKit 重设时也可能缩水，用直径兜底，保证整颗圆可点。
+        // ① tapArea 往下探出容器底部 contentDrop，默认判定在容器边界就返回
+        //    false，那半截会点不到 —— 往下放宽同一个量。
+        // ② bounds 被 UIKit 重设时也可能缩水，用直径兜底。
         let w = max(bounds.width, NavBubble.diameter)
-        let h = max(bounds.height, NavBubble.diameter)
+        let h = max(bounds.height, NavBubble.diameter) + NavBubble.contentDrop
         return CGRect(x: 0, y: 0, width: w, height: h).contains(point)
     }
 }
@@ -470,6 +495,13 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         /// 再写一遍，那次写入可能落在我们上一次布局之后。
         private var didCatchLatePush = false
 
+        /// push 转场动画期间的逐帧同步。转场那 ~0.35 秒里，系统会反复把
+        /// 裁剪、背景层高度、appearance 重设回原版 —— 我们的钩子只在布局
+        /// 回调里跑，转场期间没人改回，用户就闪一帧「第二行被切一半 + 分隔
+        /// 线」。用 CADisplayLink 在转场窗口内每帧压一遍（`syncChrome` 幂等，
+        /// 已是目标状态时是空操作），1 秒后自动停。
+        private var transitionSync: CADisplayLink?
+
         override func willMove(toParent parent: UIViewController?) {
             super.willMove(toParent: parent)
             // 越早越好。这时候可能还没接上导航栈，拿不到就跳过；
@@ -479,6 +511,22 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
 
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
+            syncChrome()
+            startTransitionSync()
+        }
+
+        private func startTransitionSync() {
+            guard transitionSync == nil else { return }
+            let link = CADisplayLink(target: self, selector: #selector(transitionTick))
+            transitionSync = link
+            link.add(to: .main, forMode: .common)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak link] in
+                link?.invalidate()
+                self?.transitionSync = nil
+            }
+        }
+
+        @objc private func transitionTick() {
             syncChrome()
         }
 
