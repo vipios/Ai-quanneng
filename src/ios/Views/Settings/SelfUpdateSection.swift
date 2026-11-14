@@ -230,7 +230,8 @@ struct SelfUpdateSection: View {
         if progress < 0 { return "下载中…" }
         let mb = Double(totalBytes) / 1_048_576
         if mb < 0.1 { return "\(Int(progress * 100))%" }
-        return "\(Int(progress * 100))%  \(String(format: "%.0f", mb))MB"
+        // 一位小数（76.5MB）：取整的话 76~77 区间永远显示 77MB，看不出它在跟着变。
+        return "\(Int(progress * 100))%  \(String(format: "%.1f", mb))MB"
     }
 
     // MARK: - 下载进度块  [R81]
@@ -297,7 +298,7 @@ struct SelfUpdateSection: View {
 
         if totalBytes > 0, progress >= 0 {
             let done = progress * Double(totalBytes)
-            parts.append("\(String(format: "%.0f", done / 1_048_576)) / \(String(format: "%.0f", Double(totalBytes) / 1_048_576)) MB")
+            parts.append("\(String(format: "%.1f", done / 1_048_576)) / \(String(format: "%.1f", Double(totalBytes) / 1_048_576)) MB")
         }
 
         if speedBytesPerSec > 0 {

@@ -68,6 +68,8 @@ extension AIChatView {
             onForcePull: { showForcePullConfirm = true },
             onOpenTerminal: { showTerminal = true },
             onOpenBrowser: { showBrowserSheet = true },
+            onOpenBrowserSettings: { showBrowserManagement = true },
+            onOpenRootfsManagement: { showRootfsManagement = true },
             onBrowseFiles: { showFileBrowser = true },
             onSkills: { showSessionSkills = true },
             onMCPs: { showSessionMCPs = true },

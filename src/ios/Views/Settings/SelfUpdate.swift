@@ -49,9 +49,9 @@ enum SelfUpdateResult: Equatable, Sendable {
     /// 分支已经删掉，这里保留一个不可达值比大范围改签名安全。
     case notConfigured
     /// 查过了，已经是最新（附带远端 tag、走的线路、耗时）
-    case upToDate(remote: String, line: String, ms: Int)
+    case upToDate(remote: String, line: String, ms: Int, sizeMB: Double)
     /// 查过了，远端更新（此时下载还没开始）
-    case updateAvailable(remote: String, line: String, ms: Int)
+    case updateAvailable(remote: String, line: String, ms: Int, sizeMB: Double)
     /// 查过了但失败（网络 / 仓库不存在 / 没有 release）
     case failed(reason: String)
 
@@ -60,10 +60,13 @@ enum SelfUpdateResult: Equatable, Sendable {
         switch self {
         case .notConfigured:
             return "更新源没配好（这是 App 的问题，不是你操作错）"
-        case .upToDate(let r, let line, let ms):
-            return "已是最新（\(r)） · \(line) \(ms)ms"
-        case .updateAvailable(let r, let line, let ms):
-            return "有新版 \(r) · \(line) \(ms)ms"
+        case .upToDate(let r, let line, let ms, let sizeMB):
+            // 大小一位小数（76.5 MB）：ipa 每次构建都在 76~77 之间浮动，
+            // 取整显示永远「77 MB」，看着像写死的。一位小数才看得出它
+            // 是跟着 release 实时变的。
+            return "已是最新（\(r)）· \(String(format: "%.1f", sizeMB)) MB · \(line) \(ms)ms"
+        case .updateAvailable(let r, let line, let ms, let sizeMB):
+            return "有新版 \(r) · \(String(format: "%.1f", sizeMB)) MB · \(line) \(ms)ms"
         case .failed(let reason):
             return reason
         }
@@ -279,9 +282,10 @@ enum SelfUpdate {
             hasUpdate = anchor.isEmpty ? true : (remote > anchor)
         }
 
+        let sizeMB = Double(win.ipaSize) / 1_048_576
         let r: SelfUpdateResult = hasUpdate
-            ? .updateAvailable(remote: win.buildLabel, line: win.line.name, ms: win.ms)
-            : .upToDate(remote: win.buildLabel, line: win.line.name, ms: win.ms)
+            ? .updateAvailable(remote: win.buildLabel, line: win.line.name, ms: win.ms, sizeMB: sizeMB)
+            : .upToDate(remote: win.buildLabel, line: win.line.name, ms: win.ms, sizeMB: sizeMB)
         return Outcome(result: r, win: win)
     }
 

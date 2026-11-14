@@ -99,6 +99,32 @@ extension EnvironmentValues {
     }
 }
 
+// MARK: - 抽屉的「打开」入口
+
+/// 对称 `DrawerCloseAction`：给抽屉**外面**的视图（聊天页导航栏返回键）
+/// 一个不会触发订阅的「打开抽屉」入口。聊天页的返回键从「返回对话列表」
+/// 改成「拉开抽屉」，靠的就是这个环境值。
+final class DrawerOpenAction: @unchecked Sendable {
+
+    /// 由容器在每次 body 里刷成当前 DrawerState 的 open。
+    var action: (@MainActor () -> Void)?
+
+    @MainActor
+    func open() { action?() }
+}
+
+private struct DrawerOpenActionKey: EnvironmentKey {
+    static let defaultValue = DrawerOpenAction()
+}
+
+extension EnvironmentValues {
+    /// 调它就能拉开抽屉，不需要订阅 `DrawerState`。
+    var drawerOpen: DrawerOpenAction {
+        get { self[DrawerOpenActionKey.self] }
+        set { self[DrawerOpenActionKey.self] = newValue }
+    }
+}
+
 // MARK: - 容器
 
 /// 把「内容」和「抽屉」叠在一起，并接管全屏侧滑手势。
@@ -108,6 +134,9 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
 
     /// 抽屉的关闭入口，见 `DrawerCloseAction`。
     @State private var closeAction = DrawerCloseAction()
+
+    /// 抽屉的打开入口，见 `DrawerOpenAction`（聊天页返回键用）。
+    @State private var openAction = DrawerOpenAction()
 
     /// 这一轮拖拽里键盘是不是已经收过了（见 body 里的 onChange）。
     @State private var keyboardDismissed = false
@@ -217,6 +246,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         // 所以不引发重算，变的只是里面那个闭包。
         let s = state
         closeAction.action = { s.close() }
+        openAction.action = { s.open() }
 
         // 对齐方式必须是 `.topLeading`：卡片和屏幕等高，比父容器（安全区）
         // 高一截，ZStack 按最大子视图定尺寸后自己也会长到整屏高。
@@ -464,6 +494,7 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         }
         .environmentObject(state)
         .environment(\.drawerClose, closeAction)
+        .environment(\.drawerOpen, openAction)
         // 抽屉出来就收键盘：键盘占住下半截 + 压缩安全区，抽屉会显得变小。
         // 用 0.35 而不是 isOpen（0.5）：拉到一半就已经看得见抽屉了。
         // `keyboardDismissed` 是闸：progress 在 > 0.35 区间每帧都变，

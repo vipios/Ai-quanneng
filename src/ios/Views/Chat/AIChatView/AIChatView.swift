@@ -339,6 +339,8 @@ struct AIChatView: View {
     /// Populated lazily on first appearance.
     @State var totalSessionCount: Int? = nil
     @State var showBrowserSheet = false
+    @State var showBrowserManagement = false
+    @State var showRootfsManagement = false
     @State var showTerminal = false
     @State private var terminalInitCommand: String?
     @State var showAttachmentMenu = false
@@ -1116,6 +1118,22 @@ struct AIChatView: View {
             BrowserSheetView(pool: vm.browserTabPool, isAgentBusy: vm.browserTabPool.isAgentBrowsing, onTakeover: {
                 vm.browserTakeoverActive = true
             })
+        }
+        // 「…」菜单 → 浏览器设置 / Rootfs 管理（与首页工具栏菜单同款呈现）。
+        .sheet(isPresented: $showBrowserManagement) {
+            NavigationStack {
+                BrowserManagementView(pool: vm.browserTabPool)
+            }
+        }
+        .sheet(isPresented: $showRootfsManagement) {
+            NavigationStack {
+                RootfsManagementView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showRootfsManagement = false }
+                        }
+                    }
+            }
         }
         .sheet(isPresented: $showModelPicker) {
             NavigationStack {

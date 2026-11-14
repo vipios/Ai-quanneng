@@ -532,6 +532,8 @@ struct ChatTrailingMenuButton: UIViewRepresentable {
     let onForcePull: () -> Void
     let onOpenTerminal: () -> Void
     let onOpenBrowser: () -> Void
+    let onOpenBrowserSettings: () -> Void
+    let onOpenRootfsManagement: () -> Void
     let onBrowseFiles: () -> Void
     let onSkills: () -> Void
     let onMCPs: () -> Void
@@ -693,6 +695,8 @@ struct ChatTrailingMenuButton: UIViewRepresentable {
                      image: UIImage(systemName: "terminal")) { _ in coordinator.parent.onOpenTerminal() },
             UIAction(title: AppLocalized("Open Browser"),
                      image: UIImage(systemName: "globe")) { _ in coordinator.parent.onOpenBrowser() },
+            UIAction(title: AppLocalized("Browser Settings"),
+                     image: UIImage(systemName: "globe.badge.chevron.backward")) { _ in coordinator.parent.onOpenBrowserSettings() },
             UIAction(title: AppLocalized("Browse Chat Files"),
                      image: UIImage(systemName: "folder")) { _ in coordinator.parent.onBrowseFiles() },
         ]))
@@ -711,6 +715,10 @@ struct ChatTrailingMenuButton: UIViewRepresentable {
                                      image: UIImage(systemName: "speaker.wave.2"),
                                      state: key.speakEnabled ? .on : .off) { _ in
             coordinator.parent.setSpeakEnabled(!key.speakEnabled)
+        })
+        sessionGroup.append(UIAction(title: AppLocalized("Rootfs Management"),
+                                     image: UIImage(systemName: "externaldrive")) { _ in
+            coordinator.parent.onOpenRootfsManagement()
         })
         // [T-keepawake-submenu] One "Keep Screen On" row opening a submenu with
         // both switches for this chat (was two top-level rows):

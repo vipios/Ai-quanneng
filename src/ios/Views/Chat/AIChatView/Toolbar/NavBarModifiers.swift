@@ -309,24 +309,18 @@ struct NavTwoLineGlyph: View {
     }
 }
 
-/// 导航栏左上角的返回按钮：白圆气泡 + 两条横线的图标。
+/// 导航栏左上角的按钮：白圆气泡 + 两条横线的图标。
 ///
 /// 只在 iOS 26 以下用（调用方 `AIChatView.showsCustomBackButton` 统一判定）。
-/// 换掉系统返回按钮不会丢任何操作方式 —— 本项目的左边缘右滑早就被抽屉接管
-/// 了（见 `ContentView+Drawer.swift` 开头那段说明：`interactivePopGesture`
-/// 被显式关掉并挂了对抽屉 pan 的永久失败依赖），返回本来就只有点这个按钮
-/// 一条路。
-///
-/// `dismiss()` 对 NavigationStack 的目标页就是 pop，和系统返回按钮走的是
-/// 同一条路径，`navigationPath` 的观察者、`currentStackSessionId` 的同步
-/// 一个都不少。
+/// 点它**拉开抽屉**（会话列表），不再 pop 回对话列表 —— 抽屉才是这个 App 的
+/// 会话入口。左边缘右滑也归抽屉（`ContentView+Drawer.swift`），两个入口一致。
 struct NavBackBubbleButton: View {
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.drawerOpen) private var drawerOpen
 
     var body: some View {
         Button {
-            dismiss()
+            drawerOpen.open()
         } label: {
             NavTwoLineGlyph()
                 .modifier(NavBubble())
