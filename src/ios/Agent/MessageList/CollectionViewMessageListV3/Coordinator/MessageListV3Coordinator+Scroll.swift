@@ -301,8 +301,17 @@ extension CollectionViewMessageListV3.Coordinator {
 
         /// Base contentInset.top (without sub-viewport overflow compensation).
         /// iOS 26+ relies on system; older iOS uses an 8pt manual padding.
+        ///
+        /// [2026-11-15 过渡带避让] iOS 16-18 的导航带下沿有一条过渡带
+        /// （实色到 108、磨砂淡出到 123），盖在列表顶上 20pt（列表顶 = bar 底
+        /// 103）。不加这段 inset，往上滚的气泡会被过渡带盖住一半。
+        /// 多出的 20pt 让内容从过渡带终点（123pt）以下才开始。
         var baseContentInsetTop: CGFloat {
-            if #available(iOS 26, *) { return extraTopInset } else { return 8 + extraTopInset }
+            if #available(iOS 26, *) {
+                return extraTopInset
+            } else {
+                return 8 + 20 + extraTopInset
+            }
         }
         /// When content overflows the visible area but is still smaller than the
         /// UIKit-scrollable threshold, UIKit clamps maxOffset at 0 and the
