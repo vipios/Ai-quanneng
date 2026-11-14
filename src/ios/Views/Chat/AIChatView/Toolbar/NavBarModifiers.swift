@@ -455,18 +455,23 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             syncChrome()
         }
 
-        /// 两件事，每次布局后重新确认一遍：摘掉底边分隔线（背景同时改成
-        /// 上实下虚）、放开裁剪。两件都是改 bar 自己已有的属性，不往里加
-        /// 任何视图。
+        /// 三件事，每次布局后重新确认一遍：放开裁剪、把背景层抬到带子下沿
+        /// 之外、摘掉底边分隔线（背景同时改成上实下虚）。三件都是改 bar 自己
+        /// 已有的属性，不往里加任何视图。
+        ///
+        /// [2026-11-14 第十五轮] 顺序改成「先量高度、再写外观」：背景渐变图
+        /// 要按实际带高出图（见 `fadeImage`），高度没算出来之前写外观，
+        /// 图的高度就对不上。
         func syncChrome() {
-            removeSeparator()
             guard let nav = enclosingNavigationController else { return }
             let bar = nav.navigationBar
             openClips(on: bar)
-            extendBand(on: bar)
+            let height = bandLayerHeight(on: bar)
+            if let bg = Self.backgroundLayer(of: bar) { applyBandHeight(height, to: bg) }
+            removeSeparator(bandLayerHeight: height)
         }
 
-        func removeSeparator() {
+        func removeSeparator(bandLayerHeight height: CGFloat) {
             guard let nav = enclosingNavigationController else { return }
             let bar = nav.navigationBar
             let color = UIColor(ChatColors.background).resolvedColor(with: bar.traitCollection)
@@ -476,15 +481,15 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             //    的默认值。上一版只清了 bar 那份，所以线一直在 —— 实测截图
             //    y=80px 处那条 rgb(233,233,233) 就是它。
             for item in Self.appearanceItems(of: nav) {
-                if let a = Self.styled(item.standardAppearance, fadingColor: color) { item.standardAppearance = a }
-                if let a = Self.styled(item.scrollEdgeAppearance, fadingColor: color) { item.scrollEdgeAppearance = a }
-                if let a = Self.styled(item.compactAppearance, fadingColor: color) { item.compactAppearance = a }
+                if let a = Self.styled(item.standardAppearance, fadingColor: color, bandLayerHeight: height) { item.standardAppearance = a }
+                if let a = Self.styled(item.scrollEdgeAppearance, fadingColor: color, bandLayerHeight: height) { item.scrollEdgeAppearance = a }
+                if let a = Self.styled(item.compactAppearance, fadingColor: color, bandLayerHeight: height) { item.compactAppearance = a }
             }
 
             // ② bar 级：导航项没有自带 appearance 时才用这份默认值。
-            if let a = Self.styled(bar.standardAppearance, fadingColor: color) { bar.standardAppearance = a }
-            if let a = Self.styled(bar.scrollEdgeAppearance, fadingColor: color) { bar.scrollEdgeAppearance = a }
-            if let a = Self.styled(bar.compactAppearance, fadingColor: color) { bar.compactAppearance = a }
+            if let a = Self.styled(bar.standardAppearance, fadingColor: color, bandLayerHeight: height) { bar.standardAppearance = a }
+            if let a = Self.styled(bar.scrollEdgeAppearance, fadingColor: color, bandLayerHeight: height) { bar.scrollEdgeAppearance = a }
+            if let a = Self.styled(bar.compactAppearance, fadingColor: color, bandLayerHeight: height) { bar.compactAppearance = a }
 
             // ③ 老 API 兜底：iOS 13 之前这条线是 `shadowImage` 画的，有些系统
             //    版本在 appearance 清空后仍会回落到它，给一张空图。
@@ -526,18 +531,30 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
 
         // MARK: - 导航带高度
         //
-        // 参照量出来的三条线（同机型全屏截图，1290px / 430pt，3.0 px/pt）：
-        //   · 状态栏下沿      59.00
-        //   · 气泡           67.00 … 110.67（直径 44）
-        //   · 导航带下沿    110.67
-        // 参照那条带是 **51.67 高**：标准 44pt 带之外，它自己往下多铺了 7.67，
-        // 正好和气泡底边（110.67）齐平。
+        // 参照量出来的四条线（同机型全屏截图，1290px / 430pt，3.0 px/pt）：
+        //   · 状态栏下沿        59.00
+        //   · 气泡              67.00 … 110.67（直径 44）
+        //   · 带子本体下沿      110.67   ← 不透明段到此为止
+        //   · 渐隐段终点        110.67 + 18 = 128.67
         //
-        // 我们系统 bar 的高度是 59 + 44 = 103，比参照短 7.67。气泡底边
-        // （110.67）因此比带子（103）低 7.67，凸在带子外面 —— 这就是
-        // 「卡片上下宽度不对」。
+        // 参照那条带的不透明段是 **51.67 高**：标准 44pt 带之外，它自己往下
+        // 多铺了 7.67，正好和气泡底边（110.67）齐平。
+        //
+        // [2026-11-14 第十五轮] 关键修正：**渐隐段在带子下沿之外，不在带子里**。
+        //
+        // 上一版把渐隐段做在带子内部（92.67…110.67），方向整个反了：带子内部
+        // 变半透明（内容在标题那一行就透出来），带子下面反而全亮 —— 用户看到
+        // 的就是「怎么还是透明」，不是「滑进去慢慢消失」。
+        //
+        // 参照逐行量的可见度（内容墨迹 34 / 底色 247）：
+        //   109.33pt → 0.05（已看不见）
+        //   110.67pt → 0.08（刚开始透）
+        //   117.33pt → 0.25
+        //   121.33pt → 0.77
+        //   122.67pt → 0.95（基本全亮）
+        // 所以不透明段必须一直到 110.67，渐隐在那之后才开始。
 
-        /// 导航带下沿落在「状态栏下沿 + 多少 pt」。
+        /// 带子**本体**（不透明段）下沿落在「状态栏下沿 + 多少 pt」。
         ///
         /// **直接写参照的量测值 51.67，不取整**：59 + 51.67 = 110.67，和参照
         /// 的带底、气泡底都是同一条线。
@@ -546,36 +563,38 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         /// 拿不到安全区时的兜底：标准 44pt 带之外多铺的量，同样是参照的值。
         private static let fallbackOverhang: CGFloat = 7.67
 
-        /// 把 bar 自己那层背景（`_UIBarBackground`）抬到导航带下沿。
+        /// 背景层在「安全区 + 多少 pt」处收尾 —— 本体 + 渐隐段 = 69.67。
         ///
-        /// 不新增视图：这层本来就是系统画的、在内容下面，只改它的高度，
-        /// 气泡和标题都在它上面，一点不受影响。
+        /// 注意这不是「带子有多高」：带子本体到 51.67 就结束了，多出来的
+        /// 18pt 是画在带子**下面**的渐隐段。
+        private static var bandTotalBelowSafeArea: CGFloat {
+            bandHeightBelowSafeArea + fadeHeight
+        }
+
+        /// 背景层该有多高（在本层坐标系里）。
         ///
         /// 高度按**window 坐标**反算，不按 bar 自己的 bounds 反算：不同系统
         /// 版本里 bar 的 frame 有的是 (0,0,w,103)（连状态栏一起算），有的是
-        /// (0,59,w,44)（只算那 44pt 带），两种都对得上「带底 = 安全区 + 52」
-        /// 这条线，不必去猜是哪种。
-        private func extendBand(on bar: UINavigationBar) {
-            guard let bg = Self.backgroundLayer(of: bar), let window = bar.window else { return }
+        /// (0,59,w,44)（只算那 44pt 带），两种都对得上「不透明段到 110.67、
+        /// 渐隐到 128.67」这条线，不必去猜是哪种。
+        private func bandLayerHeight(on bar: UINavigationBar) -> CGFloat {
+            let fallback = bar.bounds.height + Self.fallbackOverhang + Self.fadeHeight
+            guard let bg = Self.backgroundLayer(of: bar), let window = bar.window else { return fallback }
 
             let safeTop = window.safeAreaInsets.top
-            guard safeTop > 0 else {
-                // 拿不到安全区：按标准 44pt 带 + 8 兜底。
-                let fallback = bar.bounds.height + Self.fallbackOverhang
-                if abs(bg.frame.height - fallback) > 0.5 {
-                    var f = bg.frame
-                    f.size.height = fallback
-                    bg.frame = f
-                }
-                if bg.clipsToBounds { bg.clipsToBounds = false }
-                return
-            }
+            guard safeTop > 0 else { return fallback }
 
             let barTopInWindow = bar.convert(CGPoint.zero, to: window).y
             let bgTopInWindow = barTopInWindow + bg.frame.minY
-            let height = (safeTop + Self.bandHeightBelowSafeArea) - bgTopInWindow
-            guard height > 1, bar.bounds.width > 0 else { return }
+            let height = (safeTop + Self.bandTotalBelowSafeArea) - bgTopInWindow
+            return height > 1 ? height : fallback
+        }
 
+        /// 把背景层抬到算好的高度。
+        ///
+        /// 不新增视图：这层本来就是系统画的、在内容下面，只改它的高度，
+        /// 气泡和标题都在它上面，一点不受影响。
+        private func applyBandHeight(_ height: CGFloat, to bg: UIView) {
             // UIKit 每次布局都可能把它设回标准带，所以每次都比一遍。
             if abs(bg.frame.height - height) > 0.5 {
                 var f = bg.frame
@@ -603,68 +622,68 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
 
         // MARK: - 背景底部过渡带
 
-        /// 过渡带高度。参照逐像素扫的：从清晰内容往上，局部对比度 20 → 2.4，
-        /// 过渡约 **18pt**，是渐变不是硬边。
-        ///
-        /// 过渡带挂在**背景图的最底 18pt**。带底 110.67（= 状态栏 59 + 51.67）
-        /// 之后，它就落在 92.67…110.67，和参照同一条线。
+        /// 渐隐段高度。参照逐像素扫的：内容可见度 0.08（110.67pt）→ 0.25
+        /// （117.33）→ 0.77（121.33）→ 0.95（122.67），下一行就全亮。
+        /// 渐隐段落在**带子下沿之外**：110.67 … 128.67。
         private static let fadeHeight: CGFloat = 18
 
-        /// 渐变背景图的缓存：同一档配色 + 缩放只生成一次。
+        /// 渐变背景图的缓存：同一档配色 + 带高 + 缩放只生成一次。
         private static var fadeImageCache: (key: String, image: UIImage)?
 
-        /// 上一次真正写进去的那一档配色（深浅色切换时靠它触发重写）。
+        /// 上一次真正写进去的那一档（配色或带高变化时靠它触发重写）。
         private static var appliedFadeKey: String?
 
-        /// 配色 + 缩放 → 缓存键。
-        private static func fadeKey(_ color: UIColor) -> String {
-            "\(color.hashValue)-\(Int(UIScreen.main.scale * 100))"
+        /// 配色 + 带高 + 缩放 → 缓存键。
+        private static func fadeKey(_ color: UIColor, height: CGFloat) -> String {
+            "\(color.hashValue)-\(Int(UIScreen.main.scale * 100))-\(Int((height * 2).rounded()))"
         }
 
         /// 「上实下虚」的导航带背景图。
         ///
-        /// 图只有 1px 宽，纵向结构（从上往下）：
-        ///   · 0…8pt   纯色（4pt 顶帽 + 4pt 会被纵向拉满的实心条）
-        ///   · 8…H     线性渐隐到全透明，高 `fadeHeight`
-        /// 再按 top 4 / bottom fadeHeight 切帽、`.stretch`：实心那段被拉满整条
-        /// bar，渐隐段原样贴在底边 —— 不用预先知道 bar 有多高，换机型自动成立。
+        /// 按**实际带高**出图（1pt 宽 × `height` 高），纵向结构（从上往下）：
+        ///   · 0…height−18   纯色，铺满带子本体，到 110.67 为止
+        ///   · 末 18pt       线性渐隐到全透明，落在带子下沿之外
         ///
-        /// [2026-11-14 第十二轮] 为什么不用蒙版：上一版给 bar 自己那层背景
-        /// （`_UIBarBackground`）挂 `CAGradientLayer` 蒙版，装上后渐变完全没
-        /// 出来（用户报「没有模糊带」）。那层是 UIKit 每次布局自己重画的，
-        /// 蒙版对它不可靠。改成走 `UINavigationBarAppearance` —— 这条通道
-        /// 本项目已经验证有效：底边那条分隔线就是靠 `shadowColor = .clear`
-        /// 清掉的，现场截图可证。
-        private static func fadeImage(color: UIColor, scale: CGFloat) -> UIImage {
+        /// [2026-11-14 第十五轮] 为什么改成「按实际高度出图」，不再用
+        /// `capInsets` + `.stretch`：
+        ///
+        /// `UINavigationBarAppearance.backgroundImage` 是画在一个 UIImageView
+        /// 里的，而 **UIImageView 不认 capInsets** —— 它按
+        /// `backgroundImageContentMode` 把整张图拉满。上一版的图只有 26pt
+        /// （8pt 实心 + 18pt 渐隐），拉满 51.67pt 之后实心段只剩顶上约 15%，
+        /// 标题那一行正好落在渐隐区里，内容就在标题处透了出来（用户截图里
+        /// 「手机温度过高排查」后面那一层灰字）。现在出图尺寸和要铺的尺寸
+        /// 一比一，怎么拉都还是原样。
+        ///
+        /// [2026-11-14 第十二轮] 为什么不用蒙版：给 `_UIBarBackground` 挂
+        /// `CAGradientLayer` 蒙版，那层是 UIKit 每次布局自己重画的，蒙版吃
+        /// 不住，装上后渐变完全没出来。改走 `UINavigationBarAppearance`。
+        private static func fadeImage(color: UIColor, scale: CGFloat, height: CGFloat) -> UIImage {
             let fade = fadeHeight
-            let height = fade + 8
-            let key = fadeKey(color)
+            let h = max(height, fade + 8)
+            let key = fadeKey(color, height: h)
             if let cached = fadeImageCache, cached.key == key { return cached.image }
 
             let format = UIGraphicsImageRendererFormat()
             format.scale = scale
             format.opaque = false
-            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: height),
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: h),
                                                    format: format)
-            let raw = renderer.image { context in
+            let image = renderer.image { context in
                 let cg = context.cgContext
                 cg.setFillColor(color.cgColor)
-                cg.fill(CGRect(x: 0, y: 0, width: 1, height: height - fade))
+                cg.fill(CGRect(x: 0, y: 0, width: 1, height: h - fade))
                 if let gradient = CGGradient(
                     colorsSpace: CGColorSpaceCreateDeviceRGB(),
                     colors: [color.cgColor, color.withAlphaComponent(0).cgColor] as CFArray,
                     locations: [0, 1]
                 ) {
                     cg.drawLinearGradient(gradient,
-                                          start: CGPoint(x: 0, y: height - fade),
-                                          end: CGPoint(x: 0, y: height),
+                                          start: CGPoint(x: 0, y: h - fade),
+                                          end: CGPoint(x: 0, y: h),
                                           options: [])
                 }
             }
-            let image = raw.resizableImage(
-                withCapInsets: UIEdgeInsets(top: 4, left: 0, bottom: fade, right: 0),
-                resizingMode: .stretch
-            )
             fadeImageCache = (key, image)
             return image
         }
@@ -677,10 +696,11 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         /// 必须 copy 出新实例再赋回去：`UIBarAppearance` 是引用类型，原地改完
         /// 再赋同一个对象，UIKit 有可能认为「没变化」而不重画。
         private static func styled(_ appearance: UINavigationBarAppearance?,
-                                   fadingColor color: UIColor) -> UINavigationBarAppearance? {
+                                   fadingColor color: UIColor,
+                                   bandLayerHeight height: CGFloat) -> UINavigationBarAppearance? {
             guard let appearance else { return nil }
-            let key = fadeKey(color)
-            // 已经是我们写的那一份、且配色没变：不重复赋值（每次赋值都重画整条 bar）。
+            let key = fadeKey(color, height: height)
+            // 已经是我们写的那一份、且配色和带高都没变：不重复赋值（每次赋值都重画整条 bar）。
             if appliedFadeKey == key,
                appearance.shadowColor == .clear,
                appearance.backgroundColor == .clear,
@@ -694,7 +714,7 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             copy.backgroundColor = .clear
             // 毛玻璃一并关掉，否则它还会在渐隐段后面铺一层。
             copy.backgroundEffect = nil
-            copy.backgroundImage = fadeImage(color: color, scale: UIScreen.main.scale)
+            copy.backgroundImage = fadeImage(color: color, scale: UIScreen.main.scale, height: height)
             copy.backgroundImageContentMode = .scaleToFill
             appliedFadeKey = key
             return copy
