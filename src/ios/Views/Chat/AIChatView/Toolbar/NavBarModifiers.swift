@@ -174,9 +174,17 @@ struct NavBarStyleModifier: ViewModifier {
 ///
 /// 也就是前 9.3pt 几乎不动（一直压到 0.98…0.75），最后 5.7pt 才猛落到底。
 ///
-/// 位置直接用绝对点数摆（`ignoresSafeArea()` 撑满整屏后，这一层的顶边就是
-/// 屏幕顶边，往下量多少就是多少）。不读 `geo.safeAreaInsets` —— 这棵树上它
-/// 恒为 0；也不读 `geo.frame(in: .global)` —— 那个会跟着滚动容器漂。
+/// 位置直接用绝对点数摆（这条只在页面自己的范围里画，**不越界**）：
+/// 先读这一层顶边在屏幕上的位置，`108 − 顶边` 就是实色段该铺多高，
+/// 剩下 15pt 就是过渡带。三种情况都自己落到同一条线上 ——
+///
+///   · 页面顶边在屏幕 0（内容铺到状态栏底下）→ 实色铺 108，过渡 108…123
+///   · 页面顶边在 59（安全区下沿）→ 实色铺 49，过渡 108…123
+///   · 页面顶边已经在 108（导航栏下沿）→ 实色 0，只有过渡 108…123
+///
+/// **为什么不用 `ignoresSafeArea()`**：那会让这一层撑满整屏、连导航栏那块
+/// 区域一起盖住，右上「…」和左上返回的点击就被吃掉了（实机验证过一次）。
+/// 现在它严格待在页面自己的 bounds 里，碰不到导航栏里的任何按钮。
 struct TopBandFade: View {
 
     /// 状态栏下沿。15 Pro Max = 59；拿不到就用这个兜底。
@@ -231,13 +239,18 @@ struct TopBandFade: View {
 
     var body: some View {
         GeometryReader { geo in
-            let h = max(geo.size.height, 1)
-            ZStack(alignment: .top) {
-                // 导航带那段：实色，铺满到 108
-                ChatColors.background
-                    .frame(width: geo.size.width, height: Self.bandBottom)
-
-                // 过渡带：108 → 123（15pt，和参照一样宽），压在内容上面
+            // 这一层顶边在屏幕上的位置。`.global` 在这棵树上是可靠的
+            // （恒为 0 的是 `safeAreaInsets`，不是这个）。
+            let top = geo.frame(in: .global).minY
+            // 实色段：从这一层顶边一直铺到屏幕 108 那条线。
+            // 页面顶边已经在 108 时，这个数是 0，就只画过渡带。
+            let solid = max(0, Self.bandBottom - top)
+            VStack(spacing: 0) {
+                if solid > 0.5 {
+                    ChatColors.background
+                        .frame(height: solid)
+                }
+                // 过渡带：磨砂 + 淡出，两层叠在内容上面
                 ZStack(alignment: .top) {
                     Rectangle()
                         .fill(Self.veil)
@@ -245,12 +258,11 @@ struct TopBandFade: View {
                         .fill(.regularMaterial)
                         .mask(Rectangle().fill(Self.blurMask))
                 }
-                .frame(width: geo.size.width, height: Self.fadeHeight)
-                .offset(y: Self.bandBottom)
+                .frame(height: Self.fadeHeight)
+                Spacer(minLength: 0)
             }
-            .frame(width: geo.size.width, height: h, alignment: .top)
+            .frame(width: geo.size.width, alignment: .top)
         }
-        .ignoresSafeArea()
         .allowsHitTesting(false)
     }
 }
