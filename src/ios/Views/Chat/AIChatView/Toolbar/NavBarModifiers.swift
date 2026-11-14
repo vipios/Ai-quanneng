@@ -98,19 +98,6 @@ struct NavBarStyleModifier: ViewModifier {
                 content
                     .toolbarBackground(ChatColors.background, for: .navigationBar)
                     .toolbarBackground(.visible, for: .navigationBar)
-                    // [2026-11-14 第十九轮] 导航带下沿那 12.33pt 过渡。
-                    //
-                    // 做法照**输入栏那一处**（AIChatView+InputBar.swift:504）：一条
-                    // 线性渐变铺在内容上面，让滚上来的内容淡出去。输入栏那条是
-                    // 「透明 → 实色」压在底部，这条是「实色 → 透明」压在上面，方向反过来。
-                    //
-                    // 为什么不走导航栏：导航栏的背景图会被系统按它自己的尺寸重画，
-                    // 位置对不上（前三版都是栽在这里）。这条渐变铺在页面自己身上，
-                    // 不经过导航栏，位置就是我们要的 110.67 → 123。
-                    .overlay(alignment: .top) {
-                        TopBandFade(topInset: topSafeAreaInset)
-                            .allowsHitTesting(false)
-                    }
                     .overlay(alignment: .top) {
                         if measuresSafeArea {
                             // [T-ios-geometry-observer-crash] onGeometryChange
@@ -130,6 +117,17 @@ struct NavBarStyleModifier: ViewModifier {
                     }
             }
         }
+        // [2026-11-14 第二十轮] 导航带 + 下沿那条过渡。两个分支都要挂。
+        //
+        // 上一版把它写在 iOS 16–18 那一支里、位置又用 `topSafeAreaInset` 算，
+        // 实机一点效果都没有：那个值在这棵树上恒为 0，渐变被画到了 51.67pt
+        // （状态栏里），颜色又和底色一样，等于没画。
+        //
+        // 这一版不再要那个值：从屏幕最顶上铺下来，0 → 110.67 全实色，
+        // 110.67 → 123 按参照实测的曲线落到底。带子自己有没有底色都不影响。
+        .overlay(alignment: .top) {
+            TopBandFade()
+        }
         // 导航栏底边那条 1px 分隔线，两个分支都要摘。
         .background {
             NavBarSeparatorRemover()
@@ -138,16 +136,18 @@ struct NavBarStyleModifier: ViewModifier {
     }
 }
 
-// MARK: - 导航带下沿的过渡
+// MARK: - 导航带 + 下沿的过渡
 
-/// 导航带下沿那条过渡：实色 → 透明，高 12.33pt，压在内容上面。
+/// 从屏幕顶上铺下来的一条：0 → 110.67 实色，110.67 → 123 淡出。
 ///
 /// 和输入栏那条（`AIChatView+InputBar.swift:504`）是同一个办法，只是方向反过来：
 /// 输入栏是「透明 → 实色」压在底部，让内容不从底下漏出来；这条是「实色 → 透明」
 /// 压在上面，让内容往上滑时淡出去。
 ///
-/// 位置照参照量：带子本体下沿 = 状态栏下沿 + 51.67 = 110.67pt（带子不缩），
-/// 过渡带就从那儿往下铺到 123 结束，共 12.33pt。
+/// **为什么从 0 铺起**：导航带自己的底色不可靠 —— 实机截图量下来，带子区域
+/// 的像素和页面底色一模一样（都是 248），内容在 98.67pt 就已经完整露出来了，
+/// 带子等于没盖住东西。所以这条渐变干脆把整段都自己铺：0 → 110.67 实色，
+/// 顺带把带子没盖住的那段也盖上；110.67 → 123 才是过渡。
 ///
 /// 中间那几个停靠点不是均分的，是拿参照截图逐行量出来的实际透明度：
 ///
@@ -157,16 +157,15 @@ struct NavBarStyleModifier: ViewModifier {
 ///   122.67 → 内容透出 95%   ⇒ 盖 0.05
 ///   123.00 → 内容全亮       ⇒ 盖 0
 ///
-/// 也就是说前 6.7pt 几乎不动（一直压到 0.92…0.75），最后 5.7pt 才猛落到底。
-/// 之前那版是均速直线铺到 128.67，117 处已经透出 37%、121 处才 60%，
-/// 到 128.67 才全亮 —— 看着像蒙了一层半透明膜，不像淡出。
+/// 也就是前 6.7pt 几乎不动（一直压到 0.92…0.75），最后 5.7pt 才猛落到底。
 ///
-/// 偏移用 `.global` 反算，是因为这棵树上 `geo.safeAreaInsets` 恒为 0，
-/// 拿不到窗口坐标；`.global` 在整屏应用里就是窗口坐标。
+/// 位置按**整屏比例**摆，不读 `geo.safeAreaInsets`（这棵树上恒为 0），
+/// 也不读 `geo.frame(in: .global)`（会跟着滚动容器漂）。整屏高度由
+/// `ignoresSafeArea()` 撑满后自己就是屏幕高，比例一乘就是绝对坐标。
 struct TopBandFade: View {
 
-    /// 状态栏下沿（15 Pro Max = 59），由调用方传入。
-    var topInset: CGFloat
+    /// 状态栏下沿。15 Pro Max = 59；拿不到就用这个兜底。
+    static let statusBarHeight: CGFloat = 59
 
     /// 带子本体高度。
     ///
@@ -177,23 +176,34 @@ struct TopBandFade: View {
     /// 过渡带高度。110.67 → 123。
     static let fadeHeight: CGFloat = 12.33
 
+    /// 实色段的绝对下沿（屏幕坐标）。
+    static var bandBottom: CGFloat { statusBarHeight + bandHeightBelowSafeArea }
+
+    /// 过渡结束的绝对位置（屏幕坐标）。
+    static var fadeEnd: CGFloat { bandBottom + fadeHeight }
+
     var body: some View {
         GeometryReader { geo in
-            let containerTop = geo.frame(in: .global).minY
+            let h = max(geo.size.height, 1)
+            let solid = Self.bandBottom / h
+            let end = min(Self.fadeEnd / h, 1)
+            let span = max(end - solid, 0.0001)
             LinearGradient(
                 stops: [
-                    .init(color: ChatColors.background.opacity(0.92), location: 0),
-                    .init(color: ChatColors.background.opacity(0.75), location: 0.540),
-                    .init(color: ChatColors.background.opacity(0.23), location: 0.865),
-                    .init(color: ChatColors.background.opacity(0.05), location: 0.973),
-                    .init(color: ChatColors.background.opacity(0), location: 1),
+                    .init(color: ChatColors.background, location: 0),
+                    .init(color: ChatColors.background.opacity(0.92), location: solid),
+                    .init(color: ChatColors.background.opacity(0.75), location: solid + span * 0.540),
+                    .init(color: ChatColors.background.opacity(0.23), location: solid + span * 0.865),
+                    .init(color: ChatColors.background.opacity(0.05), location: solid + span * 0.973),
+                    .init(color: ChatColors.background.opacity(0), location: end),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: Self.fadeHeight)
-            .offset(y: (topInset + Self.bandHeightBelowSafeArea) - containerTop)
+            .frame(width: geo.size.width, height: h)
         }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
 
