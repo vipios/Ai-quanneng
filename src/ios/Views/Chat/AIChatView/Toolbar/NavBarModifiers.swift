@@ -98,7 +98,7 @@ struct NavBarStyleModifier: ViewModifier {
                 content
                     .toolbarBackground(ChatColors.background, for: .navigationBar)
                     .toolbarBackground(.visible, for: .navigationBar)
-                    // [2026-11-14 第十八轮] 导航带下沿那 18pt 过渡。
+                    // [2026-11-14 第十九轮] 导航带下沿那 12.33pt 过渡。
                     //
                     // 做法照**输入栏那一处**（AIChatView+InputBar.swift:504）：一条
                     // 线性渐变铺在内容上面，让滚上来的内容淡出去。输入栏那条是
@@ -106,7 +106,7 @@ struct NavBarStyleModifier: ViewModifier {
                     //
                     // 为什么不走导航栏：导航栏的背景图会被系统按它自己的尺寸重画，
                     // 位置对不上（前三版都是栽在这里）。这条渐变铺在页面自己身上，
-                    // 不经过导航栏，位置就是我们要的 110.67 → 128.67。
+                    // 不经过导航栏，位置就是我们要的 110.67 → 123。
                     .overlay(alignment: .top) {
                         TopBandFade(topInset: topSafeAreaInset)
                             .allowsHitTesting(false)
@@ -140,14 +140,26 @@ struct NavBarStyleModifier: ViewModifier {
 
 // MARK: - 导航带下沿的过渡
 
-/// 导航带下沿那条过渡：实色 → 透明，高 18pt，压在内容上面。
+/// 导航带下沿那条过渡：实色 → 透明，高 12.33pt，压在内容上面。
 ///
 /// 和输入栏那条（`AIChatView+InputBar.swift:504`）是同一个办法，只是方向反过来：
 /// 输入栏是「透明 → 实色」压在底部，让内容不从底下漏出来；这条是「实色 → 透明」
 /// 压在上面，让内容往上滑时淡出去。
 ///
-/// 位置照参照量：带子本体下沿 = 状态栏下沿 + 51.67 = 110.67pt，
-/// 过渡带就从那儿往下铺 18pt，到 128.67 结束。
+/// 位置照参照量：带子本体下沿 = 状态栏下沿 + 51.67 = 110.67pt（带子不缩），
+/// 过渡带就从那儿往下铺到 123 结束，共 12.33pt。
+///
+/// 中间那几个停靠点不是均分的，是拿参照截图逐行量出来的实际透明度：
+///
+///   110.67 → 内容透出  8%   ⇒ 盖 0.92
+///   117.33 → 内容透出 25%   ⇒ 盖 0.75
+///   121.33 → 内容透出 77%   ⇒ 盖 0.23
+///   122.67 → 内容透出 95%   ⇒ 盖 0.05
+///   123.00 → 内容全亮       ⇒ 盖 0
+///
+/// 也就是说前 6.7pt 几乎不动（一直压到 0.92…0.75），最后 5.7pt 才猛落到底。
+/// 之前那版是均速直线铺到 128.67，117 处已经透出 37%、121 处才 60%，
+/// 到 128.67 才全亮 —— 看着像蒙了一层半透明膜，不像淡出。
 ///
 /// 偏移用 `.global` 反算，是因为这棵树上 `geo.safeAreaInsets` 恒为 0，
 /// 拿不到窗口坐标；`.global` 在整屏应用里就是窗口坐标。
@@ -162,15 +174,18 @@ struct TopBandFade: View {
     /// 那边在 UIKit 里、这边在 SwiftUI 里，拿不到同一份常量，改一处必须改两处。
     static let bandHeightBelowSafeArea: CGFloat = 51.67
 
-    /// 过渡带高度。
-    static let fadeHeight: CGFloat = 18
+    /// 过渡带高度。110.67 → 123。
+    static let fadeHeight: CGFloat = 12.33
 
     var body: some View {
         GeometryReader { geo in
             let containerTop = geo.frame(in: .global).minY
             LinearGradient(
                 stops: [
-                    .init(color: ChatColors.background, location: 0),
+                    .init(color: ChatColors.background.opacity(0.92), location: 0),
+                    .init(color: ChatColors.background.opacity(0.75), location: 0.540),
+                    .init(color: ChatColors.background.opacity(0.23), location: 0.865),
+                    .init(color: ChatColors.background.opacity(0.05), location: 0.973),
                     .init(color: ChatColors.background.opacity(0), location: 1),
                 ],
                 startPoint: .top,
@@ -588,7 +603,7 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
         //   · 状态栏下沿        59.00
         //   · 气泡              67.00 … 110.67（直径 44）
         //   · 带子本体下沿      110.67   ← 不透明段到此为止
-        //   · 渐隐段终点        110.67 + 18 = 128.67
+        //   · 渐隐段终点        110.67 + 12.33 = 123.00
         //
         // 参照那条带的不透明段是 **51.67 高**：标准 44pt 带之外，它自己往下
         // 多铺了 7.67，正好和气泡底边（110.67）齐平。
