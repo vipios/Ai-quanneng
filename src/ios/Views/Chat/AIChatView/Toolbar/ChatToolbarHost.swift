@@ -857,6 +857,10 @@ struct ChatNavMenuBarItemInstaller: UIViewRepresentable {
     final class Coordinator {
         let inner: ChatTrailingMenuButton.Coordinator
         let item: UIBarButtonItem
+        /// iOS 16-18 的白圆 customView。菜单要双写：`item.menu` 给系统路径，
+        /// `bubbleView.setMenu` 给按钮自己的 `showsMenuAsPrimaryAction` ——
+        /// `item.menu` 对 customView 不触发（点了没反应），能弹的是按钮自己。
+        let bubbleView: NavBubbleBarItemView?
         weak var navItem: UINavigationItem?
         var observation: NSKeyValueObservation?
         var reinstalls = 0
@@ -872,16 +876,20 @@ struct ChatNavMenuBarItemInstaller: UIViewRepresentable {
                 // Same colour as ChatTrailingMenuButton. A bar item otherwise takes
                 // the app tint; iOS 26's glass hides that, iOS 16-18 would show it.
                 item.tintColor = UIColor(ChatColors.primaryText)
+                bubbleView = nil
             } else {
-                // [参照图对齐 2026-11-13] iOS 16-18：和左上角返回同款 40pt
+                // [参照图对齐 2026-11-13] iOS 16-18：和左上角返回同款 44pt
                 // 白圆气泡。用 customView 而不是往 image 里拼圆 —— 圆底要
                 // 跟着深浅色切换（深色是 10% 白），拼进图片就得自己盯着
                 // trait 变化重画；customView 用动态 UIColor 自动跟。
-                item = UIBarButtonItem(customView: NavBubbleBarItemView(symbolName: "ellipsis",
-                                                                       pointSize: 14))
+                let view = NavBubbleBarItemView(symbolName: "ellipsis", pointSize: 14)
+                bubbleView = view
+                item = UIBarButtonItem(customView: view)
             }
             item.accessibilityLabel = AppLocalized("More options")
-            item.menu = ChatTrailingMenuButton.buildMenu(key: menu.key, coordinator: inner)
+            let built = ChatTrailingMenuButton.buildMenu(key: menu.key, coordinator: inner)
+            item.menu = built
+            bubbleView?.setMenu(built)
             inner.lastKey = menu.key
         }
 
@@ -963,7 +971,9 @@ struct ChatNavMenuBarItemInstaller: UIViewRepresentable {
         coordinator.inner.parent = menu
         if coordinator.inner.lastKey != menu.key {
             coordinator.inner.lastKey = menu.key
-            coordinator.item.menu = ChatTrailingMenuButton.buildMenu(key: menu.key, coordinator: coordinator.inner)
+            let built = ChatTrailingMenuButton.buildMenu(key: menu.key, coordinator: coordinator.inner)
+            coordinator.item.menu = built
+            coordinator.bubbleView?.setMenu(built)
             ChatNavMenuBarItem.logger.info("[NavMenu] menu rebuilt (displayed state changed)")
         }
         // The toolbar bridge pushes during this same update; check once it has.

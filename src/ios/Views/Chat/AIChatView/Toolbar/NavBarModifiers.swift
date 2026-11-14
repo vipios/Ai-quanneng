@@ -136,20 +136,16 @@ struct NavBarStyleModifier: ViewModifier {
     }
 }
 
-// MARK: - 导航带 + 下沿的过渡
+// MARK: - 导航带下沿的过渡
 
-/// 从屏幕顶上铺下来的一条：0 → 108 实色，108 → 123 淡出。
+/// 屏幕坐标 108 → 123 那条过渡带：**磨砂 + 压淡**两层叠在内容上。
 ///
-/// 和输入栏那条（`AIChatView+InputBar.swift:504`）是同一个办法，只是方向反过来：
-/// 输入栏是「透明 → 实色」压在底部，让内容不从底下漏出来；这条是「实色 → 透明」
-/// 压在上面，让内容往上滑时淡出去。
+/// 纯渐变在实机上验证过是没效果的（内容滑进去只是变淡，字还是清晰的）；
+/// 参照量下来是磨砂 —— 淡字笔画边缘的过渡宽度是正常字的 2.7 倍，灰度
+/// 直方图是连续斜坡。所以两层：
 ///
-/// **为什么从 0 铺起**：导航带自己的底色不可靠 —— 实机截图量下来，带子区域
-/// 的像素和页面底色一模一样（都是 248），内容在 98.67pt 就已经完整露出来了，
-/// 带子等于没盖住东西。所以这条渐变干脆把整段都自己铺：0 → 108 实色，
-/// 顺带把带子没盖住的那段也盖上；108 → 123 才是过渡。
-///
-/// 中间那几个停靠点不是均分的，是拿参照截图逐行量出来的实际透明度：
+///   ① `.regularMaterial` 磨砂，用遮罩做出上满下空的柔和底边
+///   ② 底色渐变压淡，停靠点是参照逐行量的：
 ///
 ///   108.00 → 内容透出  2%   ⇒ 盖 0.98
 ///   110.67 → 内容透出  8%   ⇒ 盖 0.92
@@ -158,42 +154,58 @@ struct NavBarStyleModifier: ViewModifier {
 ///   122.67 → 内容透出 95%   ⇒ 盖 0.05
 ///   123.00 → 内容全亮       ⇒ 盖 0
 ///
-/// 也就是前 9.3pt 几乎不动（一直压到 0.98…0.75），最后 5.7pt 才猛落到底。
+/// **实色段（0 → 108）不在这里画**：SwiftUI overlay 在进页面的第一帧
+/// 晚一拍，首帧裸露原版就是用户看到的「闪一下」。实色段交给 UIKit 的
+/// 导航栏背景承担（`NavBarSeparatorRemover.Probe` 把背景层拉高到 108，
+/// 首帧就在），这里只补 108 之下的渐变。
 ///
-/// 位置直接用点数摆，只在本页自己的范围里画、**不越界**：先读这一层顶边
-/// 在屏幕上的位置，`108 − 顶边` 就是实色段该铺多高，剩下 15 就是
-/// 过渡带。页面顶边落在 0 / 59 / 103 哪一处，最后都落到同一条线上。
+/// 位置按屏幕坐标摆：读这一层顶边在屏幕上的位置，先占位到 108，再画
+/// 15pt 过渡。页面顶边落在 0 / 59 / 103 哪一处，都落到同一条线上。
 ///
-/// **不用 `ignoresSafeArea()`**：那会让这一层撑满整屏、连导航栏那块一起
-/// 盖住，右上「…」和左上返回的点击就被吃掉了（1.66 实机验证过一次）。
-/// 现在它严格待在页面自己的 bounds 里，碰不到导航栏里的任何按钮。
+/// **不用 `ignoresSafeArea()`**：那会让这一层撑满整屏。现在它严格待在
+/// 页面自己的 bounds 里。
 struct TopBandFade: View {
 
     /// 状态栏下沿。15 Pro Max = 59；拿不到就用这个兜底。
     static let statusBarHeight: CGFloat = 59
 
-    /// 带子实色段高度。51.67 → 49：下沿从 110.67 收到 108，和参照同一条线。
+    /// 带子实色段高度。下沿 = 59 + 49 = 108，和参照同一条线。
     static let bandHeightBelowSafeArea: CGFloat = 49
 
     /// 过渡带高度。108 → 123，15.0pt，和参照一样宽。
     static let fadeHeight: CGFloat = 15
 
-    /// 实色段的绝对下沿（屏幕坐标）。
+    /// 实色段的绝对下沿（屏幕坐标），也是过渡带的起点。
     static var bandBottom: CGFloat { statusBarHeight + bandHeightBelowSafeArea }
+
+    /// 磨砂层的遮罩：上满下空，和压淡用同一条曲线，底边不留硬边。
+    private static var blurMask: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: .black, location: 0),
+                .init(color: .black.opacity(0.95), location: 0.178),
+                .init(color: .black.opacity(0.45), location: 0.622),
+                .init(color: .black.opacity(0.12), location: 0.889),
+                .init(color: .black.opacity(0.03), location: 0.978),
+                .init(color: .black.opacity(0), location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
 
     var body: some View {
         GeometryReader { geo in
             // 这一层顶边在屏幕上的位置。恒为 0 的是 `safeAreaInsets`，不是这个。
             let top = geo.frame(in: .global).minY
-            // 实色段：从这一层顶边铺到屏幕 108 那条线。
-            // 页面顶边已经在 108 时，这个数是 0，就只画过渡带。
-            let solid = max(0, Self.bandBottom - top)
-            VStack(spacing: 0) {
-                if solid > 0.5 {
-                    ChatColors.background
-                        .frame(height: solid)
-                }
-                // 过渡带：108 → 123，15pt
+            // 过渡带起点（108）距这一层顶边的距离。顶边已在 108 之下时为 0。
+            let lead = max(0, Self.bandBottom - top)
+            ZStack(alignment: .top) {
+                // ② 磨砂：让滑进来的内容被模糊
+                Rectangle()
+                    .fill(.regularMaterial)
+                    .mask(Rectangle().fill(Self.blurMask))
+                // ① 底色压淡：参照实测的曲线
                 LinearGradient(
                     stops: [
                         .init(color: ChatColors.background.opacity(0.98), location: 0),
@@ -206,12 +218,13 @@ struct TopBandFade: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: Self.fadeHeight)
-                Spacer(minLength: 0)
             }
+            .frame(height: Self.fadeHeight)
+            // 占位：把过渡带推到屏幕 108 那条线（顶边到 108 之间不画东西，
+            // 那段由 UIKit 的导航栏背景实色盖）。
+            .padding(.top, lead)
             .frame(width: geo.size.width, alignment: .top)
         }
-        // 不加 `ignoresSafeArea()`：那会伸到导航栏上，吃掉右上「…」的点击。
         .allowsHitTesting(false)
     }
 }
@@ -337,6 +350,14 @@ final class NavBubbleBarItemView: UIView {
 
     private let icon = UIImageView()
 
+    /// 点击层。**不能指望 `UIBarButtonItem.menu`**：对 customView 类型的
+    /// item，系统不给 customView 挂 menu 手势，点上去什么都不发生 ——
+    /// 右上「…」点不了就是这个。改用 UIButton 自己带 menu
+    /// （`showsMenuAsPrimaryAction`），这是 SwiftUI 的 ToolbarItem 路径
+    /// （`ChatTrailingMenuButton`/HitPaddedButton）上验证过能弹的做法。
+    /// 按钮透明铺满容器，只负责接点击和弹菜单；白圆视觉画在容器上。
+    private let tapArea = UIButton(type: .custom)
+
     init(symbolName: String, pointSize: CGFloat) {
         let d = NavBubble.diameter
         super.init(frame: CGRect(x: 0, y: 0, width: d, height: d))
@@ -361,6 +382,12 @@ final class NavBubbleBarItemView: UIView {
         icon.frame = bounds
         icon.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(icon)
+
+        tapArea.backgroundColor = .clear
+        tapArea.frame = bounds
+        tapArea.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        tapArea.showsMenuAsPrimaryAction = true
+        addSubview(tapArea)
     }
 
     @available(*, unavailable)
@@ -368,6 +395,18 @@ final class NavBubbleBarItemView: UIView {
 
     override var intrinsicContentSize: CGSize {
         CGSize(width: NavBubble.diameter, height: NavBubble.diameter)
+    }
+
+    /// 菜单由安装器在构建/刷新时灌进来（和 `item.menu` 同步双写）。
+    func setMenu(_ menu: UIMenu) {
+        tapArea.menu = menu
+    }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        // bounds 被 UIKit 重设时也可能缩水，用直径兜底，保证整颗圆可点。
+        let w = max(bounds.width, NavBubble.diameter)
+        let h = max(bounds.height, NavBubble.diameter)
+        return CGRect(x: 0, y: 0, width: w, height: h).contains(point)
     }
 }
 
@@ -506,14 +545,19 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
             syncChrome()
         }
 
-        /// 两件事：放开裁剪、摘掉底边分隔线。带子的实色段不再靠拉高背景层，
-        /// 改由 `TopBandFade` 自己铺（它从屏幕顶铺实色到 108），所以这里
-        /// 不再动 `backgroundLayer` 的 frame —— 那件事是「进页面闪一下原版」
-        /// 的根源（事后改 frame，第一帧总是旧高度）。
+        /// 三件事：放开裁剪、把背景层实色抬到 108、摘掉底边分隔线。
+        ///
+        /// 背景层高度为什么必须在这里抬：实色段（0 → 108）如果靠 SwiftUI
+        /// overlay 画，overlay 首帧晚一拍，进页面第一帧裸露原版 —— 用户看到
+        /// 的「闪一下」。UIKit 的导航栏背景首帧就在，把它的 frame 抬到 108，
+        /// 实色段从第一帧起就是对的。
         func syncChrome() {
             guard let nav = enclosingNavigationController else { return }
             let bar = nav.navigationBar
             openClips(on: bar)
+            if let bg = Self.backgroundLayer(of: bar) {
+                applyBandHeight(bandLayerHeight(on: bar), to: bg)
+            }
             removeSeparator()
         }
 
@@ -573,6 +617,67 @@ private struct NavBarSeparatorRemover: UIViewControllerRepresentable {
                 if sub.clipsToBounds { sub.clipsToBounds = false }
                 openClips(in: sub, depth: depth + 1)
             }
+        }
+
+        // MARK: - 导航带实色段高度
+        //
+        //   · 状态栏下沿        59.00
+        //   · 带子实色段下沿    108.00   ← 不透明段到此为止
+        //   · 渐隐段终点        108.00 + 15.00 = 123.00（TopBandFade 画）
+
+        /// 带子**实色段**下沿落在「状态栏下沿 + 多少 pt」。
+        /// 59 + 49 = 108，和参照的渐隐起点同一条线。
+        private static let bandHeightBelowSafeArea: CGFloat = 49
+
+        /// 拿不到安全区时的兜底：标准 44pt 带之外多铺的量。49 − 44 = 5。
+        private static let fallbackOverhang: CGFloat = 5
+
+        /// 背景层该有多高（在本层坐标系里）。
+        ///
+        /// 高度按**window 坐标**反算，不按 bar 自己的 bounds 反算：不同系统
+        /// 版本里 bar 的 frame 有的是 (0,0,w,103)（连状态栏一起算），有的是
+        /// (0,59,w,44)（只算那 44pt 带），两种都对得上「带子到 108」
+        /// 这条线，不必去猜是哪种。
+        private func bandLayerHeight(on bar: UINavigationBar) -> CGFloat {
+            let fallback = bar.bounds.height + Self.fallbackOverhang
+            guard let bg = Self.backgroundLayer(of: bar), let window = bar.window else { return fallback }
+
+            let safeTop = window.safeAreaInsets.top
+            guard safeTop > 0 else { return fallback }
+
+            let barTopInWindow = bar.convert(CGPoint.zero, to: window).y
+            let bgTopInWindow = barTopInWindow + bg.frame.minY
+            let height = (safeTop + Self.bandHeightBelowSafeArea) - bgTopInWindow
+            return height > 1 ? height : fallback
+        }
+
+        /// 把背景层抬到算好的高度。不新增视图，只改系统已有那层背景的 frame。
+        private func applyBandHeight(_ height: CGFloat, to bg: UIView) {
+            // UIKit 每次布局都可能把它设回标准带，所以每次都比一遍。
+            if abs(bg.frame.height - height) > 0.5 {
+                var f = bg.frame
+                f.size.height = height
+                bg.frame = f
+            }
+            // 多出来的那段落在 bar 边界外，得让它自己别裁。
+            if bg.clipsToBounds { bg.clipsToBounds = false }
+            // 这层只是底色、没有任何手势；关掉交互，防止它把点击接住吃掉。
+            if bg.isUserInteractionEnabled { bg.isUserInteractionEnabled = false }
+        }
+
+        /// 找 bar 自己那层背景。
+        ///
+        /// 主路按类名（`_UIBarBackground`）；万一哪天系统改名，退回结构判定：
+        /// z 序最下面、且不是内容容器（`_UINavigationBarContentView`）的那层。
+        private static func backgroundLayer(of bar: UINavigationBar) -> UIView? {
+            if let hit = bar.subviews.first(where: {
+                String(describing: type(of: $0)).contains("BarBackground")
+            }) {
+                return hit
+            }
+            return bar.subviews.first(where: {
+                !String(describing: type(of: $0)).contains("ContentView")
+            })
         }
 
         /// 把一份 appearance 改成「摘掉分隔线 + 实色背景」。
