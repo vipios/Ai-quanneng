@@ -28,6 +28,19 @@ on:
         required: false
         default: 'https://github.com/vipios/Ai-quanneng/releases/download/latest/AiQuanneng-1.0.ipa'
 
+  # 为什么要 push 触发：
+  #   GitHub 只登记「默认分支上存在」的 workflow，文件单独放在临时分支上时
+  #   用 API 按文件名 dispatch 会直接 404。想在不动 main 的前提下跑，
+  #   只能靠这个分支自己的 push 触发。
+  #   分支删掉之后这条就自然失效了（branches 只写了 relay-dylib）。
+  push:
+    branches: [relay-dylib]
+    paths:
+      - 'relay-dylib/**'
+      - 'scripts/inject_dylib.py'
+      - 'scripts/patch_infoplist.py'
+      - '.github/workflows/relay-dylib.yml'
+
 permissions:
   contents: write
 
