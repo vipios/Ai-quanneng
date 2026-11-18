@@ -203,6 +203,15 @@ struct RelayAdminView: View {
     /// 用户在外网进了内网地址时，一眼能看出连错了线，不用去设置页翻。
     private var statusBar: some View {
         HStack(spacing: 8) {
+            // 当前走的是 WiFi 还是数据。用户 2026-11-18 要求：换网要自动判、
+            // 而且要在界面上看得见 —— 这一小格就是那个「看得见」。
+            if let net = route?.network, net != .unknown {
+                Text(net.label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Color(red: 0x8E/255, green: 0x8E/255, blue: 0x93/255))
+                    .fixedSize()
+            }
+
             Text(route?.displayAddress ?? "—")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(Color(red: 0x8E/255, green: 0x8E/255, blue: 0x93/255))

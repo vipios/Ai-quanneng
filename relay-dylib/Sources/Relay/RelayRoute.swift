@@ -33,10 +33,166 @@
 //  内网 192.168.x.x:8080 = 0.07 秒
 //  域名 your-name.dpdns.org = 2.5 秒
 //  在家里走域名就是白白慢 35 倍。
+//
+//  ============================================================
+//  五、WiFi / 蜂窝 怎么判（2026-11-18 用户要求补的）
+//
+//  用 `NWPath.usesInterfaceType`：`.wifi` / `.cellular` / `.wiredEthernet`。
+//  这是**接口类型**，不是网络名 —— 不需要任何 entitlement，TrollStore
+//  装的包照样能拿到。第一条说的「SSID 读数恒为 nil」跟这个无关。
+//
+//  所以「现在用的是 WiFi 还是数据」判得死准。
+//
+//  但「这个 WiFi 是不是别人家的」**不可能靠名字判**（SSID 拿不到）。
+//  这里用可达性反推，并且在文案里说实话：
+//    · 家里 relay 探通            → 自己家（内网直连）
+//    · WiFi + 探不通              → 不是自己家的网（别人家 / 公共 WiFi），
+//                                   或者自己家但中转站挂了 —— 两种都只能走域名
+//    · WiFi + 端口有响应但 service 不对 → 这网上 8080 是别的东西（见第三条）
+//    · 蜂窝 + 探不通              → 蜂窝数据
+//  判的是「能不能直连」，不是「朋友圈定位」，措辞上不吹牛。
 //  ============================================================
 
 import Foundation
 import Network
+import Darwin
+
+// MARK: - 网络接口类型
+
+/// 现在走的是哪条物理网络。只回答「WiFi / 蜂窝 / 有线」，
+/// 不回答「这是谁家的 WiFi」（SSID 读不到，见文件头第五条）。
+enum RelayNetwork: String {
+    case wifi
+    case cellular
+    case wired
+    /// 明确断网（飞行模式 / 无信号）
+    case offline
+    /// NWPathMonitor 还没给第一次回调 —— 不知道，别拿它当断网
+    case unknown
+    /// 有网，但不是上面三种（VPN 之外的其它接口）
+    case other
+
+    /// 从 NWPath 读，不做任何猜测。
+    static func from(path: NWPath) -> RelayNetwork {
+        guard path.status == .satisfied else { return .offline }
+        if path.usesInterfaceType(.wifi) { return .wifi }
+        if path.usesInterfaceType(.cellular) { return .cellular }
+        if path.usesInterfaceType(.wiredEthernet) { return .wired }
+        return .other
+    }
+
+    var label: String {
+        switch self {
+        case .wifi:     return "WiFi"
+        case .cellular: return "蜂窝数据"
+        case .wired:    return "有线网络"
+        case .offline:  return "未联网"
+        case .unknown:  return "判定中"
+        case .other:    return "其它网络"
+        }
+    }
+}
+
+/// 「家里直连地址通不通」的三种结果。
+///
+/// 分三种而不是 Bool：`wrongService` 说明**这个网段上有东西占着 8080
+/// 但不是家里 relay**（文件头第三条），它和「完全连不上」是两件事，
+/// 文案也不该一样 —— 前者说明连到了别的内网，后者说明压根不在那个网段。
+enum RelayProbeOutcome: String {
+    case reachable
+    case wrongService
+    case unreachable
+
+    var isReachable: Bool { self == .reachable }
+}
+
+// MARK: - 本地网段
+
+/// 手机自己当前的 IPv4 网段。
+///
+/// 为什么需要它：WiFi 上探不通家里 relay 时分不清两种情况 ——
+/// 是「别人家 WiFi」，还是「自己家 WiFi 但中转站挂了」。
+/// 前者该说「别人家 WiFi」，后者该说「家里网段但不通」，冤枉哪一个都不好。
+///
+/// 拿不到 SSID（见文件头第一条），但**本地 IP 拿得到** —— `getifaddrs`
+/// 不需要任何 entitlement。en0 在 iPhone 上就是 WiFi。比前三段（/24）
+/// 就够了：家用网段极少有人配成 /16 以外的东西。
+///
+/// 注意这只是「网段相同」，不是「这是我家」—— 别人家也可能用
+/// 192.168.1.x。所以文案只说「家里网段」，不断言在家。
+enum RelayLocalAddress {
+
+    /// WiFi(en0) 的 IPv4 前三段，例如 "192.168.1"；读不到返回 nil。
+    static func wifiSubnetPrefix() -> String? {
+        var head: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&head) == 0, head != nil else { return nil }
+        defer { freeifaddrs(head) }
+
+        var cursor = head
+        while let pointer = cursor {
+            let entry = pointer.pointee
+            defer { cursor = entry.ifa_next }
+
+            guard let addr = entry.ifa_addr,
+                  addr.pointee.sa_family == sa_family_t(AF_INET),
+                  String(cString: entry.ifa_name) == "en0"
+            else { continue }
+
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let rc = getnameinfo(addr,
+                                socklen_t(addr.pointee.sa_len),
+                                &host,
+                                socklen_t(host.count),
+                                nil, 0,
+                                NI_NUMERICHOST)
+            guard rc == 0 else { continue }
+
+            let octets = String(cString: host).split(separator: ".")
+            guard octets.count == 4 else { continue }
+            return octets.prefix(3).joined(separator: ".")
+        }
+        return nil
+    }
+
+    /// 家里地址的网段前缀。只处理 IPv4 字面量（家里地址就是 192.168.x.x）；
+    /// 填的是域名 / IPv6 就返回 nil —— 那种情况无法用网段比较。
+    static func subnetPrefix(ofIPv4 host: String) -> String? {
+        let cleaned = RelayVault.cleanHost(host)
+        let octets = cleaned.split(separator: ".")
+        guard octets.count == 4,
+              octets.allSatisfy({ Int($0) != nil })
+        else { return nil }
+        return octets.prefix(3).joined(separator: ".")
+    }
+}
+
+// MARK: - 网络类型快照
+
+/// 当前网络类型的共享快照，线程安全。
+///
+/// 为什么要有它：`RelayStore` 的 NWPathMonitor 在主队列回调，而
+/// `RelayProbe.resolve()` 在后台线程跑（它要 await 网络请求）。
+/// 判定读这一个盒子，就不会出现「界面说 WiFi、判定按蜂窝算」。
+final class RelayNetworkReading {
+
+    static let shared = RelayNetworkReading()
+    private init() {}
+
+    private let lock = NSLock()
+    private var stored: RelayNetwork = .unknown
+
+    var value: RelayNetwork {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+
+    func set(_ value: RelayNetwork) {
+        lock.lock()
+        stored = value
+        lock.unlock()
+    }
+}
 
 // MARK: - 线路
 
@@ -52,8 +208,54 @@ struct RelayRoute: Equatable {
     var kind: Kind
     /// 纯 host，**不含协议与端口**。协议和端口由这里按线路决定。
     var host: String
+    /// 这次判定时手机上走的是哪条物理网络。
+    var network: RelayNetwork = .unknown
+    /// 家里直连地址的探测结果。走外网时它解释了「为什么没走直连」。
+    var probe: RelayProbeOutcome = .unreachable
+    /// WiFi 下当前网段是否与家里地址同网段（/24）。
+    /// nil = 判不了（不是 WiFi / 家里填的是域名 / 读不到本地 IP）。
+    var sameSubnetAsHome: Bool? = nil
 
     var isLan: Bool { kind == .lan }
+
+    /// 一句话说清「WiFi 还是数据 + 直连还是外网」。
+    /// 用户 2026-11-18 要求的就是这一句。
+    var stateText: String {
+        switch (kind, network) {
+        case (.lan, .wifi):      return "内网直连 · WiFi"
+        case (.lan, .cellular):  return "内网直连 · 蜂窝数据"
+        case (.lan, .wired):     return "内网直连 · 有线"
+        case (.lan, .offline):   return "内网直连"
+        case (.lan, _):          return "内网直连"
+
+        case (.wan, .offline):   return "未联网"
+        case (.wan, .wifi):
+            // WiFi 上但直连不通，分两种，措辞都不撒谎：
+            //   · 网段和家里一样 → 大概率在家，但中转站没起来
+            //   · 网段不一样     → 别人家 / 公共 WiFi
+            // 网段判不出来（家里填的是域名）时只能说「不是家里网络」。
+            if sameSubnetAsHome == true { return "外网 · 家里网段" }
+            if probe == .wrongService { return "外网 · 这个 WiFi 不是家里网络" }
+            return "外网 · 别人家 WiFi"
+        case (.wan, .cellular):  return "外网 · 蜂窝数据"
+        case (.wan, .wired):     return "外网 · 有线"
+        case (.wan, _):          return "外网"
+        }
+    }
+
+    /// 判定依据，给排查用（自检页 / 路由器页）。
+    var probeText: String {
+        if network == .offline { return "手机没网，跳过探测" }
+        switch probe {
+        case .reachable:    return "家里中转站可达（\(host)）"
+        case .wrongService: return "8080 有响应，但不是中转站"
+        case .unreachable:
+            if sameSubnetAsHome == true {
+                return "和家里同网段，但中转站没响应"
+            }
+            return "家里中转站不可达"
+        }
+    }
 
     /// 中转站后台（relay.py 网页 + /admin/api/*）
     /// 内网固定 8080（relay 监听端口），域名走 443 由 Cloudflare 隧道转进去。
@@ -70,16 +272,6 @@ struct RelayRoute: Equatable {
     /// 给人看的一行。只报「内网 / 外网」，不带「在家 / 在外」这种
     /// 位置暗示 —— 用户要求线路状态只说清走的是哪条线。
     var label: String {
-        kind == .lan ? "内网" : "外网"
-    }
-
-    /// 路由器页顶部概览卡的标题。
-    ///
-    /// 与 `label` 分开是有原因的：`label` 说的是「中转站走哪条线」，
-    /// 而路由器页讲的是**路由器本身**。但用户要求两页统一都只显示
-    /// 「内网 / 外网」，所以这里不再加「路由器 · 」前缀，直接复用
-    /// 同样的两词。
-    var routerLabel: String {
         kind == .lan ? "内网" : "外网"
     }
 
@@ -123,34 +315,57 @@ enum RelayProbe {
     ///
     /// 两段式：先 1.2 秒试一次；不通再给 2.5 秒试一次。
     /// 第一次就通的话不会有任何额外延迟。
+    ///
+    /// 明确断网时直接返回，不打请求 —— 打也是白等 3.7 秒。
     static func resolve() async -> RelayRoute {
         let home = RelayVault.shared.homeHost
         let away = RelayVault.shared.awayHost
+        let network = RelayNetworkReading.shared.value
 
-        var ok = await reachable(home: home, timeout: timeout)
-        if !ok {
-            RelayLog.log("判定：第一轮 \(timeout)s 没通，补一次 \(timeoutRetry)s 重试")
-            ok = await reachable(home: home, timeout: timeoutRetry)
+        if network == .offline {
+            RelayLog.log("判定：\(network.label)，跳过探测")
+            return RelayRoute(kind: .wan, host: away, network: network, probe: .unreachable)
         }
 
-        let route = ok ? RelayRoute(kind: .lan, host: home)
-                       : RelayRoute(kind: .wan, host: away)
+        // WiFi 下才算网段：蜂窝/有线拿 en0 没有意义。
+        let sameSubnet: Bool? = {
+            guard network == .wifi else { return nil }
+            guard let local = RelayLocalAddress.wifiSubnetPrefix(),
+                  let homePrefix = RelayLocalAddress.subnetPrefix(ofIPv4: home)
+            else { return nil }
+            return local == homePrefix
+        }()
 
-        RelayLog.log("判定：探 \(home):8080 → \(ok ? "通" : "不通") → \(route.kind.rawValue) \(route.host)")
+        var outcome = await probe(home: home, timeout: timeout)
+        if outcome != .reachable {
+            RelayLog.log("判定：第一轮 \(timeout)s 没通（\(outcome.rawValue)），补一次 \(timeoutRetry)s 重试")
+            outcome = await probe(home: home, timeout: timeoutRetry)
+        }
+
+        let route = RelayRoute(kind: outcome.isReachable ? .lan : .wan,
+                               host: outcome.isReachable ? home : away,
+                               network: network,
+                               probe: outcome,
+                               sameSubnetAsHome: sameSubnet)
+
+        let subnetNote = sameSubnet.map { $0 ? " · 同网段" : " · 不同网段" } ?? ""
+        RelayLog.log("判定：\(network.label)\(subnetNote) · 探 \(home):8080 → \(outcome.rawValue) → \(route.stateText)")
         return route
     }
 
-    /// 家里直连地址通不通。
+    /// 家里直连地址通不通（三态）。
     ///
     /// 判据用 relay 的 `/health`：
     ///   {"status":"ok","service":"ai-relay",...}
     /// 认 `service` 字段而不是「有 HTTP 响应就算通」—— 见文件头第三条。
+    /// 有响应但 service 不对，单独返回 `wrongService`，让文案能说实话。
     ///
     /// - Parameter timeout: 本次探测的超时。第一轮 1.2s，兜底轮 2.5s。
-    static func reachable(home: String, timeout: TimeInterval = RelayProbe.timeout) async -> Bool {
+    static func probe(home: String,
+                      timeout: TimeInterval = RelayProbe.timeout) async -> RelayProbeOutcome {
         let host = RelayVault.cleanHost(home)
         guard !host.isEmpty, let url = URL(string: "http://\(host):8080/health") else {
-            return false
+            return .unreachable
         }
 
         let cfg = URLSessionConfiguration.ephemeral
@@ -175,14 +390,14 @@ enum RelayProbe {
         guard let (data, resp) = try? await session.data(for: m as URLRequest),
               let code = (resp as? HTTPURLResponse)?.statusCode,
               (200...299).contains(code)
-        else { return false }
+        else { return .unreachable }
 
         guard let doc = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let svc = doc["service"] as? String
-        else { return false }
+        else { return .wrongService }
 
         // "ai-relay" / "relay" 都认
-        return svc.lowercased().contains("relay")
+        return svc.lowercased().contains("relay") ? .reachable : .wrongService
     }
 }
 

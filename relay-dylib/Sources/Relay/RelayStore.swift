@@ -8,7 +8,7 @@
 //
 //  ============================================================
 //  判定逻辑（只有一句）：
-//    进界面 / 切页面 / 回前台 / 下拉刷新 → 打一次家里直连地址
+//    进界面 / 切页面 / 回前台 / 下拉刷新 / **换网** → 打一次家里直连地址
 //    通 → 在家走直连；不通 → 在外走域名
 //
 //  刻意没有的东西（都是踩过的坑，别再捡回来）：
@@ -17,9 +17,11 @@
 //    ✗ 扫一堆候选地址 + 把探测结果写回用户配置
 //    ✗ 判定失败后自动换对面重试（两条来回翻，永远出不来）
 //
-//  NWPathMonitor 用了一点点，但**只用作「换网了，立刻重判」的信号**，
-//  不拿它做线路判定本身（它分不清「同一个 WiFi 换 SSID」，
-//  也说明不了家里的中转站通不通）。
+//  NWPathMonitor 用来做两件事（都不是「判在不在家」）：
+//    ① 换网了立刻重判 —— WiFi ↔ 蜂窝、断网恢复
+//    ② 记下接口类型（WiFi / 蜂窝 / 有线），界面上要显示，
+//       判定也要靠它区分「别人家 WiFi」和「蜂窝数据」
+//  它仍然说明不了家里的中转站通不通，那件事只由 /health 探测回答。
 //  ============================================================
 
 import Foundation
@@ -60,6 +62,13 @@ final class RelayStore: ObservableObject {
     private var lastJudge = Date.distantPast
     /// 判定进行中的标记，防止并发判定互相覆盖
     private var judging = false
+    /// 判定中又来了新请求（例如刚切到外网、马上又切回 WiFi），记下来，
+    /// 等这一轮跑完补一次。
+    ///
+    /// 以前是 `guard !judging else { return }` 直接丢弃 —— 但切到外网那轮
+    /// 很慢（探判定 3.7s + 域名设备状态 10s），用户几秒内切回来，这次重判
+    /// 就被吞了：线路停在外网，后台页面也不刷新（2026-11-18 用户报的问题）。
+    private var pendingRefresh = false
     /// 上一次的线路，用于判断「判定结果变了」要不要通知界面重载
     private(set) var previousKind: RelayRoute.Kind?
 
@@ -100,10 +109,33 @@ final class RelayStore: ObservableObject {
 
     /// 冷启动时调一次：触发本地网络授权弹窗 + 首帧就有线路。
     /// 不在 init 里做，避免 App 启动阶段就去打网络。
+    ///
+    /// dylib 里由 `RelayDylibMain` 在加载后调 —— 这一句是「切网自动判定」
+    /// 能生效的唯一前提：不调它，NWPathMonitor 就不会启动，用户在系统里
+    /// 把 WiFi 换成蜂窝，我们这边一声不响（用户 2026-11-18 报的问题）。
     func bootstrap() {
         RelayLocalNet.requestPermission()
         startPathWatch()
+        startActiveWatch()
         Task { await refresh() }
+    }
+
+    /// 回前台重判。
+    ///
+    /// 为什么放在这里而不是只靠悬浮球那边：进门/出门、锁屏再解锁，
+    /// App 从后台回来时 NWPathMonitor 的回调不一定会再给一次（网络没变），
+    /// 但经过一段时间，中转站/隧道状态可能已经变了。回来就判一次最实在。
+    private var activeObserver: NSObjectProtocol?
+
+    private func startActiveWatch() {
+        guard activeObserver == nil else { return }
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.becameActive() }
+        }
     }
 
     // MARK: - 网络通路监听
@@ -118,24 +150,34 @@ final class RelayStore: ObservableObject {
     /// 用户一直停在前台、中途换了网络 —— 走出家门 Wi‑Fi 掉、蜂窝起来 ——
     /// 页面上的线路还是旧的：明明已经在外，界面仍写「在家 · 直连」，
     /// 点重启会打一个已经不可达的内网地址，看着像按钮坏了。
+    ///
+    /// 顺带把接口类型（WiFi / 蜂窝 / 有线 / 断网）写进 `RelayNetworkReading`：
+    /// 线路判定（后台线程）读那一份，界面读 route，不会两边说法打架。
     private func startPathWatch() {
         guard !pathStarted else { return }
         pathStarted = true
         pathMonitor.pathUpdateHandler = { [weak self] path in
-            let key = "\(path.status == .satisfied)/"
-                + "\(path.usesInterfaceType(.wifi))/"
-                + "\(path.usesInterfaceType(.cellular))"
+            let net = RelayNetwork.from(path: path)
+            let key = net.rawValue
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                // 首个回调只是当前初始状态，不触发重判 —— 否则冷启动
+                RelayNetworkReading.shared.set(net)
+
+                // 首个回调只是当前初始状态，通常不触发重判 —— 否则冷启动
                 // 会连着判两次，多打一次 /health。
                 if self.lastPathKey.isEmpty {
                     self.lastPathKey = key
+                    // 例外：如果首帧判定时还不知道网络类型（NWPathMonitor
+                    // 还没回调），这次补齐它 —— 否则界面会一直写「判定中」。
+                    if self.route?.network == .unknown {
+                        self.lastJudge = .distantPast
+                        Task { await self.refresh() }
+                    }
                     return
                 }
                 guard key != self.lastPathKey else { return }
                 self.lastPathKey = key
-                RelayLog.log("网络通路变化 → \(key)，重判线路")
+                RelayLog.log("网络通路变化 → \(net.label)，重判线路")
                 // 清掉 1 秒的 staleness 门限：这是真换网了，必须立刻重判。
                 self.lastJudge = .distantPast
                 Task { await self.refresh() }
@@ -149,16 +191,32 @@ final class RelayStore: ObservableObject {
     /// 判定线路 + 拉设备状态。**唯一的刷新入口**。
     /// 下拉刷新、切页面、回前台都调它。
     func refresh() async {
-        guard !judging else { return }
+        if judging {
+            // 不丢：记下来，当前这轮结束后补跑（网络又变了必须重判）。
+            pendingRefresh = true
+            return
+        }
         judging = true
         busy = true
         errorText = ""
-        defer { judging = false; busy = false }
+        defer {
+            judging = false
+            busy = false
+            if pendingRefresh {
+                pendingRefresh = false
+                Task { await self.refresh() }
+            }
+        }
 
         let r = await RelayProbe.resolve()
         let changed = (route?.kind != r.kind) || (route?.host != r.host)
         route = r
         lastJudge = Date()
+
+        // 把最新线路推给本地代理 —— 聊天请求靠它无缝换线（无感）。
+        // 走 adminBase：内网 http://host:8080，外网 https://域名，
+        // 正好是 AI 请求（/v1/...）该去的地方。
+        RelayProxy.shared.setTarget(r.adminBase)
 
         if changed, let p = previousKind {
             RelayLog.log("线路变化 \(p.rawValue) → \(r.kind.rawValue)，界面需要重载")

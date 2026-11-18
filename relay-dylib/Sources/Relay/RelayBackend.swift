@@ -264,7 +264,11 @@ enum RelayRouter {
 
     /// 探活：这个地址上是不是我们的路由器。
     /// 判据是 `svc == "airboot"` —— 别人家不可能有这个字段。
-    static func ping(route: RelayRoute, timeout: TimeInterval = 2.5) async -> Bool {
+    ///
+    /// 超时必须给到 10 秒，和 fetchDevice / send 一致：外网域名走隧道，
+    /// 2.5 秒经常连 TLS 握手都没完 → 明明能用却显示「没响应」。
+    /// 内网或隧道通畅时 ping 瞬间返回，不会真的等满 10 秒。
+    static func ping(route: RelayRoute, timeout: TimeInterval = 10) async -> Bool {
         guard let u = bootURL(base: route.bootBase, query: "action=ping") else { return false }
         guard let doc = await json(u, timeout: timeout) else { return false }
         return (doc["ok"] as? Bool) == true && (doc["svc"] as? String) == "airboot"

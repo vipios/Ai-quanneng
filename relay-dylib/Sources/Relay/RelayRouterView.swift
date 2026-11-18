@@ -173,7 +173,9 @@ struct RelayRouterView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(store.route?.routerLabel ?? "正在判定…")
+                    // 主标题直接回答用户的两个问题：WiFi 还是数据、直连还是外网。
+                    // 以前的「内网 / 外网」仍在这句里，只是补上了网络类型。
+                    Text(store.route?.stateText ?? "正在判定…")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.primary)
                     Text(store.route?.routerDisplayAddress ?? "线路还没判出来")
@@ -191,6 +193,7 @@ struct RelayRouterView: View {
             .padding(.vertical, 15)
 
             routeLine("路由器地址", store.route?.routerDisplayAddress ?? "未配置", mono: true)
+            routeLine("当前网络", store.route?.network.label ?? "判定中")
             routeLine("指令通道", channelText, ok: channelReady)
             routeLine("型号", modelText, mono: false)
         }

@@ -37,15 +37,19 @@ OBJDIR="$OUT/obj"
 rm -rf "$OBJDIR"
 mkdir -p "$OBJDIR"
 
-# ── 1. ObjC 入口 ──
+# ── 1. ObjC 入口 + 运行时桥 ──
 # constructor 只能写在 C/ObjC 里，见 RelayEntry.m 顶部注释。
-xcrun --sdk iphoneos clang \
-    -c "$HERE/Sources/RelayEntry.m" \
-    -o "$OBJDIR/RelayEntry.o" \
-    -target "$TARGET" \
-    -isysroot "$SDK" \
-    -fobjc-arc \
-    -O2
+# RelayBridge.m 是 v3 的：App 的配置写入通道只有 @objc 类，编译期不可见，
+# 只能在运行时按类名后缀找（见该文件顶部注释）。
+for objc_src in RelayEntry RelayBridge; do
+    xcrun --sdk iphoneos clang \
+        -c "$HERE/Sources/${objc_src}.m" \
+        -o "$OBJDIR/${objc_src}.o" \
+        -target "$TARGET" \
+        -isysroot "$SDK" \
+        -fobjc-arc \
+        -O2
+done
 
 # ── 2. Swift + 链接 ──
 # 一次调用里既编又链：swiftc 会把 .o 一起交给链接器，并且自动带上
@@ -77,8 +81,10 @@ xcrun --sdk iphoneos swiftc \
     -framework SwiftUI \
     -framework WebKit \
     -framework Foundation \
+    -framework Network \
     "${SWIFT_FILES[@]}" \
-    "$OBJDIR/RelayEntry.o"
+    "$OBJDIR/RelayEntry.o" \
+    "$OBJDIR/RelayBridge.o"
 
 # ── 3. 自检：产物必须存在、架构对、install_name 对 ──
 echo "--- 产物 ---"
@@ -94,6 +100,13 @@ xcrun otool -D "$OUT/$NAME.dylib" | tail -n +2
 # 导出符号里必须有 RelayDylibMain，否则 constructor 会链接不上（运行时空转）
 if ! xcrun nm -gU "$OUT/$NAME.dylib" | grep -q "RelayDylibMain"; then
     echo "error: dylib 里没有导出 RelayDylibMain，constructor 会调不到" >&2
+    exit 1
+fi
+
+# v3 的配置写入桥。它由 -undefined dynamic_lookup 放行，缺了也照样链接通过，
+# 只会在用户点了「保存」那一刻才炸 —— 所以在这里先验一遍定义在不在。
+if ! xcrun nm -gU "$OUT/$NAME.dylib" | grep -q "RelayConfigAddProvider"; then
+    echo "error: dylib 里没有 RelayConfigAddProvider（RelayBridge.m 没编进去）" >&2
     exit 1
 fi
 
