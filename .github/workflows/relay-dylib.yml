@@ -1,0 +1,189 @@
+# ============================================================
+# Relay Dylib · 编出 RelayDylib.dylib
+#
+# 主要交付物就是**一个 .dylib 文件**：手机上用 TrollFools 之类把它注入进
+# 官方 Minis 即可，不需要重新打包 ipa。
+#
+# 为什么必须在这里编：
+#   本地是 Windows，没有 swiftc、没有 iPhoneOS SDK，编不了 arm64 iOS dylib。
+#   这台 macOS runner 是唯一能出产物的机器。
+#
+# 可选项 build_ipa：顺带把 dylib 打进一个 ipa 里出包。
+#   手机上注入不了的场景（比如用证书签名安装）才需要，平时不用开。
+#   它比单纯注入多一步：补 Info.plist 的 ATS / 本地网络权限。
+#   官方包本身已经有这两项（来自上游基线），所以只在拿不准源包时用。
+# ============================================================
+
+name: Relay Dylib
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_ipa:
+        description: '顺带出注入版 ipa（手机上直接注入的话不需要）'
+        type: boolean
+        default: false
+      source_ipa:
+        description: 'build_ipa 为 true 时要注入的 ipa 地址'
+        required: false
+        default: 'https://github.com/vipios/Ai-quanneng/releases/download/latest/AiQuanneng-1.0.ipa'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: relay-dylib
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build RelayDylib
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    env:
+      DYLIB_NAME: RelayDylib.dylib
+      SOURCE_IPA: ${{ inputs.source_ipa }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Environment
+        run: |
+          set -x
+          sw_vers
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      # ── 1. 编 ──
+      - name: Build dylib
+        run: |
+          chmod +x relay-dylib/build.sh
+          ./relay-dylib/build.sh "$GITHUB_WORKSPACE/out-dylib"
+
+      # ── 2. 签名 ──
+      # 注入工具自己也会重签，但先签好能避免某些工具直接拷进包里不签、
+      # 结果 dyld 拒绝加载。
+      - name: Sign dylib
+        run: |
+          set -euo pipefail
+          cp "out-dylib/$DYLIB_NAME" "./$DYLIB_NAME"
+          /usr/bin/codesign --force --sign - --timestamp=none "./$DYLIB_NAME"
+          /usr/bin/codesign --verify --verbose=2 "./$DYLIB_NAME"
+          echo "--- 签名 ---"
+          /usr/bin/codesign -d --verbose=2 "./$DYLIB_NAME" 2>&1 | head -10
+          echo "--- 依赖 ---"
+          /usr/bin/otool -L "./$DYLIB_NAME"
+          ls -lh "./$DYLIB_NAME"
+
+      - name: Upload dylib artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RelayDylib
+          path: RelayDylib.dylib
+          retention-days: 30
+
+      # ── 3. 发到 release，拿直连 ──
+      - name: Publish dylib
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG=relay
+          NOTES="RelayDylib.dylib —— 注入进官方 Minis 的中转站/路由器入口。手机上下载后用注入工具打进官方包即可。"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" "./$DYLIB_NAME" --repo "${{ github.repository }}" --clobber
+            gh release edit "$TAG" --repo "${{ github.repository }}" --notes "$NOTES"
+          else
+            gh release create "$TAG" "./$DYLIB_NAME" \
+              --repo "${{ github.repository }}" \
+              --title "Relay Dylib" \
+              --notes "$NOTES"
+          fi
+          echo "直连：https://github.com/${{ github.repository }}/releases/download/$TAG/$DYLIB_NAME" >> $GITHUB_STEP_SUMMARY
+
+      # ══════════════════════════════════════════════════
+      # 以下只在 build_ipa = true 时跑
+      # ══════════════════════════════════════════════════
+
+      - name: Fetch ipa
+        if: ${{ inputs.build_ipa }}
+        run: |
+          set -euo pipefail
+          mkdir -p work
+          curl -fL --retry 3 --retry-delay 2 -o in.ipa "$SOURCE_IPA"
+          ls -l in.ipa
+          unzip -q in.ipa -d work
+          APP="$(ls -d work/Payload/*.app | head -1)"
+          test -n "$APP" || { echo "::error::包结构里没有 Payload/*.app"; exit 1; }
+          EXEC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")"
+          test -f "$APP/$EXEC" || { echo "::error::找不到可执行文件 $APP/$EXEC"; exit 1; }
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          echo "EXEC=$EXEC" >> "$GITHUB_ENV"
+          echo "包体：$APP / $EXEC"
+
+      # 必须在动二进制之前 dump：改完原签名就废了。
+      # 没有 entitlements 会丢 App Group，上游代码 containerURL(...)! 直接 brk #1。
+      - name: Dump entitlements
+        if: ${{ inputs.build_ipa }}
+        run: |
+          set -euo pipefail
+          if /usr/bin/codesign -d --entitlements :- "$APP/$EXEC" > ent.plist 2>/dev/null \
+             && [ -s ent.plist ]; then
+            echo "已导出 entitlements："
+            cat ent.plist
+          else
+            echo "::error::原包没有可导出的 entitlements，缺 App Group 会在启动时崩，不能继续。"
+            exit 1
+          fi
+
+      - name: Inject dylib
+        if: ${{ inputs.build_ipa }}
+        run: |
+          set -euo pipefail
+          /usr/bin/codesign --remove-signature "$APP/$EXEC" || true
+
+          mkdir -p "$APP/Frameworks"
+          cp "out-dylib/$DYLIB_NAME" "$APP/Frameworks/$DYLIB_NAME"
+
+          python3 scripts/inject_dylib.py \
+            "$APP/$EXEC" \
+            "@executable_path/Frameworks/$DYLIB_NAME"
+
+          python3 scripts/patch_infoplist.py "$APP/Info.plist"
+
+          /usr/bin/otool -L "$APP/$EXEC" | grep -q "$DYLIB_NAME" \
+            || { echo "::error::主二进制里读不到加载项"; exit 1; }
+          /usr/bin/otool -L "$APP/$EXEC" | grep "$DYLIB_NAME"
+
+      - name: Re-sign
+        if: ${{ inputs.build_ipa }}
+        run: |
+          set -euo pipefail
+          /usr/bin/codesign --force --sign - --timestamp=none "$APP/Frameworks/$DYLIB_NAME"
+          /usr/bin/codesign --force --sign - --timestamp=none \
+            --entitlements ent.plist "$APP"
+          /usr/bin/codesign --verify --verbose=2 "$APP"
+
+      - name: Package ipa
+        if: ${{ inputs.build_ipa }}
+        run: |
+          set -euo pipefail
+          IPA_NAME="AiQuanneng-Relay.ipa"
+          ( cd work && zip -qry "../$IPA_NAME" Payload )
+          ls -l "$IPA_NAME"
+          echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
+          unzip -l "$IPA_NAME" | grep -q "Payload/.*\.app/$EXEC" \
+            || { echo "::error::ipa 里找不到主可执行文件"; exit 1; }
+          unzip -l "$IPA_NAME" | grep -q "Frameworks/$DYLIB_NAME" \
+            || { echo "::error::ipa 里找不到注入的 dylib"; exit 1; }
+
+      - name: Publish ipa
+        if: ${{ inputs.build_ipa }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload relay "$IPA_NAME" --repo "${{ github.repository }}" --clobber
+          echo "直连：https://github.com/${{ github.repository }}/releases/download/relay/$IPA_NAME" >> $GITHUB_STEP_SUMMARY

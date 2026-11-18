@@ -169,3 +169,7 @@ deps/aot/*.S
 deps/aot/.build/
 deps/aot/.build-iphonesimulator/
 .bak-orig/
+
+# ── Relay dylib 的构建产物（只在 CI / macOS 上生成，不进仓库）──
+relay-dylib/build/
+out-dylib/

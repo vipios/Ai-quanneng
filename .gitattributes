@@ -116,3 +116,8 @@ deps/rclone-mobile/** linguist-vendored
 deps/talloc/**        linguist-vendored
 deps/ffmpeg-patch/**  linguist-vendored
 deps/aot/**           linguist-vendored
+
+# ── ObjC 源与 Swift 一样锁 LF（clang 能吃 CRLF，但统一掉省得 diff 噪音）──
+*.m             text eol=lf
+*.mm            text eol=lf
+*.h             text eol=lf
