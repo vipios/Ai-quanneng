@@ -52,7 +52,17 @@ xcrun --sdk iphoneos clang \
 # Swift 运行时（libswiftCore 等在系统 /usr/lib/swift 里，不需要内嵌）。
 #
 # -undefined dynamic_lookup：允许引用主 App 的符号留到运行时解析。
-#   v1 用不到，但 v2 搬 RelayStore 那些代码时会用到，先留着。
+#   v2 搬进来的 Relay 页面不需要，但留着不会有副作用。
+#
+# 源文件分两处：入口/首页在 Sources/ 根下，从中转站 fork 搬来的页面在
+# Sources/Relay/。这里用 globstar 之外的写法（显式两组 glob），因为
+# runner 上的 bash 3.2 没开 globstar。
+SWIFT_FILES=("$HERE/Sources/"*.swift)
+if [ -d "$HERE/Sources/Relay" ]; then
+    SWIFT_FILES+=("$HERE/Sources/Relay/"*.swift)
+fi
+echo "源文件 ${#SWIFT_FILES[@]} 个"
+
 xcrun --sdk iphoneos swiftc \
     -emit-library \
     -o "$OUT/$NAME.dylib" \
@@ -65,8 +75,9 @@ xcrun --sdk iphoneos swiftc \
     -Xlinker -undefined -Xlinker dynamic_lookup \
     -framework UIKit \
     -framework SwiftUI \
+    -framework WebKit \
     -framework Foundation \
-    "$HERE/Sources/"*.swift \
+    "${SWIFT_FILES[@]}" \
     "$OBJDIR/RelayEntry.o"
 
 # ── 3. 自检：产物必须存在、架构对、install_name 对 ──

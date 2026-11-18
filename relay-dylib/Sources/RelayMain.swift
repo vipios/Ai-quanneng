@@ -42,7 +42,7 @@ final class RelayBallInstaller: NSObject {
     static let shared = RelayBallInstaller()
 
     private var ball: UIButton?
-    private var sheet: UINavigationController?
+    private var sheet: UIViewController?
     private var retries = 0
     /// 1.0s 起步、每次 +0.5s，最多 24 次 —— 覆盖到冷启动最慢的机型。
     private let maxRetries = 24
@@ -182,23 +182,12 @@ final class RelayBallInstaller: NSObject {
             return
         }
 
-        let host = UIHostingController(rootView: RelayRootView())
-        host.title = "中转站"
-        let nav = UINavigationController(rootViewController: host)
-        nav.modalPresentationStyle = .pageSheet
-        host.navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .close,
-            target: self,
-            action: #selector(closeSheet)
-        )
-
-        presenter.present(nav, animated: true)
-        sheet = nav
-    }
-
-    @objc private func closeSheet() {
-        sheet?.dismiss(animated: true)
-        sheet = nil
+        // 用 fullScreen：中转站后台是整页 WKWebView，pageSheet 的卡片高度
+        // 会把后台界面压成一条缝。关闭按钮在 SwiftUI 侧（toolbar 里）。
+        let host = UIHostingController(rootView: RelayHomeView())
+        host.modalPresentationStyle = .fullScreen
+        presenter.present(host, animated: true)
+        sheet = host
     }
 
     // MARK: 找窗口 / 找顶层控制器

@@ -1,22 +1,80 @@
 //
 //  RelayRootView.swift
-//  RelayDylib — v1 自检页
+//  RelayDylib — 首页 + 自检页
 //
-//  这一版故意不搬任何业务页面，只做一件事：证明「注入链路 + 网络通路」
-//  这一段是通的。三个要验证的点都摆在界面上，真机上一眼就能看出来：
+//  首页只有三样东西：中转站后台、路由器后台、自检。
+//  前两个是从 fork 的 Relay/ 目录原样搬过来的页面，零改动 —— 它们只依赖
+//  RelayStore / RelayVault / RelayRoute，不碰 App 内部的模型层。
 //
-//    1. dylib 到底有没有被加载（能打开这个面板 = 加载了）
-//    2. Info.plist 的 ATS 有没有放行 http（测 http://192.168.x.x）
-//    3. 本地网络权限弹没弹、给没给（同一个请求失败时会区分报错码）
-//
-//  第 2、3 点是当初在 fork 里踩过的坑：fork 版是自己编的 Info.plist，
-//  这两项当初就是后补进去的；注入官方包时它们不一定在，所以必须能自测。
+//  自检页是给这套注入方案留的听诊器：以后官方换版本、换 Info.plist，
+//  打开它就能确认「dylib 加载了没有 / ATS 放没放行 / 本地网络给没给权限」，
+//  不用猜、也不用接调试器。
 //
 
 import SwiftUI
 import UIKit
 
-struct RelayRootView: View {
+// MARK: - 首页
+
+struct RelayHomeView: View {
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    NavigationLink {
+                        RelayAdminView()
+                    } label: {
+                        row("server.rack", "中转站后台", "查看状态、改密码、重启")
+                    }
+
+                    NavigationLink {
+                        RelayRouterView()
+                    } label: {
+                        row("wifi.router.fill", "路由器后台", "线路判定与 airboot 操作")
+                    }
+                } header: {
+                    Text("设备")
+                }
+
+                Section {
+                    NavigationLink {
+                        RelaySelfCheckView()
+                    } label: {
+                        row("stethoscope", "自检", "注入状态 / ATS / 内网连通性")
+                    }
+                }
+            }
+            .navigationTitle("中转站")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func row(_ symbol: String, _ title: String, _ detail: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .frame(width: 24)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - 自检页
+
+struct RelaySelfCheckView: View {
 
     @State private var testURL = "http://192.168.1.88/"
     @State private var testing = false
@@ -28,9 +86,8 @@ struct RelayRootView: View {
             environmentSection
             atsSection
             networkSection
-            pendingSection
         }
-        .navigationTitle("中转站 · 自检")
+        .navigationTitle("自检")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -51,7 +108,7 @@ struct RelayRootView: View {
         } header: {
             Text("Info.plist")
         } footer: {
-            Text("这两项由注入脚本补写。显示「否 / 缺」说明补写没生效，http 内网请求会被系统拦掉。")
+            Text("官方包来自上游基线，这两项本来就带。显示「否 / 缺」说明手上这个不是官方那版包，http 内网请求会被系统拦掉。")
                 .font(.footnote)
         }
     }
@@ -91,21 +148,6 @@ struct RelayRootView: View {
         }
     }
 
-    // MARK: 待接入
-
-    private var pendingSection: some View {
-        Section {
-            pendingRow("server.rack", "中转站后台")
-            pendingRow("wifi.router.fill", "路由器后台")
-            pendingRow("plus.circle", "添加 AI 中转站")
-        } header: {
-            Text("功能")
-        } footer: {
-            Text("v1 只验证注入链路，这三项在 v2 / v3 接入。")
-                .font(.footnote)
-        }
-    }
-
     // MARK: 组件
 
     private func row(_ title: String, value: String, mono: Bool = false) -> some View {
@@ -117,20 +159,6 @@ struct RelayRootView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)
                 .textSelection(.enabled)
-        }
-    }
-
-    private func pendingRow(_ symbol: String, _ title: String) -> some View {
-        HStack {
-            Image(systemName: symbol)
-                .frame(width: 22)
-                .foregroundStyle(.secondary)
-            Text(title)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text("v2")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
     }
 
